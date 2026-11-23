@@ -10,7 +10,7 @@
 - **외부 `herdr-core` / `hc` 연동**: `hc connect` 프로세스의 `stdin/stdout` 위에서 공식 바이너리 Framed 프로토콜(`[channel u32 LE][kind u8][len u32 LE][payload]`)로 통신.
 - **세션 영속성**: 모든 AI CLI는 `outlive_parent: true`, `no_parent: true`, `keep: true`로 기동하며, 앱 종료 시 `hc connect`만 Detach하여 백그라운드 세션을 유지. 재실행 시 `events.subscribe` 스냅샷 + `labels` + `cwd` 경로 매칭 + `doc.get("jjdr.*")`로 자동 복원.
 - **방식 C (하이브리드 터미널)**: 평소 관제는 DOM에 `xterm.js` 0개 + 경량 상태 카드/프리뷰로 유지하고, 선택한 단일 세션에만 `React.lazy`로 `xterm.js`(WebGL/Fit)를 즉석 Attach, 전환/Esc 시 즉시 `CLOSE` 및 `dispose()`로 메모리 회수.
-- **논블로킹 워커 구조**: Rust Tokio 워커(프로토콜 I/O, Git 병렬 워커, 16~30ms 이벤트 배치) + Frontend Web Worker(`dashboardWorker.ts`: 정렬/그룹핑/검색/Stuck 감지) + Zustand Atomic Selector + `React.memo` + **Obsidian "Calm Precision" Zero-Blur 디자인 시스템**(보더리스 섹션, 95% 모노크롬 그라파이트 서피스 `#0b0c0e`/`#13161b` + 좌측 3px 시맨틱 액센트 바 & 마이크로 도트, `tabular-nums` 정렬).
+- **논블로킹 워커 구조**: Rust Tokio 워커(프로토콜 I/O, Git 병렬 워커, 16~30ms 이벤트 배치) + Frontend Web Worker(`dashboardWorker.ts`: 정렬/그룹핑/검색/Stuck 감지) + Zustand Atomic Selector + `React.memo` + **4-Theme Floating Canvas & Squircle Zero-Blur 디자인 시스템**(기본 `Aurora Dusk` + `Warm Lounge` / `Nordic Mist` / `Botanical Slate`, 직선 칸막이 없는 22px 플로팅 라운드 캔버스, 18px 스퀴클 타일, 캡슐 컨트롤, `tabular-nums` 정렬).
 
 ---
 
@@ -43,26 +43,29 @@
 | `src/workers/dashboardLogic.ts` | 순수 함수: 버킷 분류(`needs_you`/`ready`/`running`/`idle`), Stuck 판별, 라벨+CWD 자동 재매핑, Fuzzy 검색, 매트릭스 생성 | `classifyBucket`, `computeDashboard`, `normalizePath` |
 | `src/workers/dashboardWorker.ts` | 전용 Web Worker 엔트리 | `onmessage` → `computeDashboard` → `postMessage` |
 | `src/store/useAppStore.ts` | 도메인 상태 Atomic Zustand 스토어 | `terminals`, `previews`, `projects`, `worktreesByProject`, `computed`, `ackTurns`, `queuedPrompts`, `lastAgentByWorktree`, `setHealth` |
-| `src/store/useUiStore.ts` | UI/모달/선택/Attach/사이드바·프로젝트 접기 상태 스토어 | `viewMode` (`radar`/`queue`), `selectedProjectId`, `selectedCardKey`, `selectedAddress`, `attachedAddress`, `sidebarOpen`, `collapsedProjects`, `toggleProjectCollapsed` |
-| `src/hooks/useHerdrSync.ts` | Worker 라이프사이클, 초기 Hydration, 재실행 Attach 복원, Calm 알림, 트레이 동기화, UI 상태 자동 저장 | `useHerdrSync` |
-| `src/hooks/useGlobalShortcuts.ts` | 키보드 퍼스트 제어(`↑↓←→` 2D 이동, 우측 터미널 오픈/포커스 및 한/영 무관하게 동작하는 `Ctrl+↑↓←→`, `Ctrl+\``, `Ctrl+K`, `Ctrl+M`, `Ctrl+N`, `Ctrl+1/2`, `Ctrl+B`, `Enter` 터미널 열기/AI 자동 시작, `Esc`) | `useGlobalShortcuts`, `jumpToNextActionable` |
+| `src/store/useUiStore.ts` | UI/모달/선택/Attach/Worktree별 마지막 활성 탭 기억(`lastSessionByCardKey`)/사이드바·프로젝트 접기 상태 스토어 | `viewMode` (`radar`/`queue`), `selectedProjectId`, `selectedCardKey`, `selectedAddress`, `attachedAddress`, `lastSessionByCardKey`, `rememberCardSession`, `sidebarOpen`, `collapsedProjects`, `toggleProjectCollapsed` |
+| `src/hooks/useHerdrSync.ts` | Worker 라이프사이클, 초기 Hydration, 재실행 Attach 복원, 종료 시 같은 Worktree 인접 탭 자동 복귀, Calm 알림, 트레이 동기화, UI 상태 자동 저장 | `useHerdrSync` |
+| `src/hooks/useGlobalShortcuts.ts` | 키보드 퍼스트 제어(`Ctrl+N` 다음 확인 세션 점프, `Ctrl+F` 상단 검색창 포커스, `↑↓←→` 2D 이동, 우측 터미널 오픈/포커스 및 한/영 무관 `Ctrl+↑↓←→`, `Ctrl+\``, `Ctrl+Tab`/`Ctrl+Shift+Tab` 같은 Worktree 세션 탭 전환, `Ctrl+Shift+T` Shell 탭 추가, `Ctrl+Shift+A` AI 탭 추가, `Ctrl+K/M/1/2/B`, `Enter`, `Esc`) | `useGlobalShortcuts`, `jumpToNextActionable` |
 | `src/utils/format.ts` | 경과 시간/경로 포맷터, 프로젝트 컬러 팔레트 | `formatElapsed`, `shortPath`, `PROJECT_COLORS` |
+| `src/utils/themes.ts` | 4종 내장 테마(`aurora`/`lounge`/`nordic`/`botanical`) 및 레이더 한 줄 카드 밀도 프리셋(`3/2`·`4/2`·`5/3`), xterm 팔레트 및 DOM/로컬스토리지 동기화 | `THEME_PRESETS`, `RADAR_DENSITY_PRESETS`, `DEFAULT_THEME_ID`, `DEFAULT_RADAR_DENSITY`, `normalizeThemeId`, `normalizeRadarDensity`, `getThemePreset`, `getRadarDensityPreset`, `applyThemeToDom`, `readStoredTheme` |
 | `src/utils/spatialNav.ts` | Board 뷰 2D 화면 좌표 기반 상/하/좌/우 카드 탐색 로직 | `findNextCardInDirection`, `CardRect`, `NavDirection` |
+| `src/utils/worktreeSessions.ts` | 같은 Worktree 내 다중 live 세션 안정 정렬(`created_ms`), 탭 순환, AI/마지막 탭 우선 선택 헬퍼 | `isPlainShellSession`, `cardKeyForSession`, `getWorktreeLiveSessions`, `pickPreferredWorktreeSession`, `getCycledSession` |
 | `src/utils/agents.ts` | AI CLI 객관식 프리셋(`Antigravity (agy)`, `Claude`, `Gemini`, `Codex`), 자율성(YOLO) 플래그 프리뷰(`formatEffectiveCommand`), 재개 옵션, 기본 그룹, 브랜치 prefix | `AGENT_OPTIONS`, `RESUME_AGENT_OPTIONS`, `formatEffectiveCommand`, `DEFAULT_PROJECT_GROUPS`, `BRANCH_PREFIXES` |
 | `src/components/shared/StatusBadge.tsx` | 상태 알약 뱃지 (`React.memo`) | `StatusBadge` |
 | `src/components/shared/HerdrHealthBanner.tsx` | `herdr-core` 연결 장애 안내 & 재연결 배너 | `HerdrHealthBanner` |
-| `src/components/layout/TopStatusBar.tsx` | 프레임리스 통합 타이틀바(창 드래그·더블클릭 최대화·우측 최소화/최대화/닫기 버튼) + 글로벌 카운터 캡슐, Next Action, 그룹 필터, 검색, 뷰 토글, Palette/Settings | `TopStatusBar` |
+| `src/components/layout/TopStatusBar.tsx` | 프레임리스 통합 타이틀바(창 드래그·더블클릭 최대화·우측 최소화/최대화/닫기 버튼) + 글로벌 카운터 캡슐, Next Action, 그룹 필터, `Ctrl+F` 검색창(`Enter`: 검색 유지 + 첫 카드 포커스, `Esc`: 검색어 초기화 + 카드 포커스), 뷰 토글, Palette/Settings | `TopStatusBar` |
 | `src/components/layout/SidebarProjects.tsx` | 프로젝트 CRUD 사이드바, 프로젝트별 Worktree 생성 단축 버튼 | `SidebarProjects` |
-| `src/components/board/RadarBoardView.tsx` | 풀스크린 초슬림 레이더 뷰 (`Ctrl+1`): 프로젝트별 접기/펼치기, `[+ WT]`, 2~4열 상태 타일 그리드 + 2D 키보드 지원 외부 `hc`/쉘 터미널(`[+ Shell]`) | `RadarBoardView` |
+| `src/components/board/RadarBoardView.tsx` | 풀스크린 소프트 벤토 트레이 레이더 뷰 (`Ctrl+1`): 프로젝트별 22px 둥근 트레이 자동 스팬 배치(단일 카드 프로젝트 나란히 페어링), 설정 연동 1줄 카드 수(`3/2`·`4/2`·`5/3`) + 2D 키보드 지원 외부 `hc`/쉘 트레이 | `RadarBoardView` |
 | `src/components/board/RadarTile.tsx` | 초슬림 2줄 상태 타일(상태색·브랜치·diff·경과·핵심 1줄 요약 + 원클릭 승인 + 호버 퀵 액션) | `RadarTile` |
 | `src/components/attention/SessionCard.tsx` | Queue 뷰 전용 초슬림 상태 카드(프롬프트 입력창 제거, 핵심 1줄 요약 + 원클릭 승인/중단/터미널/정리) | `SessionCard` |
 | `src/components/attention/AttentionBoard.tsx` | 4-Tier 우선순위 할 일 인박스 (`Ctrl+2`) | `AttentionBoard` |
-| `src/components/terminal/AttachedTerminalDrawer.tsx` | `React.lazy` 단일 `xterm.js` (WebGL/Fit) 즉석 Attach/Detach 드로어 + 상단 유저 프리셋 바 + `Ctrl+\`` / `Ctrl+↑↓←→` 전역 키 패스스루 | `AttachedTerminalDrawer` |
+| `src/components/terminal/TerminalSessionTabs.tsx` | 현재 Worktree에 열린 다중 세션(AI + Shell) 탭 바 + 원클릭 `+ Shell` / `+ AI` / 개별 종료(`×`) UI | `TerminalSessionTabs` |
+| `src/components/terminal/AttachedTerminalDrawer.tsx` | `React.lazy` 단일 `xterm.js` (WebGL/Fit) 플로팅 Attach/Detach 드로어 + Worktree 다중 세션 탭 바 + 유저 프리셋 바 + 실시간 테마 동기화 + 전역 키 패스스루 | `AttachedTerminalDrawer` |
 | `src/components/modals/CommandPalette.tsx` | `Ctrl+K` 통합 커맨드 팔레트 | `CommandPalette` |
 | `src/components/modals/ProjectModal.tsx` | 최소입력·객관식 프로젝트 등록/수정 모달 (폴더 선택 시 이름·브랜치·`.env`·검증명령 자동 감지) | `ProjectModal` |
 | `src/components/modals/CreateWorktreeModal.tsx` | 현재 브랜치 자동 베이스 Worktree 생성 + 객관식 AI CLI(`agy`/`claude`/`gemini`/`codex`) 기동 모달 | `CreateWorktreeModal` |
 | `src/components/modals/LaunchSessionModal.tsx` | 기존 Worktree에 객관식 AI CLI(`agy`/`agy --continue` 등) 실행 / 빠른 재개 모달 | `LaunchSessionModal` |
 | `src/components/modals/TeardownModal.tsx` | 안전 가드 포함 Worktree + 세션 일괄 정리 모달 | `TeardownModal` |
 | `src/components/modals/DiffPreviewModal.tsx` | 경량 Git Diff 뷰어 모달 | `DiffPreviewModal` |
-| `src/components/modals/SettingsModal.tsx` | Stuck 시간, Calm 알림, Merge Overlap 옵션, 프롬프트 프리셋 편집 모달 | `SettingsModal` |
-| `src/App.tsx` | 루트 레이아웃, `Suspense` 지연 로드 터미널 드로어, 토스트 | `App` |
+| `src/components/modals/SettingsModal.tsx` | 4종 테마 원클릭 스위처, 레이더 한 줄 카드 수 스위처(`3/2`·`4/2` 기본·`5/3`), Stuck 시간, Calm 알림, Merge Overlap 옵션, 프롬프트 프리셋 편집 모달 | `SettingsModal` |
+| `src/App.tsx` | 외곽 쉘 + 22px 플로팅 라운드 캔버스 레이아웃, `Suspense` 지연 로드 터미널 드로어, 캡슐 토스트 | `App` |

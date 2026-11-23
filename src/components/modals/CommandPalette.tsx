@@ -47,14 +47,16 @@ export const CommandPalette = React.memo(function CommandPalette() {
         id: "next-action",
         label: "Jump to Next Actionable Session",
         detail: "Ctrl+N · Needs You → Ready",
-        icon: <Zap className="w-4 h-4 text-[#f85149]" />,
+        icon: <Zap className="w-4 h-4" style={{ color: "var(--action-fg)" }} />,
         run: () => jumpToNextActionable(),
       },
       {
         id: "add-project",
         label: "Add Git Project",
         detail: "Register a local repository",
-        icon: <FolderPlus className="w-4 h-4 text-[#3fb950]" />,
+        icon: (
+          <FolderPlus className="w-4 h-4" style={{ color: "var(--ready-fg)" }} />
+        ),
         run: () => ui.setProjectModalProject("new"),
       },
       {
@@ -63,17 +65,25 @@ export const CommandPalette = React.memo(function CommandPalette() {
         detail: "Ctrl+M / Ctrl+1,2",
         icon:
           ui.viewMode === "queue" ? (
-            <LayoutGrid className="w-4 h-4 text-[#58a6ff]" />
+            <LayoutGrid
+              className="w-4 h-4"
+              style={{ color: "var(--accent)" }}
+            />
           ) : (
-            <Inbox className="w-4 h-4 text-[#58a6ff]" />
+            <Inbox className="w-4 h-4" style={{ color: "var(--accent)" }} />
           ),
         run: () => ui.toggleViewMode(),
       },
       {
         id: "settings",
-        label: "Open Settings & Prompt Presets",
-        detail: "Stuck timer, notifications, presets",
-        icon: <Settings className="w-4 h-4 text-[#9aa7b8]" />,
+        label: "Open Settings, Themes & Presets",
+        detail: "4종 테마 전환, 알림, 프리셋",
+        icon: (
+          <Settings
+            className="w-4 h-4"
+            style={{ color: "var(--text-secondary)" }}
+          />
+        ),
         run: () => ui.setSettingsOpen(true),
       },
     ];
@@ -83,7 +93,7 @@ export const CommandPalette = React.memo(function CommandPalette() {
         id: `run-${p.id}`,
         label: `Launch AI in ${p.name} (Main Repo)`,
         detail: `No worktree needed · ${p.default_agent || "agy"}`,
-        icon: <Play className="w-4 h-4 text-[#56d364]" />,
+        icon: <Play className="w-4 h-4" style={{ color: "var(--ready-fg)" }} />,
         run: () =>
           ui.setLaunchTarget({
             projectId: p.id,
@@ -96,7 +106,12 @@ export const CommandPalette = React.memo(function CommandPalette() {
         id: `nw-${p.id}`,
         label: `New Worktree in ${p.name}`,
         detail: `From current branch + launch ${p.default_agent || "agy"}`,
-        icon: <GitBranchPlus className="w-4 h-4 text-[#58a6ff]" />,
+        icon: (
+          <GitBranchPlus
+            className="w-4 h-4"
+            style={{ color: "var(--accent)" }}
+          />
+        ),
         run: () => ui.setCreateWorktreeProjectId(p.id),
       });
     }
@@ -106,7 +121,9 @@ export const CommandPalette = React.memo(function CommandPalette() {
         id: `attach-${s.address}`,
         label: `Attach: ${s.projectName} / ${s.branch}`,
         detail: `${s.agentLabel} · ${s.address} · ${s.bucket}`,
-        icon: <Terminal className="w-4 h-4 text-[#e3b341]" />,
+        icon: (
+          <Terminal className="w-4 h-4" style={{ color: "var(--run-fg)" }} />
+        ),
         run: () => {
           ui.setSelectedAddress(s.address);
           if (s.terminal.state === "live") {
@@ -135,14 +152,18 @@ export const CommandPalette = React.memo(function CommandPalette() {
   return (
     <div
       onClick={() => setOpen(false)}
-      className="fixed inset-0 z-50 bg-[#05070a]/80 flex items-start justify-center pt-20 px-4"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4"
+      style={{ background: "var(--modal-overlay)" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl rounded-xl bg-[#111318] border border-[#252932] overflow-hidden"
+        className="jjdr-modal w-full max-w-xl rounded-[22px] overflow-hidden"
       >
-        <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-[#1c1f26]">
-          <Search className="w-4 h-4 text-[#58a6ff]" />
+        <div
+          className="flex items-center gap-2.5 px-4 py-3.5"
+          style={{ borderBottom: "1px solid var(--divider)" }}
+        >
+          <Search className="w-4 h-4" style={{ color: "var(--accent)" }} />
           <input
             ref={inputRef}
             type="text"
@@ -163,18 +184,29 @@ export const CommandPalette = React.memo(function CommandPalette() {
                 execute(items[idx]);
               }
             }}
-            placeholder="Type a command, project, branch, or session..."
-            className="flex-1 bg-transparent text-sm text-[#e6edf3] placeholder-[#6c788a] focus:outline-none"
+            placeholder="명령어, 프로젝트, 브랜치 또는 세션 검색..."
+            className="flex-1 bg-transparent text-sm focus:outline-none"
+            style={{ color: "var(--text-primary)" }}
           />
-          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-[#0b0c0e] text-[#8b949e] border border-[#1c1f26]">
+          <kbd
+            className="text-[10px] px-2 py-0.5 rounded-full font-mono-code"
+            style={{
+              background: "var(--pill-bg)",
+              border: "1px solid var(--pill-border)",
+              color: "var(--text-muted)",
+            }}
+          >
             Esc
           </kbd>
         </div>
 
-        <div className="max-h-80 overflow-y-auto p-1.5">
+        <div className="max-h-80 overflow-y-auto p-2 space-y-0.5">
           {items.length === 0 ? (
-            <div className="p-4 text-center text-xs text-[#6c788a]">
-              No matching commands
+            <div
+              className="p-6 text-center text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
+              일치하는 명령어가 없습니다
             </div>
           ) : (
             items.map((item, i) => (
@@ -182,17 +214,21 @@ export const CommandPalette = React.memo(function CommandPalette() {
                 key={item.id}
                 onMouseEnter={() => setIdx(i)}
                 onClick={() => execute(item)}
-                className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded text-left text-xs cursor-pointer ${
-                  i === idx
-                    ? "bg-[#1f2a3d] text-[#e6edf3]"
-                    : "text-[#c9d1d9] hover:bg-[#1a202c]"
-                }`}
+                className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl text-left text-xs cursor-pointer transition-colors"
+                style={{
+                  background: i === idx ? "var(--accent-soft)" : "transparent",
+                  color:
+                    i === idx ? "var(--text-primary)" : "var(--text-secondary)",
+                }}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   {item.icon}
-                  <span className="font-medium truncate">{item.label}</span>
+                  <span className="font-semibold truncate">{item.label}</span>
                 </div>
-                <span className="text-[11px] text-[#8b949e] truncate shrink-0">
+                <span
+                  className="text-[11px] truncate shrink-0"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   {item.detail}
                 </span>
               </button>

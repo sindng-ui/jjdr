@@ -4,12 +4,17 @@ import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import { launchSession } from "../../services/tauriBridge";
 import { normalizePath } from "../../workers/dashboardLogic";
-import { formatEffectiveCommand, RESUME_AGENT_OPTIONS } from "../../utils/agents";
+import {
+  formatEffectiveCommand,
+  RESUME_AGENT_OPTIONS,
+} from "../../utils/agents";
 
 export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
   const target = useUiStore((s) => s.launchTarget);
   const setTarget = useUiStore((s) => s.setLaunchTarget);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
+  const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
+  const rememberCardSession = useUiStore((s) => s.rememberCardSession);
   const showToast = useUiStore((s) => s.showToast);
   const lastAgentMap = useAppStore((s) => s.lastAgentByWorktree);
   const templates = useAppStore((s) => s.templates);
@@ -51,7 +56,16 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
       });
       useAppStore.getState().recordLastAgent(normalizePath(target.cwd), argv);
       showToast(`Launched ${argv[0]} (${addr})`, "success");
-      if (addr) setSelectedAddress(addr);
+      if (addr) {
+        setSelectedAddress(addr);
+        setAttachedAddress(addr);
+        if (target.projectId) {
+          rememberCardSession(
+            `wt::${target.projectId}::${normalizePath(target.cwd)}`,
+            addr
+          );
+        }
+      }
       setTarget(null);
     } catch (err) {
       showToast(`Launch failed: ${String(err)}`, "error");
@@ -60,34 +74,51 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
     }
   };
 
+  const chipStyle = (active: boolean): React.CSSProperties => ({
+    background: active ? "var(--accent-soft)" : "var(--input-bg)",
+    border: `1px solid ${active ? "var(--accent)" : "var(--input-border)"}`,
+    color: active ? "var(--text-primary)" : "var(--text-secondary)",
+  });
+
   return (
     <div
       onClick={() => setTarget(null)}
-      className="fixed inset-0 z-50 bg-[#05070a]/80 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "var(--modal-overlay)" }}
     >
       <form
         onSubmit={(e) => void handleSubmit(e)}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-xl bg-[#111318] border border-[#252932] overflow-hidden"
+        className="jjdr-modal w-full max-w-md rounded-[22px] overflow-hidden"
       >
-        <div className="px-4 py-3 border-b border-[#1c1f26] flex items-center justify-between">
+        <div
+          className="px-5 py-4 flex items-center justify-between"
+          style={{ borderBottom: "1px solid var(--divider)" }}
+        >
           <div className="flex items-center gap-2">
-            <Play className="w-4 h-4 text-[#56d364]" />
-            <h3 className="text-sm font-bold text-[#e6edf3]">
+            <Play className="w-4 h-4" style={{ color: "var(--ready-fg)" }} />
+            <h3
+              className="text-sm font-bold"
+              style={{ color: "var(--text-primary)" }}
+            >
               Launch AI CLI · {target.branch || "Worktree"}
             </h3>
           </div>
           <button
             type="button"
             onClick={() => setTarget(null)}
-            className="text-[#8b949e] hover:text-[#e6edf3] cursor-pointer"
+            className="p-1.5 rounded-full hover:bg-black/10 cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-4 space-y-3 text-xs">
-          <div className="text-[11px] font-mono-code text-[#8b949e] truncate">
+        <div className="p-5 space-y-3.5 text-xs">
+          <div
+            className="text-[11px] font-mono-code truncate"
+            style={{ color: "var(--text-muted)" }}
+          >
             {target.cwd}
           </div>
 
@@ -102,11 +133,8 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
                     setCustomMode(false);
                     setCmdText(opt.cmd);
                   }}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                    active
-                      ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff] font-medium"
-                      : "bg-[#0b0c0e] border-[#1c1f26] text-[#c9d1d9] hover:border-[#3d4a63]"
-                  }`}
+                  style={chipStyle(active)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer"
                 >
                   {active && <Check className="w-3 h-3" />}
                   {opt.label}
@@ -123,11 +151,8 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
                     setCustomMode(false);
                     setCmdText(t.name);
                   }}
-                  className={`px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                    active
-                      ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                      : "bg-[#0b0c0e] border-[#1c1f26] text-[#9aa7b8]"
-                  }`}
+                  style={chipStyle(active)}
+                  className="px-3 py-1.5 rounded-full text-xs cursor-pointer"
                 >
                   tpl:{t.name}
                 </button>
@@ -136,11 +161,8 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
             <button
               type="button"
               onClick={() => setCustomMode(true)}
-              className={`px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                customMode
-                  ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                  : "bg-[#0b0c0e] border-[#1c1f26] text-[#8b949e]"
-              }`}
+              style={chipStyle(customMode)}
+              className="px-3 py-1.5 rounded-full text-xs cursor-pointer"
             >
               Custom…
             </button>
@@ -152,28 +174,52 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
               autoFocus
               value={cmdText}
               onChange={(e) => setCmdText(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] focus:border-[#58a6ff] focus:outline-none text-[#e6edf3] font-mono-code"
+              className="jjdr-input w-full px-3.5 py-2 rounded-full font-mono-code"
             />
           )}
 
-          <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded bg-[#0b0c0e] border border-[#1c1f26]">
+          <div
+            className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl"
+            style={{
+              background: "var(--input-bg)",
+              border: "1px solid var(--input-border)",
+            }}
+          >
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-[#e6edf3]">
-                <Zap className="w-3.5 h-3.5 text-[#e3b341]" />
+              <div
+                className="flex items-center gap-1.5 text-xs font-semibold"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <Zap
+                  className="w-3.5 h-3.5"
+                  style={{ color: "var(--warn-fg)" }}
+                />
                 <span>Autonomous Mode</span>
               </div>
-              <div className="mt-0.5 text-[10px] font-mono-code text-[#8b949e] truncate">
+              <div
+                className="mt-0.5 text-[10px] font-mono-code truncate"
+                style={{ color: "var(--text-muted)" }}
+              >
                 $ {formatEffectiveCommand(cmdText, autonomous)}
               </div>
             </div>
             <button
               type="button"
               onClick={() => setAutonomous((v) => !v)}
-              className={`px-2.5 py-1 rounded text-[11px] font-semibold border shrink-0 cursor-pointer ${
+              className="px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 cursor-pointer"
+              style={
                 autonomous
-                  ? "bg-[#33260f] border-[#d29922] text-[#e3b341]"
-                  : "bg-[#1a202c] border-[#252932] text-[#8b949e]"
-              }`}
+                  ? {
+                      background: "var(--warn-soft)",
+                      border: "1px solid var(--warn-border)",
+                      color: "var(--warn-fg)",
+                    }
+                  : {
+                      background: "var(--pill-bg)",
+                      border: "1px solid var(--pill-border)",
+                      color: "var(--text-muted)",
+                    }
+              }
             >
               {autonomous ? "ON (YOLO)" : "OFF (Ask)"}
             </button>
@@ -184,22 +230,29 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Optional first prompt..."
-            className="w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] focus:border-[#58a6ff] focus:outline-none text-[#e6edf3] resize-none"
+            className="jjdr-input w-full px-3.5 py-2.5 rounded-2xl resize-none"
           />
         </div>
 
-        <div className="px-4 py-3 bg-[#0e1014] border-t border-[#1c1f26] flex justify-end gap-2">
+        <div
+          className="px-5 py-3.5 flex justify-end gap-2"
+          style={{
+            background: "var(--modal-footer)",
+            borderTop: "1px solid var(--divider)",
+          }}
+        >
           <button
             type="button"
             onClick={() => setTarget(null)}
-            className="px-3 py-1.5 rounded text-xs text-[#9aa7b8] cursor-pointer"
+            className="px-4 py-1.5 rounded-full text-xs cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={launching}
-            className="px-4 py-1.5 rounded text-xs font-semibold bg-[#238636] hover:bg-[#2ea043] text-white cursor-pointer"
+            className="jjdr-primary-btn px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer"
           >
             {launching ? "Starting..." : "Launch"}
           </button>

@@ -28,7 +28,7 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
   const [branchName, setBranchName] = useState("");
   const [currentBranch, setCurrentBranch] = useState<string>("");
   const [localBranches, setLocalBranches] = useState<string[]>([]);
-  const [overrideBase, setOverrideBase] = useState<string>(""); // empty => current branch (HEAD)
+  const [overrideBase, setOverrideBase] = useState<string>("");
   const [showBasePicker, setShowBasePicker] = useState(false);
 
   const [agentCmd, setAgentCmd] = useState("agy");
@@ -87,7 +87,6 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
       const res = await createWorktreeAndLaunch({
         project_id: project.id,
         branch_name: branchName.trim(),
-        // Undefined => backend automatically bases on repository's current branch (HEAD)
         base_branch: overrideBase || undefined,
         launch_argv: launchArgv,
         initial_prompt: initialPrompt.trim() || undefined,
@@ -120,53 +119,94 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
     }
   };
 
+  const chipStyle = (active: boolean): React.CSSProperties => ({
+    background: active ? "var(--accent-soft)" : "var(--input-bg)",
+    border: `1px solid ${active ? "var(--accent)" : "var(--input-border)"}`,
+    color: active ? "var(--text-primary)" : "var(--text-secondary)",
+  });
+
   return (
     <div
       onClick={() => setProjectId(null)}
-      className="fixed inset-0 z-50 bg-[#05070a]/80 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "var(--modal-overlay)" }}
     >
       <form
         onSubmit={(e) => void handleSubmit(e)}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-xl bg-[#111318] border border-[#252932] overflow-hidden"
+        className="jjdr-modal w-full max-w-lg rounded-[22px] overflow-hidden"
       >
-        <div className="px-4 py-3 border-b border-[#1c1f26] flex items-center justify-between">
+        <div
+          className="px-5 py-4 flex items-center justify-between"
+          style={{ borderBottom: "1px solid var(--divider)" }}
+        >
           <div className="flex items-center gap-2">
-            <GitBranchPlus className="w-4 h-4 text-[#58a6ff]" />
-            <h3 className="text-sm font-bold text-[#e6edf3]">
+            <GitBranchPlus
+              className="w-4 h-4"
+              style={{ color: "var(--accent)" }}
+            />
+            <h3
+              className="text-sm font-bold"
+              style={{ color: "var(--text-primary)" }}
+            >
               New Worktree · {project.name}
             </h3>
           </div>
           <button
             type="button"
             onClick={() => setProjectId(null)}
-            className="text-[#8b949e] hover:text-[#e6edf3] cursor-pointer"
+            className="p-1.5 rounded-full hover:bg-black/10 cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-4 space-y-4 text-xs">
+        <div className="p-5 space-y-4 text-xs">
           {error && (
-            <div className="p-2.5 rounded bg-[#2d1619] border border-[#f85149]/50 text-[#ff7b72]">
+            <div
+              className="p-3 rounded-2xl"
+              style={{
+                background: "var(--action-soft)",
+                border: "1px solid var(--action-border)",
+                color: "var(--action-fg)",
+              }}
+            >
               {error}
             </div>
           )}
 
-          {/* Auto-base indicator (Current Branch by default, optional dropdown override) */}
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#1c1f26]">
-            <div className="flex items-center gap-1.5 text-[11px] text-[#9aa7b8] min-w-0">
-              <GitBranch className="w-3.5 h-3.5 text-[#3fb950] shrink-0" />
+          {/* Auto-base indicator */}
+          <div
+            className="flex items-center justify-between gap-2 px-3.5 py-2 rounded-full"
+            style={{
+              background: "var(--input-bg)",
+              border: "1px solid var(--input-border)",
+            }}
+          >
+            <div
+              className="flex items-center gap-1.5 text-[11px] min-w-0"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <GitBranch
+                className="w-3.5 h-3.5 shrink-0"
+                style={{ color: "var(--ready-fg)" }}
+              />
               <span>Base:</span>
-              <span className="font-mono-code font-semibold text-[#e6edf3] truncate">
-                {overrideBase || `${currentBranch || "current branch"} (current)`}
+              <span
+                className="font-mono-code font-bold truncate"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {overrideBase ||
+                  `${currentBranch || "current branch"} (current)`}
               </span>
             </div>
             {localBranches.length > 1 && (
               <button
                 type="button"
                 onClick={() => setShowBasePicker((v) => !v)}
-                className="text-[11px] text-[#58a6ff] hover:underline shrink-0 cursor-pointer"
+                className="text-[11px] font-semibold hover:underline shrink-0 cursor-pointer"
+                style={{ color: "var(--accent)" }}
               >
                 {showBasePicker ? "Hide" : "Change"}
               </button>
@@ -177,7 +217,7 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
             <select
               value={overrideBase}
               onChange={(e) => setOverrideBase(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] text-[#e6edf3] font-mono-code focus:border-[#58a6ff] focus:outline-none"
+              className="jjdr-input w-full px-3.5 py-2 rounded-full font-mono-code"
             >
               <option value="">
                 Current branch ({currentBranch || "HEAD"})
@@ -190,10 +230,13 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
             </select>
           )}
 
-          {/* Branch name + quick prefix chips */}
+          {/* Branch name + quick prefix pills */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[#9aa7b8] font-medium">
+              <label
+                className="font-semibold"
+                style={{ color: "var(--text-secondary)" }}
+              >
                 New Branch Name *
               </label>
               <div className="flex items-center gap-1">
@@ -202,7 +245,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
                     key={p}
                     type="button"
                     onClick={() => applyPrefix(p)}
-                    className="px-1.5 py-0.5 rounded text-[10px] font-mono-code bg-[#1a202c] hover:bg-[#253044] text-[#9aa7b8] hover:text-[#e6edf3] cursor-pointer"
+                    className="jjdr-pill px-2 py-0.5 rounded-full text-[10px] font-mono-code cursor-pointer"
+                    style={{ color: "var(--text-muted)" }}
                   >
                     {p}
                   </button>
@@ -215,13 +259,16 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
               value={branchName}
               onChange={(e) => setBranchName(e.target.value)}
               placeholder="feat/fast-search"
-              className="w-full px-2.5 py-2 rounded bg-[#0b0c0e] border border-[#222630] focus:border-[#58a6ff] focus:outline-none text-[#e6edf3] font-mono-code text-sm"
+              className="jjdr-input w-full px-3.5 py-2.5 rounded-full font-mono-code text-sm"
             />
           </div>
 
           {/* Choice-first AI CLI picker */}
           <div>
-            <label className="block text-[#9aa7b8] mb-1.5 font-medium">
+            <label
+              className="block mb-1.5 font-semibold"
+              style={{ color: "var(--text-secondary)" }}
+            >
               AI CLI to Launch
             </label>
             <div className="flex flex-wrap gap-1.5">
@@ -235,11 +282,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
                       setCustomAgentMode(false);
                       setAgentCmd(a.cmd);
                     }}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium border cursor-pointer ${
-                      active
-                        ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                        : "bg-[#0b0c0e] border-[#1c1f26] text-[#c9d1d9] hover:border-[#3d4a63]"
-                    }`}
+                    style={chipStyle(active)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer"
                   >
                     {active && <Check className="w-3 h-3" />}
                     {a.label}
@@ -258,11 +302,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
                       setAgentCmd(tpl.name);
                     }}
                     title={tpl.description}
-                    className={`px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                      active
-                        ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                        : "bg-[#0b0c0e] border-[#1c1f26] text-[#9aa7b8] hover:text-[#e6edf3]"
-                    }`}
+                    style={chipStyle(active)}
+                    className="px-3 py-1.5 rounded-full text-xs cursor-pointer"
                   >
                     tpl:{tpl.name}
                   </button>
@@ -275,11 +316,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
                   setCustomAgentMode(false);
                   setAgentCmd("");
                 }}
-                className={`px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                  !customAgentMode && agentCmd === ""
-                    ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                    : "bg-[#0b0c0e] border-[#1c1f26] text-[#8b949e] hover:text-[#e6edf3]"
-                }`}
+                style={chipStyle(!customAgentMode && agentCmd === "")}
+                className="px-3 py-1.5 rounded-full text-xs cursor-pointer"
               >
                 No AI (Worktree Only)
               </button>
@@ -287,11 +325,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
               <button
                 type="button"
                 onClick={() => setCustomAgentMode(true)}
-                className={`px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                  customAgentMode
-                    ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                    : "bg-[#0b0c0e] border-[#1c1f26] text-[#8b949e] hover:text-[#e6edf3]"
-                }`}
+                style={chipStyle(customAgentMode)}
+                className="px-3 py-1.5 rounded-full text-xs cursor-pointer"
               >
                 Custom…
               </button>
@@ -303,39 +338,66 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
                 value={agentCmd}
                 onChange={(e) => setAgentCmd(e.target.value)}
                 placeholder="Custom command (e.g. agy --mode auto)"
-                className="mt-2 w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] focus:border-[#58a6ff] focus:outline-none text-[#e6edf3] font-mono-code"
+                className="jjdr-input mt-2 w-full px-3.5 py-2 rounded-full font-mono-code"
               />
             )}
           </div>
 
-          {/* Autonomous (YOLO) mode toggle + effective command preview */}
+          {/* Autonomous (YOLO) mode toggle */}
           {agentCmd.trim() !== "" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded bg-[#0b0c0e] border border-[#1c1f26]">
+            <div className="space-y-3">
+              <div
+                className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl"
+                style={{
+                  background: "var(--input-bg)",
+                  border: "1px solid var(--input-border)",
+                }}
+              >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-[#e6edf3]">
-                    <Zap className="w-3.5 h-3.5 text-[#e3b341]" />
+                  <div
+                    className="flex items-center gap-1.5 text-xs font-semibold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    <Zap
+                      className="w-3.5 h-3.5"
+                      style={{ color: "var(--warn-fg)" }}
+                    />
                     <span>Autonomous Mode (Auto-Approve)</span>
                   </div>
-                  <div className="mt-0.5 text-[10px] font-mono-code text-[#8b949e] truncate">
+                  <div
+                    className="mt-0.5 text-[10px] font-mono-code truncate"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     $ {formatEffectiveCommand(agentCmd, autonomous)}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setAutonomous((v) => !v)}
-                  className={`px-2.5 py-1 rounded text-[11px] font-semibold border shrink-0 cursor-pointer ${
+                  className="px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 cursor-pointer"
+                  style={
                     autonomous
-                      ? "bg-[#33260f] border-[#d29922] text-[#e3b341]"
-                      : "bg-[#1a202c] border-[#252932] text-[#8b949e]"
-                  }`}
+                      ? {
+                          background: "var(--warn-soft)",
+                          border: "1px solid var(--warn-border)",
+                          color: "var(--warn-fg)",
+                        }
+                      : {
+                          background: "var(--pill-bg)",
+                          border: "1px solid var(--pill-border)",
+                          color: "var(--text-muted)",
+                        }
+                  }
                 >
                   {autonomous ? "ON (YOLO)" : "OFF (Ask)"}
                 </button>
               </div>
 
               <div>
-                <label className="block text-[#9aa7b8] mb-1 font-medium">
+                <label
+                  className="block mb-1.5 font-semibold"
+                  style={{ color: "var(--text-secondary)" }}
+                >
                   First Task (optional)
                 </label>
                 <textarea
@@ -343,25 +405,32 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
                   value={initialPrompt}
                   onChange={(e) => setInitialPrompt(e.target.value)}
                   placeholder="Leave blank to open interactive CLI immediately..."
-                  className="w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] focus:border-[#58a6ff] focus:outline-none text-[#e6edf3] resize-none"
+                  className="jjdr-input w-full px-3.5 py-2.5 rounded-2xl resize-none"
                 />
               </div>
             </div>
           )}
         </div>
 
-        <div className="px-4 py-3 bg-[#0e1014] border-t border-[#1c1f26] flex justify-end gap-2">
+        <div
+          className="px-5 py-3.5 flex justify-end gap-2"
+          style={{
+            background: "var(--modal-footer)",
+            borderTop: "1px solid var(--divider)",
+          }}
+        >
           <button
             type="button"
             onClick={() => setProjectId(null)}
-            className="px-3 py-1.5 rounded text-xs text-[#9aa7b8] hover:text-[#e6edf3] cursor-pointer"
+            className="px-4 py-1.5 rounded-full text-xs cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={creating || !branchName.trim()}
-            className="px-4 py-1.5 rounded text-xs font-semibold bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-40 text-white cursor-pointer"
+            className="jjdr-primary-btn px-4 py-1.5 rounded-full text-xs font-semibold disabled:opacity-40 cursor-pointer"
           >
             {creating ? "Creating..." : "Create & Launch"}
           </button>

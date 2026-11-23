@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, FolderOpen, Plus, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Plus,
+  X,
+} from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
@@ -157,7 +164,8 @@ export const ProjectModal = React.memo(function ProjectModal() {
         name: finalName,
         repo_path: repoPath.trim(),
         color,
-        default_branch: inspectInfo?.default_branch || editing?.default_branch || undefined,
+        default_branch:
+          inspectInfo?.default_branch || editing?.default_branch || undefined,
         default_agent: defaultAgent.trim() || "agy",
         verify_command: verifyCommand.trim() || undefined,
         group: group.trim() || "Default",
@@ -169,7 +177,10 @@ export const ProjectModal = React.memo(function ProjectModal() {
       useAppStore.getState().setProjects(updated);
       const wts = await listAllWorktrees().catch(() => ({}));
       useAppStore.getState().setWorktreesByProject(wts);
-      showToast(editing ? `Updated ${finalName}` : `Added ${finalName}`, "success");
+      showToast(
+        editing ? `Updated ${finalName}` : `Added ${finalName}`,
+        "success"
+      );
       setTarget(null);
     } catch (err) {
       setError(String(err));
@@ -194,66 +205,110 @@ export const ProjectModal = React.memo(function ProjectModal() {
     ])
   );
 
+  const chipStyle = (active: boolean): React.CSSProperties => ({
+    background: active ? "var(--accent-soft)" : "var(--input-bg)",
+    border: `1px solid ${active ? "var(--accent)" : "var(--input-border)"}`,
+    color: active ? "var(--text-primary)" : "var(--text-secondary)",
+  });
+
   return (
     <div
       onClick={() => setTarget(null)}
-      className="fixed inset-0 z-50 bg-[#05070a]/80 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "var(--modal-overlay)" }}
     >
       <form
         onSubmit={(e) => void handleSubmit(e)}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-xl bg-[#111318] border border-[#252932] overflow-hidden"
+        className="jjdr-modal w-full max-w-lg rounded-[22px] overflow-hidden"
       >
-        <div className="px-4 py-3 border-b border-[#1c1f26] flex items-center justify-between">
-          <h3 className="text-sm font-bold text-[#e6edf3]">
+        <div
+          className="px-5 py-4 flex items-center justify-between"
+          style={{ borderBottom: "1px solid var(--divider)" }}
+        >
+          <h3
+            className="text-sm font-bold"
+            style={{ color: "var(--text-primary)" }}
+          >
             {editing ? `Edit Project — ${editing.name}` : "Add Git Project"}
           </h3>
           <button
             type="button"
             onClick={() => setTarget(null)}
-            className="text-[#8b949e] hover:text-[#e6edf3] cursor-pointer"
+            className="p-1.5 rounded-full hover:bg-black/10 cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-4 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+        <div className="p-5 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
           {error && (
-            <div className="p-2.5 rounded bg-[#2d1619] border border-[#f85149]/50 text-[#ff7b72]">
+            <div
+              className="p-3 rounded-2xl"
+              style={{
+                background: "var(--action-soft)",
+                border: "1px solid var(--action-border)",
+                color: "var(--action-fg)",
+              }}
+            >
               {error}
             </div>
           )}
 
-          {/* Step 1: Select Folder (auto-fills everything else) */}
+          {/* Step 1: Select Folder */}
           <div>
-            <label className="block text-[#9aa7b8] mb-1.5 font-medium">
+            <label
+              className="block mb-1.5 font-semibold"
+              style={{ color: "var(--text-secondary)" }}
+            >
               1. Git Repository Folder *
             </label>
             <button
               type="button"
               onClick={() => void handleBrowse()}
-              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded bg-[#0b0c0e] hover:bg-[#161c28] border border-[#252932] hover:border-[#58a6ff] text-left cursor-pointer"
+              className="jjdr-input w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl text-left cursor-pointer transition-colors"
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <FolderOpen className="w-4 h-4 text-[#58a6ff] shrink-0" />
+              <div className="flex items-center gap-2.5 min-w-0">
+                <FolderOpen
+                  className="w-4 h-4 shrink-0"
+                  style={{ color: "var(--accent)" }}
+                />
                 <span
-                  className={`font-mono-code truncate ${
-                    repoPath ? "text-[#e6edf3]" : "text-[#6c788a]"
-                  }`}
+                  className="font-mono-code truncate"
+                  style={{
+                    color: repoPath
+                      ? "var(--text-primary)"
+                      : "var(--text-muted)",
+                  }}
                 >
                   {repoPath || "Click to pick a local Git repository folder..."}
                 </span>
               </div>
-              <span className="px-2 py-0.5 rounded bg-[#1f2a3d] text-[#79c0ff] text-[11px] font-medium shrink-0">
+              <span
+                className="px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0"
+                style={{
+                  background: "var(--accent-soft)",
+                  color: "var(--accent)",
+                }}
+              >
                 {inspecting ? "Scanning..." : "Browse"}
               </span>
             </button>
             {inspectInfo && (
-              <div className="mt-1.5 flex items-center gap-2 text-[11px] text-[#8b949e]">
-                <span className="text-[#56d364]">✓ Git repo detected</span>
+              <div
+                className="mt-2 flex items-center gap-2 text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <span style={{ color: "var(--ready-fg)" }}>
+                  ✓ Git repo detected
+                </span>
                 <span>·</span>
                 <span>
-                  HEAD: <code className="text-[#c9d1d9]">{inspectInfo.current_branch}</code>
+                  HEAD:{" "}
+                  <code style={{ color: "var(--text-primary)" }}>
+                    {inspectInfo.current_branch}
+                  </code>
                 </span>
                 {inspectInfo.detected_env_files.length > 0 && (
                   <>
@@ -267,10 +322,13 @@ export const ProjectModal = React.memo(function ProjectModal() {
             )}
           </div>
 
-          {/* Step 2: Project Name (auto-filled) + Color */}
+          {/* Step 2: Name + Color */}
           <div className="grid grid-cols-3 gap-3 items-end">
             <div className="col-span-2">
-              <label className="block text-[#9aa7b8] mb-1 font-medium">
+              <label
+                className="block mb-1.5 font-semibold"
+                style={{ color: "var(--text-secondary)" }}
+              >
                 2. Project Name
               </label>
               <input
@@ -278,33 +336,42 @@ export const ProjectModal = React.memo(function ProjectModal() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Auto-filled from folder"
-                className="w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] focus:border-[#58a6ff] focus:outline-none text-[#e6edf3]"
+                className="jjdr-input w-full px-3.5 py-2 rounded-full"
               />
             </div>
 
             <div>
-              <label className="block text-[#9aa7b8] mb-1 font-medium">
+              <label
+                className="block mb-1.5 font-semibold"
+                style={{ color: "var(--text-secondary)" }}
+              >
                 Color
               </label>
-              <div className="flex items-center gap-1 flex-wrap py-1">
+              <div className="flex items-center gap-1.5 flex-wrap py-1">
                 {PROJECT_COLORS.map((c) => (
                   <button
                     key={c}
                     type="button"
                     onClick={() => setColor(c)}
-                    className={`w-5 h-5 rounded cursor-pointer border-2 ${
-                      color === c ? "border-white" : "border-transparent"
-                    }`}
-                    style={{ backgroundColor: c }}
+                    className="w-5 h-5 rounded-full cursor-pointer transition-transform"
+                    style={{
+                      backgroundColor: c,
+                      boxShadow:
+                        color === c ? "0 0 0 2px var(--text-primary)" : "none",
+                      transform: color === c ? "scale(1.1)" : "none",
+                    }}
                   />
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Step 3: Default AI CLI (Multiple-choice chips) */}
+          {/* Step 3: Default AI CLI */}
           <div>
-            <label className="block text-[#9aa7b8] mb-1.5 font-medium">
+            <label
+              className="block mb-1.5 font-semibold"
+              style={{ color: "var(--text-secondary)" }}
+            >
               3. Default AI CLI
             </label>
             <div className="flex flex-wrap gap-1.5">
@@ -318,11 +385,8 @@ export const ProjectModal = React.memo(function ProjectModal() {
                       setCustomAgentMode(false);
                       setDefaultAgent(a.cmd);
                     }}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium border cursor-pointer ${
-                      active
-                        ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                        : "bg-[#0b0c0e] border-[#1c1f26] text-[#c9d1d9] hover:border-[#3d4a63]"
-                    }`}
+                    style={chipStyle(active)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer"
                   >
                     {active && <Check className="w-3 h-3" />}
                     {a.label}
@@ -340,11 +404,8 @@ export const ProjectModal = React.memo(function ProjectModal() {
                       setDefaultAgent(tpl.name);
                     }}
                     title={tpl.description}
-                    className={`px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                      active
-                        ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                        : "bg-[#0b0c0e] border-[#1c1f26] text-[#9aa7b8] hover:text-[#e6edf3]"
-                    }`}
+                    style={chipStyle(active)}
+                    className="px-3 py-1.5 rounded-full text-xs cursor-pointer"
                   >
                     tpl:{tpl.name}
                   </button>
@@ -353,11 +414,8 @@ export const ProjectModal = React.memo(function ProjectModal() {
               <button
                 type="button"
                 onClick={() => setCustomAgentMode(true)}
-                className={`px-2.5 py-1.5 rounded text-xs border cursor-pointer ${
-                  customAgentMode
-                    ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff]"
-                    : "bg-[#0b0c0e] border-[#1c1f26] text-[#8b949e] hover:text-[#e6edf3]"
-                }`}
+                style={chipStyle(customAgentMode)}
+                className="px-3 py-1.5 rounded-full text-xs cursor-pointer"
               >
                 Custom…
               </button>
@@ -368,14 +426,17 @@ export const ProjectModal = React.memo(function ProjectModal() {
                 value={defaultAgent}
                 onChange={(e) => setDefaultAgent(e.target.value)}
                 placeholder="Custom CLI command"
-                className="mt-2 w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] focus:border-[#58a6ff] focus:outline-none text-[#e6edf3] font-mono-code"
+                className="jjdr-input mt-2 w-full px-3.5 py-2 rounded-full font-mono-code"
               />
             )}
           </div>
 
-          {/* Step 4: Group (Multiple-choice chips) */}
+          {/* Step 4: Group */}
           <div>
-            <label className="block text-[#9aa7b8] mb-1.5 font-medium">
+            <label
+              className="block mb-1.5 font-semibold"
+              style={{ color: "var(--text-secondary)" }}
+            >
               4. Group
             </label>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -384,17 +445,14 @@ export const ProjectModal = React.memo(function ProjectModal() {
                   key={g}
                   type="button"
                   onClick={() => setGroup(g)}
-                  className={`px-2.5 py-1 rounded text-xs border cursor-pointer ${
-                    group === g
-                      ? "bg-[#1f2a3d] border-[#58a6ff] text-[#79c0ff] font-medium"
-                      : "bg-[#0b0c0e] border-[#1c1f26] text-[#9aa7b8] hover:text-[#e6edf3]"
-                  }`}
+                  style={chipStyle(group === g)}
+                  className="px-3 py-1 rounded-full text-xs font-medium cursor-pointer"
                 >
                   {g}
                 </button>
               ))}
               {addingGroup ? (
-                <div className="inline-flex items-center gap-1">
+                <div className="inline-flex items-center gap-1.5">
                   <input
                     type="text"
                     autoFocus
@@ -407,12 +465,12 @@ export const ProjectModal = React.memo(function ProjectModal() {
                       }
                     }}
                     placeholder="Group name"
-                    className="w-24 px-2 py-1 rounded bg-[#0b0c0e] border border-[#58a6ff] text-xs text-[#e6edf3] focus:outline-none"
+                    className="jjdr-input w-28 px-3 py-1 rounded-full text-xs"
                   />
                   <button
                     type="button"
                     onClick={handleConfirmNewGroup}
-                    className="px-2 py-1 rounded bg-[#238636] text-white text-[11px] cursor-pointer"
+                    className="jjdr-primary-btn px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
                   >
                     OK
                   </button>
@@ -421,7 +479,11 @@ export const ProjectModal = React.memo(function ProjectModal() {
                 <button
                   type="button"
                   onClick={() => setAddingGroup(true)}
-                  className="inline-flex items-center gap-0.5 px-2 py-1 rounded text-xs border border-dashed border-[#252932] text-[#8b949e] hover:text-[#e6edf3] cursor-pointer"
+                  className="inline-flex items-center gap-0.5 px-3 py-1 rounded-full text-xs border border-dashed cursor-pointer"
+                  style={{
+                    borderColor: "var(--input-border)",
+                    color: "var(--text-muted)",
+                  }}
                 >
                   <Plus className="w-3 h-3" />
                   New
@@ -430,12 +492,16 @@ export const ProjectModal = React.memo(function ProjectModal() {
             </div>
           </div>
 
-          {/* Optional Advanced Settings (Collapsed by default, choice-first) */}
-          <div className="pt-2 border-t border-[#1c1f26]">
+          {/* Advanced */}
+          <div
+            className="pt-3"
+            style={{ borderTop: "1px solid var(--divider)" }}
+          >
             <button
               type="button"
               onClick={() => setShowAdvanced((v) => !v)}
-              className="flex items-center gap-1.5 text-[11px] font-semibold text-[#8b949e] hover:text-[#e6edf3] cursor-pointer"
+              className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer"
+              style={{ color: "var(--text-muted)" }}
             >
               {showAdvanced ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -449,7 +515,10 @@ export const ProjectModal = React.memo(function ProjectModal() {
               <div className="mt-3 space-y-3 pl-1">
                 {envOptions.length > 0 && (
                   <div>
-                    <div className="text-[#9aa7b8] mb-1">
+                    <div
+                      className="mb-1.5"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
                       Copy files into new worktree
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -460,11 +529,20 @@ export const ProjectModal = React.memo(function ProjectModal() {
                             key={f}
                             type="button"
                             onClick={() => toggleEnvFile(f)}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded font-mono-code text-[11px] border cursor-pointer ${
-                              checked
-                                ? "bg-[#12281c] border-[#3fb950] text-[#56d364]"
-                                : "bg-[#0b0c0e] border-[#1c1f26] text-[#8b949e]"
-                            }`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-mono-code text-[11px] cursor-pointer"
+                            style={{
+                              background: checked
+                                ? "var(--ready-soft)"
+                                : "var(--input-bg)",
+                              border: `1px solid ${
+                                checked
+                                  ? "var(--ready-border)"
+                                  : "var(--input-border)"
+                              }`,
+                              color: checked
+                                ? "var(--ready-fg)"
+                                : "var(--text-muted)",
+                            }}
                           >
                             {checked && <Check className="w-3 h-3" />}
                             {f}
@@ -476,13 +554,16 @@ export const ProjectModal = React.memo(function ProjectModal() {
                 )}
 
                 <div>
-                  <label className="block text-[#9aa7b8] mb-1">
+                  <label
+                    className="block mb-1"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
                     Post-create Setup Command
                   </label>
                   <select
                     value={setupCommand}
                     onChange={(e) => setSetupCommand(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] text-[#e6edf3] font-mono-code focus:border-[#58a6ff] focus:outline-none"
+                    className="jjdr-input w-full px-3.5 py-2 rounded-full font-mono-code"
                   >
                     <option value="">None (fastest)</option>
                     {setupChoices.map((cmd) => (
@@ -494,13 +575,16 @@ export const ProjectModal = React.memo(function ProjectModal() {
                 </div>
 
                 <div>
-                  <label className="block text-[#9aa7b8] mb-1">
+                  <label
+                    className="block mb-1"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
                     One-Click Verify Command
                   </label>
                   <select
                     value={verifyCommand}
                     onChange={(e) => setVerifyCommand(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded bg-[#0b0c0e] border border-[#222630] text-[#e6edf3] font-mono-code focus:border-[#58a6ff] focus:outline-none"
+                    className="jjdr-input w-full px-3.5 py-2 rounded-full font-mono-code"
                   >
                     <option value="">None</option>
                     {verifyChoices.map((cmd) => (
@@ -515,18 +599,25 @@ export const ProjectModal = React.memo(function ProjectModal() {
           </div>
         </div>
 
-        <div className="px-4 py-3 bg-[#0e1014] border-t border-[#1c1f26] flex justify-end gap-2">
+        <div
+          className="px-5 py-3.5 flex justify-end gap-2"
+          style={{
+            background: "var(--modal-footer)",
+            borderTop: "1px solid var(--divider)",
+          }}
+        >
           <button
             type="button"
             onClick={() => setTarget(null)}
-            className="px-3 py-1.5 rounded text-xs text-[#9aa7b8] hover:text-[#e6edf3] cursor-pointer"
+            className="px-4 py-1.5 rounded-full text-xs cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving || !repoPath.trim()}
-            className="px-4 py-1.5 rounded text-xs font-semibold bg-[#238636] hover:bg-[#2ea043] disabled:opacity-40 text-white cursor-pointer"
+            className="jjdr-primary-btn px-4 py-1.5 rounded-full text-xs font-semibold disabled:opacity-40 cursor-pointer"
           >
             {saving ? "Saving..." : editing ? "Save Changes" : "Add Project"}
           </button>

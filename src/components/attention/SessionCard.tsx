@@ -59,22 +59,37 @@ export const SessionCard = React.memo(function SessionCard({
     }
   };
 
-  const surfaceCls = attached
-    ? "bg-[#181c24] border-[#e4e4e7]/50 ring-1 ring-[#e4e4e7]/20"
-    : selected
-    ? "bg-[#171a22] border-[#d4d4d8]/40 ring-1 ring-[#d4d4d8]/15"
-    : bucket === "needs_you"
-    ? "bg-[#151519] border-[#2c1f24] hover:border-[#3d282f]"
-    : "bg-[#13161b] border-[#1e222a] hover:bg-[#161a21] hover:border-[#282d38]";
+  const cardStyle: React.CSSProperties = (() => {
+    let background = "var(--card-bg)";
+    let border = "1px solid var(--card-border)";
 
-  const accentBarColor =
-    bucket === "needs_you"
-      ? "bg-[#ef4444]"
-      : bucket === "ready"
-      ? "bg-[#10b981]"
-      : bucket === "running"
-      ? "bg-[#f59e0b]"
-      : "";
+    if (bucket === "needs_you") {
+      background = "var(--action-bg)";
+      border = "1px solid var(--action-border)";
+    } else if (bucket === "ready") {
+      background = "var(--ready-bg)";
+      border = "1px solid var(--ready-border)";
+    } else if (bucket === "running") {
+      background = "var(--run-bg)";
+      border = "1px solid var(--run-border)";
+    } else {
+      background =
+        selected || attached ? "var(--card-bg)" : "var(--card-idle-bg)";
+      border =
+        selected || attached
+          ? "1px solid var(--accent-border)"
+          : "1px dashed var(--card-idle-border)";
+    }
+
+    return {
+      background,
+      border,
+      boxShadow:
+        selected || attached
+          ? "var(--card-selected-shadow)"
+          : "var(--card-shadow)",
+    };
+  })();
 
   return (
     <div
@@ -85,14 +100,9 @@ export const SessionCard = React.memo(function SessionCard({
         }
       }}
       onDoubleClick={() => isLive && setAttachedAddress(session.address)}
-      className={`group relative rounded-lg border pl-4 pr-3.5 py-2.5 cursor-pointer transition-all select-none overflow-hidden ${surfaceCls}`}
+      style={cardStyle}
+      className="jjdr-card-lift group relative rounded-[18px] p-4 cursor-pointer select-none flex flex-col gap-2.5"
     >
-      {accentBarColor && (
-        <div
-          className={`absolute left-0 top-0 bottom-0 w-[3px] ${accentBarColor}`}
-        />
-      )}
-
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <StatusBadge
@@ -100,13 +110,18 @@ export const SessionCard = React.memo(function SessionCard({
             status={terminal.status}
             isStuck={session.isStuck}
             stuckMinutes={session.stuckMinutes}
-            compact
           />
-          <span className="text-xs font-medium text-[#a1a1aa]">
+          <span
+            className="text-xs font-medium"
+            style={{ color: "var(--text-secondary)" }}
+          >
             {session.projectName}
           </span>
-          <span className="text-[#3f3f46]">/</span>
-          <span className="text-xs font-mono-code font-semibold text-[#f4f4f5]">
+          <span style={{ color: "var(--text-faint)" }}>/</span>
+          <span
+            className="text-[13px] font-mono-code font-bold"
+            style={{ color: "var(--text-primary)" }}
+          >
             {session.branch}
           </span>
         </div>
@@ -129,38 +144,48 @@ export const SessionCard = React.memo(function SessionCard({
                     });
                   }
                 }}
-                className="inline-flex items-center gap-1 hover:underline cursor-pointer"
+                className="inline-flex items-center gap-1 font-semibold hover:underline cursor-pointer"
                 title="View Git Diff"
               >
-                <span className="text-[#34d399]">+{worktree.added_lines}</span>
-                <span className="text-[#f87171]">-{worktree.deleted_lines}</span>
+                <span style={{ color: "var(--ready-fg)" }}>
+                  +{worktree.added_lines}
+                </span>
+                <span style={{ color: "var(--action-fg)" }}>
+                  -{worktree.deleted_lines}
+                </span>
               </button>
             )}
 
           {showOverlap && worktree && worktree.overlap_files.length > 0 && (
             <span
-              title={`Potential merge overlap:\n${worktree.overlap_files.join("\n")}`}
-              className="text-[#f59e0b]"
+              title={`Potential merge overlap:\n${worktree.overlap_files.join(
+                "\n"
+              )}`}
+              style={{ color: "var(--warn-fg)" }}
             >
-              <AlertTriangle className="w-3 h-3 inline" />
+              <AlertTriangle className="w-3.5 h-3.5 inline" />
             </span>
           )}
 
-          <span className="text-[#6b7280]">
+          <span style={{ color: "var(--text-muted)" }}>
             {session.agentLabel} · {formatElapsed(session.elapsedMs)}
           </span>
 
           {bucket === "needs_you" && isLive && (
             <button
               onClick={() => void sendTerminalKeys(session.address, ["enter"])}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-sans font-medium bg-[#ef4444]/15 hover:bg-[#ef4444]/25 text-[#f87171] cursor-pointer"
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-sans font-semibold cursor-pointer transition-opacity hover:opacity-90"
+              style={{
+                background: "var(--action-fg)",
+                color: "#ffffff",
+              }}
             >
-              <Check className="w-2.5 h-2.5" />
-              Approve
+              <Check className="w-3 h-3" />
+              승인
             </button>
           )}
 
-          <div className="hidden group-hover:inline-flex items-center gap-1">
+          <div className="hidden group-hover:inline-flex items-center gap-0.5">
             {worktree &&
               (worktree.added_lines > 0 ||
                 worktree.deleted_lines > 0 ||
@@ -176,27 +201,30 @@ export const SessionCard = React.memo(function SessionCard({
                     }
                   }}
                   title="Git diff"
-                  className="p-0.5 rounded hover:bg-[#232732] text-[#71717a] hover:text-[#e4e4e7] cursor-pointer"
+                  className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                  style={{ color: "var(--text-secondary)" }}
                 >
-                  <FileDiff className="w-3 h-3" />
+                  <FileDiff className="w-3.5 h-3.5" />
                 </button>
               )}
             {isLive && (
               <button
                 onClick={() => void interruptTerminal(session.address)}
                 title="Interrupt"
-                className="p-0.5 rounded hover:bg-[#232732] text-[#71717a] hover:text-[#f59e0b] cursor-pointer"
+                className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                style={{ color: "var(--warn-fg)" }}
               >
-                <OctagonX className="w-3 h-3" />
+                <OctagonX className="w-3.5 h-3.5" />
               </button>
             )}
             {isLive && (
               <button
                 onClick={() => void popoutExternalTerminal(session.address)}
                 title="Open in external terminal"
-                className="p-0.5 rounded hover:bg-[#232732] text-[#71717a] hover:text-[#e4e4e7] cursor-pointer"
+                className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                style={{ color: "var(--text-secondary)" }}
               >
-                <ExternalLink className="w-3 h-3" />
+                <ExternalLink className="w-3.5 h-3.5" />
               </button>
             )}
             {worktree && !worktree.is_main && session.projectId ? (
@@ -212,17 +240,19 @@ export const SessionCard = React.memo(function SessionCard({
                   })
                 }
                 title="Teardown worktree"
-                className="p-0.5 rounded hover:bg-[#2c191d] text-[#71717a] hover:text-[#f87171] cursor-pointer"
+                className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                style={{ color: "var(--action-fg)" }}
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             ) : (
               <button
                 onClick={() => void handleKill()}
                 title="Close session"
-                className="p-0.5 rounded hover:bg-[#2c191d] text-[#71717a] hover:text-[#f87171] cursor-pointer"
+                className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                style={{ color: "var(--action-fg)" }}
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -232,10 +262,8 @@ export const SessionCard = React.memo(function SessionCard({
               onClick={() =>
                 setAttachedAddress(attached ? null : session.address)
               }
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-sans font-medium transition-colors cursor-pointer ${
-                attached
-                  ? "bg-[#f4f4f5] text-[#0b0c0e]"
-                  : "bg-[#1a1e26] hover:bg-[#242934] text-[#d4d4d8]"
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-semibold transition-colors cursor-pointer ${
+                attached ? "jjdr-primary-btn" : "jjdr-pill"
               }`}
               title="Toggle terminal pane (Ctrl+`)"
             >
@@ -246,7 +274,17 @@ export const SessionCard = React.memo(function SessionCard({
         </div>
       </div>
 
-      <div className="mt-1.5 text-xs text-[#9ca3af] truncate">{lastSummary}</div>
+      <div
+        className="text-[12.5px] leading-snug truncate"
+        style={{
+          color:
+            bucket === "needs_you"
+              ? "var(--text-primary)"
+              : "var(--text-secondary)",
+        }}
+      >
+        {lastSummary}
+      </div>
     </div>
   );
 });

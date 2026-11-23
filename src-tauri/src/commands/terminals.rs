@@ -296,9 +296,9 @@ pub async fn attach_terminal(
                 "rows": rows.max(5),
                 "history": 400,
                 "display": {
-                    "bg": "#0b0c0e",
-                    "fg": "#f4f4f5",
-                    "cursor": "#e4e4e7"
+                    "bg": "#0e1322",
+                    "fg": "#eef2ff",
+                    "cursor": "#818cf8"
                 }
             }),
         )

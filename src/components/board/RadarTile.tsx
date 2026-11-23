@@ -17,6 +17,7 @@ import { formatElapsed } from "../../utils/format";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import { normalizePath } from "../../workers/dashboardLogic";
+import { pickPreferredWorktreeSession } from "../../utils/worktreeSessions";
 import {
   killTerminal,
   launchSession,
@@ -35,7 +36,14 @@ export const RadarTile = React.memo(function RadarTile({
   sessions,
 }: RadarTileProps) {
   const cardKey = `wt::${project.id}::${normalizePath(worktree.path)}`;
+  // Card visual summary always reflects highest-priority session (`sessions[0]`),
+  // while opening/attaching restores the last active tab (or prefers AI) for this worktree.
   const session = sessions[0] ?? null;
+  const rememberedAddr = useUiStore(
+    (s) => s.lastSessionByCardKey[cardKey] ?? null
+  );
+  const attachTarget = pickPreferredWorktreeSession(sessions, rememberedAddr);
+  const isTargetLive = attachTarget?.terminal.state === "live";
   const isLive = session?.terminal.state === "live";
 
   const showOverlap = useAppStore((s) => s.settings.show_merge_overlap);
@@ -44,30 +52,34 @@ export const RadarTile = React.memo(function RadarTile({
   const setSelectedCardKey = useUiStore((s) => s.setSelectedCardKey);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
   const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
+  const rememberCardSession = useUiStore((s) => s.rememberCardSession);
   const setLaunchTarget = useUiStore((s) => s.setLaunchTarget);
   const setDiffTarget = useUiStore((s) => s.setDiffTarget);
   const setTeardownTarget = useUiStore((s) => s.setTeardownTarget);
   const showToast = useUiStore((s) => s.showToast);
 
   const isSelected = selectedCardKey === cardKey;
-  const isAttached = Boolean(session && attachedAddress === session.address);
+  const isAttached = Boolean(
+    attachedAddress && sessions.some((s) => s.address === attachedAddress)
+  );
   const bucket = session?.bucket ?? "idle";
   const isStandby = !session || bucket === "idle";
 
   const lastLine = (() => {
-    if (!session) return "Standby · Press Ctrl+` to start";
+    if (!session) return "대기 중 · Ctrl+` 또는 더블클릭으로 시작";
     if (session.terminal.status?.msg) return session.terminal.status.msg;
     if (session.previewLines.length > 0) {
       return session.previewLines[session.previewLines.length - 1];
     }
-    return bucket === "running" ? "Working..." : "Ready";
+    return bucket === "running" ? "작업 진행 중..." : "응답 준비 완료";
   })();
 
   const openOrLaunch = async () => {
     setSelectedCardKey(cardKey);
-    if (session && isLive) {
-      setSelectedAddress(session.address);
-      setAttachedAddress(session.address);
+    if (attachTarget && isTargetLive) {
+      setSelectedAddress(attachTarget.address);
+      setAttachedAddress(attachTarget.address);
+      rememberCardSession(cardKey, attachTarget.address);
       return;
     }
     try {
@@ -81,7 +93,9 @@ export const RadarTile = React.memo(function RadarTile({
         name: `${project.name}-${worktree.branch.replace(/[/\\ ]/g, "-")}`,
         autonomous: true,
       });
-      useAppStore.getState().recordLastAgent(normalizePath(worktree.path), argv);
+      useAppStore
+        .getState()
+        .recordLastAgent(normalizePath(worktree.path), argv);
       if (addr) {
         setSelectedAddress(addr);
         setAttachedAddress(addr);
@@ -91,49 +105,63 @@ export const RadarTile = React.memo(function RadarTile({
     }
   };
 
-  // Uniform Obsidian surface + subtle left 3px accent bar + crisp silver focus ring
-  const surfaceCls = isAttached
-    ? "bg-[#181c24] border-[#e4e4e7]/50 ring-1 ring-[#e4e4e7]/20"
-    : isSelected
-    ? "bg-[#171a22] border-[#d4d4d8]/40 ring-1 ring-[#d4d4d8]/15"
-    : bucket === "needs_you"
-    ? "bg-[#151519] border-[#2c1f24] hover:border-[#3d282f]"
-    : "bg-[#13161b] border-[#1e222a] hover:bg-[#161a21] hover:border-[#282d38]";
+  // Organic 18px squircle surface driven purely by theme CSS tokens (No rigid vertical bar, Zero-Blur!)
+  const tileStyle: React.CSSProperties = (() => {
+    let background = "var(--card-bg)";
+    let border = "1px solid var(--card-border)";
 
-  const opacityCls =
-    isStandby && !isSelected && !isAttached
-      ? "opacity-65 hover:opacity-100"
-      : "opacity-100";
+    if (bucket === "needs_you") {
+      background = "var(--action-bg)";
+      border = "1px solid var(--action-border)";
+    } else if (bucket === "ready") {
+      background = "var(--ready-bg)";
+      border = "1px solid var(--ready-border)";
+    } else if (bucket === "running") {
+      background = "var(--run-bg)";
+      border = "1px solid var(--run-border)";
+    } else if (isStandby) {
+      background =
+        isSelected || isAttached ? "var(--card-bg)" : "var(--card-idle-bg)";
+      border =
+        isSelected || isAttached
+          ? "1px solid var(--accent-border)"
+          : "1px dashed var(--card-idle-border)";
+    }
 
-  const accentBarColor =
-    bucket === "needs_you"
-      ? "bg-[#ef4444]"
-      : bucket === "ready"
-      ? "bg-[#10b981]"
-      : bucket === "running"
-      ? "bg-[#f59e0b]"
-      : "";
+    return {
+      background,
+      border,
+      boxShadow:
+        isSelected || isAttached
+          ? "var(--card-selected-shadow)"
+          : "var(--card-shadow)",
+    };
+  })();
 
   return (
     <div
       data-jjdr-card={cardKey}
-      data-jjdr-session-addr={session?.address ?? ""}
+      data-jjdr-session-addr={attachTarget?.address ?? session?.address ?? ""}
       data-jjdr-project-id={project.id}
       data-jjdr-worktree-path={worktree.path}
       data-jjdr-branch={worktree.branch}
       onClick={() => {
         setSelectedCardKey(cardKey);
-        setSelectedAddress(session?.address ?? null);
+        setSelectedAddress(attachTarget?.address ?? session?.address ?? null);
         if (attachedAddress) {
-          if (session && isLive) {
-            setAttachedAddress(session.address);
+          if (attachTarget && isTargetLive) {
+            setAttachedAddress(attachTarget.address);
+            rememberCardSession(cardKey, attachTarget.address);
           } else {
             void launchSession({
               project_id: project.id,
               cwd: worktree.path,
               branch: worktree.branch,
               argv: [],
-              name: `${project.name}-${(worktree.branch || "main").replace(/[/\\ ]/g, "-")}-sh`,
+              name: `${project.name}-${(worktree.branch || "main").replace(
+                /[/\\ ]/g,
+                "-"
+              )}-sh`,
             })
               .then((addr) => {
                 if (addr && useUiStore.getState().selectedCardKey === cardKey) {
@@ -148,48 +176,49 @@ export const RadarTile = React.memo(function RadarTile({
         }
       }}
       onDoubleClick={() => void openOrLaunch()}
-      className={`group relative rounded-lg border pl-3.5 pr-3 py-2.5 cursor-pointer transition-all select-none overflow-hidden ${surfaceCls} ${opacityCls}`}
+      style={tileStyle}
+      className="jjdr-card-lift group relative rounded-[18px] p-3.5 cursor-pointer select-none flex flex-col justify-between gap-2 min-w-0"
     >
-      {/* Left 3px Semantic Accent Bar */}
-      {accentBarColor && (
-        <div
-          className={`absolute left-0 top-0 bottom-0 w-[3px] ${accentBarColor}`}
-        />
-      )}
-
-      {/* Row 1: Dot + Branch + Clean Metadata (No boxy badges) */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* Row 1: Organic Status Pill + Branch + Soft Metadata */}
+      <div className="flex items-center justify-between gap-1.5 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
           {session ? (
             <StatusBadge
               bucket={session.bucket}
               status={session.terminal.status}
               isStuck={session.isStuck}
               stuckMinutes={session.stuckMinutes}
-              compact
             />
           ) : (
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3f3f46] shrink-0" />
+            <StatusBadge bucket="idle" />
           )}
 
           <span
-            className={`text-xs font-mono-code truncate ${
-              isSelected || isAttached || !isStandby
-                ? "font-semibold text-[#f4f4f5]"
-                : "font-medium text-[#a1a1aa]"
-            }`}
+            className="text-[13px] font-mono-code font-bold truncate"
+            style={{
+              color:
+                isStandby && !isSelected && !isAttached
+                  ? "var(--text-secondary)"
+                  : "var(--text-primary)",
+            }}
           >
             {worktree.branch || "(detached)"}
           </span>
 
           {worktree.is_merged && (
-            <span className="text-[10px] font-mono-code text-[#52525b] shrink-0">
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
+              style={{
+                background: "var(--pill-bg)",
+                color: "var(--text-muted)",
+              }}
+            >
               merged
             </span>
           )}
         </div>
 
-        {/* Right Aligned Tabular Metrics & Hover Controls */}
+        {/* Right Aligned Metrics & Hover Pill Actions */}
         <div
           onClick={(e) => e.stopPropagation()}
           className="flex items-center gap-2 shrink-0 text-[11px] font-mono-code tabular-nums"
@@ -205,44 +234,41 @@ export const RadarTile = React.memo(function RadarTile({
                 })
               }
               title="Inspect Git Diff"
-              className="inline-flex items-center gap-1 hover:underline cursor-pointer"
+              className="inline-flex items-center gap-1 font-semibold hover:underline cursor-pointer"
             >
-              <span className="text-[#34d399]">+{worktree.added_lines}</span>
-              <span className="text-[#f87171]">-{worktree.deleted_lines}</span>
+              <span style={{ color: "var(--ready-fg)" }}>
+                +{worktree.added_lines}
+              </span>
+              <span style={{ color: "var(--action-fg)" }}>
+                -{worktree.deleted_lines}
+              </span>
             </button>
           )}
 
           {showOverlap && worktree.overlap_files.length > 0 && (
             <span
-              title={`Potential merge overlap:\n${worktree.overlap_files.join("\n")}`}
-              className="text-[#f59e0b]"
+              title={`Potential merge overlap:\n${worktree.overlap_files.join(
+                "\n"
+              )}`}
+              style={{ color: "var(--warn-fg)" }}
             >
-              <AlertTriangle className="w-3 h-3 inline" />
+              <AlertTriangle className="w-3.5 h-3.5 inline" />
             </span>
           )}
 
-          {session && isLive && bucket === "needs_you" ? (
-            <button
-              type="button"
-              onClick={() => void sendTerminalKeys(session.address, ["enter"])}
-              title="Approve (Enter)"
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-sans font-medium bg-[#ef4444]/15 hover:bg-[#ef4444]/25 text-[#f87171] cursor-pointer transition-colors"
+          {session && (
+            <span
+              className="group-hover:hidden"
+              style={{ color: "var(--text-muted)" }}
             >
-              <Check className="w-2.5 h-2.5" />
-              Approve
-            </button>
-          ) : (
-            session && (
-              <span className="text-[#6b7280] group-hover:hidden">
-                {session.agentLabel}
-                {sessions.length > 1 ? `+${sessions.length - 1}` : ""} ·{" "}
-                {formatElapsed(session.elapsedMs)}
-              </span>
-            )
+              {session.agentLabel}
+              {sessions.length > 1 ? `+${sessions.length - 1}` : ""} ·{" "}
+              {formatElapsed(session.elapsedMs)}
+            </span>
           )}
 
-          {/* Hover Quick Actions */}
-          <div className="hidden group-hover:inline-flex items-center gap-1">
+          {/* Hover Quick Action Pills */}
+          <div className="hidden group-hover:inline-flex items-center gap-0.5">
             {(worktree.added_lines > 0 ||
               worktree.deleted_lines > 0 ||
               worktree.dirty_count > 0) && (
@@ -256,9 +282,10 @@ export const RadarTile = React.memo(function RadarTile({
                   })
                 }
                 title="View Diff"
-                className="p-0.5 rounded hover:bg-[#232732] text-[#71717a] hover:text-[#e4e4e7] cursor-pointer"
+                className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                style={{ color: "var(--text-secondary)" }}
               >
-                <FileDiff className="w-3 h-3" />
+                <FileDiff className="w-3.5 h-3.5" />
               </button>
             )}
             <button
@@ -272,9 +299,10 @@ export const RadarTile = React.memo(function RadarTile({
                 })
               }
               title="Launch AI CLI"
-              className="p-0.5 rounded hover:bg-[#232732] text-[#71717a] hover:text-[#e4e4e7] cursor-pointer"
+              className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+              style={{ color: "var(--text-secondary)" }}
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
             {!worktree.is_main ? (
               <button
@@ -290,9 +318,10 @@ export const RadarTile = React.memo(function RadarTile({
                   })
                 }
                 title="Teardown worktree"
-                className="p-0.5 rounded hover:bg-[#2c191d] text-[#71717a] hover:text-[#f87171] cursor-pointer"
+                className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                style={{ color: "var(--action-fg)" }}
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             ) : (
               session && (
@@ -303,31 +332,58 @@ export const RadarTile = React.memo(function RadarTile({
                     if (isAttached) setAttachedAddress(null);
                   }}
                   title="Close session"
-                  className="p-0.5 rounded hover:bg-[#2c191d] text-[#71717a] hover:text-[#f87171] cursor-pointer"
+                  className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                  style={{ color: "var(--action-fg)" }}
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )
             )}
           </div>
 
           {isAttached && (
-            <Terminal className="w-3 h-3 text-[#e4e4e7] shrink-0" />
+            <Terminal
+              className="w-3.5 h-3.5 shrink-0"
+              style={{ color: "var(--accent)" }}
+            />
           )}
         </div>
       </div>
 
-      {/* Row 2: Calm Single-Line Digest aligned with branch name */}
-      <div
-        className={`mt-1.5 text-xs truncate ${
-          bucket === "needs_you"
-            ? "text-[#e4e4e7]"
-            : session
-            ? "text-[#9ca3af]"
-            : "text-[#52525b]"
-        }`}
-      >
-        {lastLine}
+      {/* Row 2: Calm Single-Line Digest + One-Click Approve Pill */}
+      <div className="flex items-center justify-between gap-3">
+        <p
+          className="text-[12.5px] leading-snug truncate"
+          style={{
+            color:
+              bucket === "needs_you"
+                ? "var(--text-primary)"
+                : isStandby
+                ? "var(--text-faint)"
+                : "var(--text-secondary)",
+          }}
+        >
+          {lastLine}
+        </p>
+
+        {session && isLive && bucket === "needs_you" && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void sendTerminalKeys(session.address, ["enter"]);
+            }}
+            title="Approve (Enter)"
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
+            style={{
+              background: "var(--action-fg)",
+              color: "#ffffff",
+            }}
+          >
+            <Check className="w-3 h-3" />
+            승인
+          </button>
+        )}
       </div>
     </div>
   );

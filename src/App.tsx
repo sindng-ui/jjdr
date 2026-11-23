@@ -32,19 +32,31 @@ export function App() {
   const clearToast = useUiStore((s) => s.clearToast);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0b0c0e] text-[#f4f4f5] overflow-hidden">
+    <div className="jjdr-shell h-screen w-screen flex flex-col overflow-hidden">
       <TopStatusBar />
       <HerdrHealthBanner />
 
-      <div className="flex-1 flex min-h-0 overflow-hidden">
+      {/* Frameless Shell Body -> Borderless Sidebar + Floating 22px Rounded Stage */}
+      <div className="flex-1 flex min-h-0 overflow-hidden px-3 pb-3 gap-3">
         {sidebarOpen && <SidebarProjects />}
-        <main className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+        <main className="jjdr-stage flex-1 rounded-[22px] flex min-w-0 min-h-0 overflow-hidden">
           {viewMode === "radar" ? <RadarBoardView /> : <AttentionBoard />}
           {attachedAddress && (
             <Suspense
               fallback={
-                <div className="w-[52%] min-w-[460px] border-l border-[#1c1f26] bg-[#0b0c0e] flex items-center justify-center text-xs text-[#71717a]">
-                  Opening terminal...
+                <div
+                  className="w-[50%] min-w-[440px] p-2.5 pl-0 shrink-0"
+                >
+                  <div
+                    className="h-full rounded-[18px] flex items-center justify-center text-xs"
+                    style={{
+                      background: "var(--term-bg)",
+                      border: "1px solid var(--term-border)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    Opening terminal...
+                  </div>
                 </div>
               }
             >
@@ -63,17 +75,30 @@ export function App() {
       <DiffPreviewModal />
       <SettingsModal />
 
-      {/* Crisp Zero-Blur Obsidian Toast */}
+      {/* Organic Pill Toast (Zero-Blur) */}
       {toast && (
         <div
           onClick={clearToast}
-          className={`fixed bottom-4 right-4 z-50 px-3.5 py-2 rounded-lg border text-xs font-medium cursor-pointer ${
+          className="fixed bottom-5 right-5 z-50 px-4 py-2 rounded-full text-xs font-semibold cursor-pointer shadow-lg"
+          style={
             toast.kind === "error"
-              ? "bg-[#1a1114] border-[#4a232c] text-[#f87171]"
+              ? {
+                  background: "var(--modal-bg)",
+                  border: "1px solid var(--action-border)",
+                  color: "var(--action-fg)",
+                }
               : toast.kind === "success"
-              ? "bg-[#111c17] border-[#1f3d2e] text-[#34d399]"
-              : "bg-[#14171d] border-[#272b36] text-[#e4e4e7]"
-          }`}
+              ? {
+                  background: "var(--modal-bg)",
+                  border: "1px solid var(--ready-border)",
+                  color: "var(--ready-fg)",
+                }
+              : {
+                  background: "var(--modal-bg)",
+                  border: "1px solid var(--modal-border)",
+                  color: "var(--text-primary)",
+                }
+          }
         >
           {toast.message}
         </div>

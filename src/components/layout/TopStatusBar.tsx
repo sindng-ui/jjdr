@@ -50,6 +50,38 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
     }
   };
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    e.currentTarget.blur();
+
+    const ui = useUiStore.getState();
+    const app = useAppStore.getState();
+
+    if (ui.viewMode === "radar") {
+      const firstCard =
+        document.querySelector<HTMLElement>("[data-jjdr-card]");
+      if (!firstCard) return;
+      const cardKey = firstCard.dataset.jjdrCard || "";
+      const addr = firstCard.dataset.jjdrSessionAddr || null;
+      if (cardKey) ui.setSelectedCardKey(cardKey);
+      ui.setSelectedAddress(addr);
+      firstCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (ui.attachedAddress && addr && app.terminals[addr]?.state === "live") {
+        ui.setAttachedAddress(addr);
+      }
+      return;
+    }
+
+    const firstSession = app.computed.sessions[0] ?? null;
+    if (firstSession) {
+      ui.setSelectedAddress(firstSession.address);
+      if (ui.attachedAddress && firstSession.terminal.state === "live") {
+        ui.setAttachedAddress(firstSession.address);
+      }
+    }
+  };
+
   const hasActionable = counts.needsYou > 0 || counts.ready > 0;
 
   const handleHeaderMouseDown = (e: React.MouseEvent<HTMLElement>) => {
@@ -73,133 +105,163 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
     <header
       data-tauri-drag-region
       onMouseDown={handleHeaderMouseDown}
-      className="h-11 pl-3.5 pr-1 bg-[#0e1013] border-b border-[#1c1f26] flex items-center justify-between gap-3 shrink-0 select-none"
+      className="h-14 pl-3.5 pr-2.5 flex items-center justify-between gap-3 shrink-0 select-none"
     >
-      {/* Left: Sidebar toggle + Brand + Unified Status Capsule */}
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={toggleSidebar}
-            title="사이드바 토글 (Ctrl+B)"
-            className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-              sidebarOpen
-                ? "text-[#e4e4e7] hover:bg-[#181b22]"
-                : "text-[#71717a] hover:text-[#e4e4e7] hover:bg-[#181b22]"
-            }`}
-          >
-            <PanelLeft className="w-3.5 h-3.5" />
-          </button>
+      {/* Left: Sidebar Toggle + Squircle Brand + Floating Status Capsule */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <button
+          onClick={toggleSidebar}
+          title="사이드바 토글 (Ctrl+B)"
+          className="jjdr-pill w-8 h-8 rounded-full inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
+          style={{
+            color: sidebarOpen ? "var(--text-primary)" : "var(--text-muted)",
+          }}
+        >
+          <PanelLeft className="w-3.5 h-3.5" />
+        </button>
 
-          <div className="flex items-center gap-2 pl-0.5">
+        <div className="flex items-center gap-2 pr-1.5">
+          <div
+            className="w-7 h-7 rounded-[10px] flex items-center justify-center font-bold text-xs tracking-tight shadow-sm shrink-0"
+            style={{
+              background: "var(--brand-bg)",
+              color: "var(--brand-fg)",
+            }}
+          >
+            jj
+          </div>
+          <div className="flex flex-col leading-none">
+            <span
+              className="font-bold text-[13px] tracking-tight"
+              style={{ color: "var(--text-primary)" }}
+            >
+              jjdr
+            </span>
             <span
               title={
                 health.connected
                   ? `Connected to herdr-core ${health.version ?? ""}`
                   : "Disconnected"
               }
-              className={`w-2 h-2 rounded-full ${
-                health.connected ? "bg-[#10b981]" : "bg-[#ef4444]"
-              }`}
-            />
-            <span className="font-semibold text-[13px] tracking-tight text-[#f4f4f5]">
-              jjdr
+              className="text-[10px] mt-0.5 inline-flex items-center gap-1"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: health.connected
+                    ? "var(--ready-fg)"
+                    : "var(--action-fg)",
+                }}
+              />
+              <span>{health.connected ? "live" : "offline"}</span>
             </span>
           </div>
         </div>
 
-        {/* Unified Segmented Status Capsule (No rainbow boxes) */}
+        {/* Floating Pill Status Capsule */}
         <button
-          onClick={jumpToNextActionable}
+          onClick={() => jumpToNextActionable()}
           title="다음 확인 필요한 세션으로 점프 (Ctrl+N)"
-          className="flex items-center gap-2.5 px-3 py-1 rounded-full bg-[#13161b] hover:bg-[#181c23] border border-[#1f232c] text-xs tabular-nums transition-colors cursor-pointer"
+          className="jjdr-pill flex items-center gap-2.5 px-3.5 py-1.5 rounded-full text-xs tabular-nums transition-colors cursor-pointer"
         >
           <span
-            className={`inline-flex items-center gap-1.5 ${
-              counts.needsYou > 0
-                ? "font-semibold text-[#f87171]"
-                : "text-[#52525b]"
-            }`}
+            className="inline-flex items-center gap-1.5"
+            style={{
+              color:
+                counts.needsYou > 0 ? "var(--action-fg)" : "var(--text-faint)",
+              fontWeight: counts.needsYou > 0 ? 600 : 400,
+            }}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                counts.needsYou > 0 ? "bg-[#ef4444]" : "bg-[#3f3f46]"
+                counts.needsYou > 0 ? "jjdr-dot-pulse" : ""
               }`}
+              style={{
+                background:
+                  counts.needsYou > 0 ? "var(--action-fg)" : "var(--text-faint)",
+              }}
             />
             <span>{counts.needsYou}</span>
-            <span className="hidden sm:inline text-[11px] font-normal">
+            <span className="hidden sm:inline text-[11px] opacity-85">
               Action
             </span>
           </span>
 
-          <span className="text-[#272a33]">·</span>
+          <span style={{ color: "var(--text-faint)", opacity: 0.4 }}>·</span>
 
           <span
-            className={`inline-flex items-center gap-1.5 ${
-              counts.ready > 0
-                ? "font-semibold text-[#34d399]"
-                : "text-[#52525b]"
-            }`}
+            className="inline-flex items-center gap-1.5"
+            style={{
+              color:
+                counts.ready > 0 ? "var(--ready-fg)" : "var(--text-faint)",
+              fontWeight: counts.ready > 0 ? 600 : 400,
+            }}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                counts.ready > 0 ? "bg-[#10b981]" : "bg-[#3f3f46]"
-              }`}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                background:
+                  counts.ready > 0 ? "var(--ready-fg)" : "var(--text-faint)",
+              }}
             />
             <span>{counts.ready}</span>
-            <span className="hidden sm:inline text-[11px] font-normal">
+            <span className="hidden sm:inline text-[11px] opacity-85">
               Ready
             </span>
           </span>
 
-          <span className="text-[#272a33]">·</span>
+          <span style={{ color: "var(--text-faint)", opacity: 0.4 }}>·</span>
 
           <span
-            className={`inline-flex items-center gap-1.5 ${
-              counts.running > 0
-                ? "font-medium text-[#fbbf24]"
-                : "text-[#52525b]"
-            }`}
+            className="inline-flex items-center gap-1.5"
+            style={{
+              color:
+                counts.running > 0 ? "var(--run-fg)" : "var(--text-faint)",
+              fontWeight: counts.running > 0 ? 500 : 400,
+            }}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                counts.running > 0 ? "bg-[#f59e0b]" : "bg-[#3f3f46]"
+                counts.running > 0 ? "jjdr-dot-pulse" : ""
               }`}
+              style={{
+                background:
+                  counts.running > 0 ? "var(--run-fg)" : "var(--text-faint)",
+              }}
             />
             <span>{counts.running}</span>
-            <span className="hidden sm:inline text-[11px] font-normal">
-              Run
-            </span>
+            <span className="hidden sm:inline text-[11px] opacity-85">Run</span>
           </span>
         </button>
 
         {hasActionable && (
           <button
-            onClick={jumpToNextActionable}
-            className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[#181b22] hover:bg-[#20242d] text-[#e4e4e7] border border-[#272b36] transition-colors cursor-pointer"
-            title="Jump to next Needs You / Ready session (Ctrl+N)"
+            onClick={() => jumpToNextActionable()}
+            className="jjdr-primary-btn hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+            title="다음 확인 필요한 세션으로 점프 (Ctrl+N)"
           >
-            <Zap className="w-3 h-3 text-[#f59e0b]" />
+            <Zap className="w-3 h-3" />
             <span>Next</span>
-            <kbd className="text-[10px] px-1 rounded bg-[#0e1013] text-[#71717a] font-mono-code">
-              Ctrl+N
-            </kbd>
+            <kbd className="text-[10px] opacity-80 font-mono-code">Ctrl+N</kbd>
           </button>
         )}
       </div>
 
-      {/* Center: Group filter + Minimal Search */}
+      {/* Center: Group Filter Pill + Organic Search Pill */}
       <div className="flex items-center gap-2 flex-1 max-w-md">
         {groups.length > 1 && (
-          <div className="flex items-center bg-[#13161b] border border-[#1f232c] rounded-md p-0.5 text-xs">
+          <div className="jjdr-pill flex items-center rounded-full p-0.5 text-xs">
             {groups.map((g) => (
               <button
                 key={g}
                 onClick={() => setActiveGroup(g)}
-                className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                  activeGroup === g
-                    ? "bg-[#222631] text-[#f4f4f5] font-medium"
-                    : "text-[#71717a] hover:text-[#d4d4d8]"
+                className={`px-2.5 py-1 rounded-full transition-colors cursor-pointer ${
+                  activeGroup === g ? "jjdr-pill-active font-semibold" : ""
                 }`}
+                style={
+                  activeGroup === g ? undefined : { color: "var(--text-muted)" }
+                }
               >
                 {g}
               </button>
@@ -208,49 +270,65 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
         )}
 
         <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-[#52525b] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search
+            className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ color: "var(--text-muted)" }}
+          />
           <input
+            data-jjdr-search-input="true"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search projects, branches, agents..."
-            className="w-full h-7 pl-8 pr-7 text-xs rounded-md bg-[#13161b] border border-[#1f232c] focus:border-[#52525b] focus:outline-none text-[#f4f4f5] placeholder-[#52525b] transition-colors"
+            onKeyDown={handleSearchKeyDown}
+            placeholder="프로젝트, 브랜치, 에이전트 검색..."
+            className="jjdr-pill w-full h-9 pl-9 pr-14 text-xs rounded-full focus:outline-none transition-colors"
+            style={{ color: "var(--text-primary)" }}
           />
-          {searchQuery && (
+          {searchQuery ? (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
               title="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#71717a] hover:text-[#e4e4e7] cursor-pointer"
+              className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
+              style={{ color: "var(--text-muted)" }}
             >
               <X className="w-3.5 h-3.5" />
             </button>
+          ) : (
+            <kbd
+              className="hidden sm:inline-block absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono-code pointer-events-none opacity-55"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Ctrl+F
+            </kbd>
           )}
         </div>
       </div>
 
-      {/* Right: View Segment + Command Palette + Git Refresh + Settings */}
+      {/* Right: Pill View Switch + Circular Controls + Soft Frameless Window Controls */}
       <div className="flex items-center gap-1.5">
-        <div className="flex items-center bg-[#13161b] border border-[#1f232c] rounded-md p-0.5 text-xs">
+        <div className="jjdr-pill flex items-center rounded-full p-0.5 text-xs">
           <button
             onClick={() => setViewMode("radar")}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded transition-colors cursor-pointer ${
-              viewMode === "radar"
-                ? "bg-[#222631] text-[#f4f4f5] font-medium"
-                : "text-[#71717a] hover:text-[#d4d4d8]"
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors cursor-pointer ${
+              viewMode === "radar" ? "jjdr-pill-active font-semibold" : ""
             }`}
-            title="전체 프로젝트·Worktree 초슬림 레이더 (Ctrl+1)"
+            style={
+              viewMode === "radar" ? undefined : { color: "var(--text-muted)" }
+            }
+            title="전체 프로젝트·Worktree 레이더 (Ctrl+1)"
           >
             <Radar className="w-3.5 h-3.5" />
             Radar
           </button>
           <button
             onClick={() => setViewMode("queue")}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded transition-colors cursor-pointer ${
-              viewMode === "queue"
-                ? "bg-[#222631] text-[#f4f4f5] font-medium"
-                : "text-[#71717a] hover:text-[#d4d4d8]"
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors cursor-pointer ${
+              viewMode === "queue" ? "jjdr-pill-active font-semibold" : ""
             }`}
+            style={
+              viewMode === "queue" ? undefined : { color: "var(--text-muted)" }
+            }
             title="할 일 우선순위 인박스 (Ctrl+2)"
           >
             <Inbox className="w-3.5 h-3.5" />
@@ -260,40 +338,45 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
 
         <button
           onClick={() => setCommandPaletteOpen(true)}
-          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium bg-[#13161b] hover:bg-[#1a1e26] text-[#a1a1aa] hover:text-[#f4f4f5] border border-[#1f232c] transition-colors cursor-pointer"
+          className="jjdr-pill inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors cursor-pointer"
+          style={{ color: "var(--text-secondary)" }}
           title="Command Palette (Ctrl+K)"
         >
-          <Command className="w-3.5 h-3.5 text-[#71717a]" />
-          <kbd className="text-[10px] text-[#71717a] font-mono-code">
-            Ctrl+K
-          </kbd>
+          <Command className="w-3.5 h-3.5" />
+          <kbd className="text-[10px] font-mono-code opacity-75">Ctrl+K</kbd>
         </button>
 
         <button
           onClick={() => void handleRefreshGit()}
           title="Refresh Git worktrees & diff stats"
-          className="h-7 w-7 inline-flex items-center justify-center rounded-md bg-[#13161b] hover:bg-[#1a1e26] text-[#71717a] hover:text-[#e4e4e7] border border-[#1f232c] transition-colors cursor-pointer"
+          className="jjdr-pill h-8 w-8 inline-flex items-center justify-center rounded-full transition-colors cursor-pointer"
+          style={{ color: "var(--text-secondary)" }}
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
 
         <button
           onClick={() => setSettingsOpen(true)}
-          title="Settings & Prompt Presets"
-          className="h-7 w-7 inline-flex items-center justify-center rounded-md bg-[#13161b] hover:bg-[#1a1e26] text-[#71717a] hover:text-[#e4e4e7] border border-[#1f232c] transition-colors cursor-pointer"
+          title="Settings, Themes & Prompt Presets"
+          className="jjdr-pill h-8 w-8 inline-flex items-center justify-center rounded-full transition-colors cursor-pointer"
+          style={{ color: "var(--text-secondary)" }}
         >
           <Settings className="w-3.5 h-3.5" />
         </button>
 
-        {/* Integrated Frameless Window Controls */}
-        <div className="w-px h-4 bg-[#1f232c] mx-1" />
+        {/* Subtle divider + Soft Circular Frameless Window Controls */}
+        <div
+          className="w-px h-4 mx-1"
+          style={{ background: "var(--divider)" }}
+        />
 
-        <div className="flex items-center">
+        <div className="flex items-center gap-0.5">
           <button
             type="button"
             onClick={() => void windowMinimize()}
             title="Minimize"
-            className="h-8 w-9 inline-flex items-center justify-center rounded text-[#71717a] hover:text-[#e4e4e7] hover:bg-[#181b22] transition-colors cursor-pointer"
+            className="h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-black/15 transition-colors cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
@@ -301,7 +384,8 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
             type="button"
             onClick={() => void windowToggleMaximize()}
             title="Maximize / Restore"
-            className="h-8 w-9 inline-flex items-center justify-center rounded text-[#71717a] hover:text-[#e4e4e7] hover:bg-[#181b22] transition-colors cursor-pointer"
+            className="h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-black/15 transition-colors cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             <Square className="w-3 h-3" />
           </button>
@@ -309,7 +393,8 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
             type="button"
             onClick={() => void windowClose()}
             title="Close"
-            className="h-8 w-9 inline-flex items-center justify-center rounded text-[#71717a] hover:text-white hover:bg-[#e11d48] transition-colors cursor-pointer"
+            className="h-7 w-7 inline-flex items-center justify-center rounded-full hover:bg-[#e11d48] hover:text-white transition-colors cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             <X className="w-3.5 h-3.5" />
           </button>

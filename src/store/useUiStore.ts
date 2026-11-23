@@ -34,6 +34,7 @@ interface UiStoreState {
   selectedAddress: string | null;
   hoveredAddress: string | null;
   attachedAddress: string | null;
+  lastSessionByCardKey: Record<string, string>;
   sidebarOpen: boolean;
   collapsedProjects: Record<string, boolean>;
   idleCollapsed: boolean;
@@ -57,6 +58,7 @@ interface UiStoreState {
   setSelectedAddress: (addr: string | null) => void;
   setHoveredAddress: (addr: string | null) => void;
   setAttachedAddress: (addr: string | null) => void;
+  rememberCardSession: (cardKey: string, addr: string) => void;
   toggleSidebar: () => void;
   toggleProjectCollapsed: (projectId: string) => void;
   toggleIdleCollapsed: () => void;
@@ -82,6 +84,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   selectedAddress: null,
   hoveredAddress: null,
   attachedAddress: null,
+  lastSessionByCardKey: {},
   sidebarOpen: true,
   collapsedProjects: {},
   idleCollapsed: false,
@@ -108,6 +111,10 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setSelectedAddress: (selectedAddress) => set({ selectedAddress }),
   setHoveredAddress: (hoveredAddress) => set({ hoveredAddress }),
   setAttachedAddress: (attachedAddress) => set({ attachedAddress }),
+  rememberCardSession: (cardKey, addr) =>
+    set((s) => ({
+      lastSessionByCardKey: { ...s.lastSessionByCardKey, [cardKey]: addr },
+    })),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleProjectCollapsed: (projectId) =>
     set((s) => ({

@@ -8,6 +8,11 @@ import {
   type CardRect,
   type NavDirection,
 } from "../utils/spatialNav";
+import {
+  cardKeyForSession,
+  getCycledSession,
+  getWorktreeLiveSessions,
+} from "../utils/worktreeSessions";
 
 interface DomBoardCard extends CardRect {
   el: HTMLElement;
@@ -144,6 +149,33 @@ export function useGlobalShortcuts() {
         return;
       }
 
+      // 3b. Ctrl+Tab / Ctrl+Shift+Tab: Cycle between AI & Shell tabs inside current worktree!
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "Tab" || e.code === "Tab")) {
+        if (ui.attachedAddress) {
+          e.preventDefault();
+          e.stopPropagation();
+          cycleCurrentWorktreeTab(e.shiftKey ? -1 : 1);
+          return;
+        }
+      }
+
+      // 3c. Ctrl+Shift+T (+Shell tab) / Ctrl+Shift+A (+AI tab) inside current worktree
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && ui.attachedAddress) {
+        const k = e.key.toLowerCase();
+        if (k === "t" || e.code === "KeyT") {
+          e.preventDefault();
+          e.stopPropagation();
+          void spawnShellTabInAttachedWorktree();
+          return;
+        }
+        if (k === "a" || e.code === "KeyA") {
+          e.preventDefault();
+          e.stopPropagation();
+          openAiLauncherForAttachedWorktree();
+          return;
+        }
+      }
+
       // 4. Global Ctrl shortcuts that work EVERYWHERE (including while right xterm terminal is open/focused, and under Korean IME)
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
@@ -151,6 +183,18 @@ export function useGlobalShortcuts() {
           e.preventDefault();
           e.stopPropagation();
           jumpToNextActionable();
+          return;
+        }
+        if (k === "f" || e.code === "KeyF") {
+          e.preventDefault();
+          e.stopPropagation();
+          const searchEl = document.querySelector<HTMLInputElement>(
+            "[data-jjdr-search-input]"
+          );
+          if (searchEl) {
+            searchEl.focus();
+            searchEl.select();
+          }
           return;
         }
         if (k === "k" || e.code === "KeyK") {
@@ -217,12 +261,49 @@ export function useGlobalShortcuts() {
         }
         if (inInput && target) {
           e.preventDefault();
+          if (target.dataset.jjdrSearchInput === "true") {
+            ui.setSearchQuery("");
+            target.blur();
+            requestAnimationFrame(() => {
+              const latestUi = useUiStore.getState();
+              if (latestUi.viewMode === "radar") {
+                const cards = readBoardCards();
+                const targetCard =
+                  cards.find((c) => c.key === latestUi.selectedCardKey) ??
+                  cards[0] ??
+                  null;
+                if (targetCard) {
+                  latestUi.setSelectedCardKey(targetCard.key);
+                  latestUi.setSelectedAddress(targetCard.addr);
+                  targetCard.el.scrollIntoView({
+                    block: "nearest",
+                    behavior: "smooth",
+                  });
+                }
+              } else {
+                const sessions = useAppStore.getState().computed.sessions;
+                const match =
+                  sessions.find(
+                    (s) => s.address === latestUi.selectedAddress
+                  ) ??
+                  sessions[0] ??
+                  null;
+                if (match) latestUi.setSelectedAddress(match.address);
+              }
+            });
+            return;
+          }
           target.blur();
           return;
         }
         if (!inXterm && ui.attachedAddress) {
           e.preventDefault();
           ui.setAttachedAddress(null);
+          return;
+        }
+        if (!inXterm && ui.searchQuery.trim().length > 0) {
+          e.preventDefault();
+          ui.setSearchQuery("");
           return;
         }
       }
@@ -379,7 +460,7 @@ function moveRadarSpatial(dir: NavDirection, syncAttachedPane: boolean) {
   }
 }
 
-export function jumpToNextActionable() {
+export function jumpToNextActionable(delta: 1 | -1 = 1) {
   const { allSessions } = useAppStore.getState().computed;
   const actionable = allSessions.filter(
     (s) => s.bucket === "needs_you" || s.bucket === "ready"
@@ -392,7 +473,13 @@ export function jumpToNextActionable() {
   }
   const ui = useUiStore.getState();
   const curIdx = actionable.findIndex((s) => s.address === ui.selectedAddress);
-  const next = actionable[(curIdx + 1) % actionable.length];
+  const nextIdx =
+    curIdx === -1
+      ? delta > 0
+        ? 0
+        : actionable.length - 1
+      : (curIdx + delta + actionable.length) % actionable.length;
+  const next = actionable[nextIdx];
   if (ui.selectedProjectId && next.projectId !== ui.selectedProjectId) {
     ui.setSelectedProjectId(null);
   }
@@ -436,4 +523,75 @@ function moveQueueSelection(delta: number, syncAttachedPane: boolean) {
   if (syncAttachedPane && ui.attachedAddress && next.terminal.state === "live") {
     ui.setAttachedAddress(next.address);
   }
+}
+
+function cycleCurrentWorktreeTab(delta: 1 | -1) {
+  const ui = useUiStore.getState();
+  if (!ui.attachedAddress) return;
+  const allSessions = useAppStore.getState().computed.allSessions;
+  const current =
+    allSessions.find((s) => s.address === ui.attachedAddress) ?? null;
+  if (!current) return;
+
+  const tabs = getWorktreeLiveSessions(allSessions, current);
+  const next = getCycledSession(tabs, ui.attachedAddress, delta);
+  if (next) {
+    ui.setSelectedAddress(next.address);
+    ui.setAttachedAddress(next.address);
+    ui.rememberCardSession(cardKeyForSession(next), next.address);
+  } else if (current.projectId) {
+    ui.showToast("열린 탭이 1개입니다 · Ctrl+Shift+T로 Shell 탭 추가", "info");
+  }
+}
+
+let spawningShortcutShell = false;
+
+async function spawnShellTabInAttachedWorktree() {
+  if (spawningShortcutShell) return;
+  const ui = useUiStore.getState();
+  if (!ui.attachedAddress) return;
+  const allSessions = useAppStore.getState().computed.allSessions;
+  const current =
+    allSessions.find((s) => s.address === ui.attachedAddress) ?? null;
+  if (!current || !current.projectId || !current.worktreePath) return;
+
+  spawningShortcutShell = true;
+  try {
+    const newAddr = await launchSession({
+      project_id: current.projectId,
+      cwd: current.worktreePath,
+      branch: current.branch || undefined,
+      argv: [],
+      name: `${current.projectName}-${(current.branch || "main").replace(
+        /[/\\ ]/g,
+        "-"
+      )}-sh`,
+    });
+    if (newAddr) {
+      ui.setSelectedAddress(newAddr);
+      ui.setAttachedAddress(newAddr);
+      ui.rememberCardSession(cardKeyForSession(current), newAddr);
+    }
+  } catch (err) {
+    ui.showToast(`PowerShell 탭 추가 실패: ${String(err)}`, "error");
+  } finally {
+    spawningShortcutShell = false;
+  }
+}
+
+function openAiLauncherForAttachedWorktree() {
+  const ui = useUiStore.getState();
+  if (!ui.attachedAddress) return;
+  const app = useAppStore.getState();
+  const current =
+    app.computed.allSessions.find((s) => s.address === ui.attachedAddress) ??
+    null;
+  if (!current || !current.projectId || !current.worktreePath) return;
+  const proj = app.projects.find((p) => p.id === current.projectId);
+  ui.setLaunchTarget({
+    projectId: current.projectId,
+    cwd: current.worktreePath,
+    branch: current.branch || undefined,
+    defaultAgent: proj?.default_agent,
+  });
 }

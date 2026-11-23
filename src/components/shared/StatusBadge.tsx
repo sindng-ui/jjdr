@@ -20,7 +20,7 @@ export const StatusBadge = React.memo(function StatusBadge({
     const detail = isStuck
       ? `Stuck ${stuckMinutes}m`
       : status?.state === "blocked"
-      ? status.kind || "Action"
+      ? status.kind || "Needs You"
       : status?.state === "error"
       ? "Error"
       : "Failed";
@@ -28,13 +28,23 @@ export const StatusBadge = React.memo(function StatusBadge({
       return (
         <span
           title={detail}
-          className="w-2 h-2 rounded-full bg-[#ef4444] shrink-0"
+          className="w-2 h-2 rounded-full jjdr-dot-pulse shrink-0"
+          style={{ background: "var(--action-fg)" }}
         />
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ef4444]/12 text-[#f87171]">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+      <span
+        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0"
+        style={{
+          background: "var(--action-soft)",
+          color: "var(--action-fg)",
+        }}
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full jjdr-dot-pulse"
+          style={{ background: "var(--action-fg)" }}
+        />
         {detail}
       </span>
     );
@@ -45,13 +55,23 @@ export const StatusBadge = React.memo(function StatusBadge({
       return (
         <span
           title="Ready"
-          className="w-2 h-2 rounded-full bg-[#10b981] shrink-0"
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ background: "var(--ready-fg)" }}
         />
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#10b981]/12 text-[#34d399]">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
+      <span
+        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0"
+        style={{
+          background: "var(--ready-soft)",
+          color: "var(--ready-fg)",
+        }}
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full"
+          style={{ background: "var(--ready-fg)" }}
+        />
         Ready
       </span>
     );
@@ -63,15 +83,25 @@ export const StatusBadge = React.memo(function StatusBadge({
     if (compact) {
       return (
         <span
-          title={`Working${pct}`}
-          className="w-2 h-2 rounded-full bg-[#f59e0b] shrink-0"
+          title={`Running${pct}`}
+          className="w-2 h-2 rounded-full jjdr-dot-pulse shrink-0"
+          style={{ background: "var(--run-fg)" }}
         />
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#f59e0b]/12 text-[#fbbf24]">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]" />
-        Working{pct}
+      <span
+        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0"
+        style={{
+          background: "var(--run-soft)",
+          color: "var(--run-fg)",
+        }}
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full jjdr-dot-pulse"
+          style={{ background: "var(--run-fg)" }}
+        />
+        Running{pct}
       </span>
     );
   }
@@ -79,15 +109,25 @@ export const StatusBadge = React.memo(function StatusBadge({
   if (compact) {
     return (
       <span
-        title="Idle"
-        className="w-1.5 h-1.5 rounded-full bg-[#52525b] shrink-0"
+        title="Standby"
+        className="w-2 h-2 rounded-full shrink-0 opacity-60"
+        style={{ background: "var(--text-faint)" }}
       />
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium text-[#71717a]">
-      <span className="w-1.5 h-1.5 rounded-full bg-[#52525b]" />
-      Idle
+    <span
+      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium shrink-0"
+      style={{
+        background: "var(--pill-bg)",
+        color: "var(--text-muted)",
+      }}
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full opacity-70"
+        style={{ background: "var(--text-faint)" }}
+      />
+      Standby
     </span>
   );
 });

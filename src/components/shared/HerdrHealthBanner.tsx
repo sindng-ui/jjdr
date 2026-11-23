@@ -29,25 +29,45 @@ export const HerdrHealthBanner = React.memo(function HerdrHealthBanner() {
   };
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-1.5 bg-[#1a1114] border-b border-[#381d24] text-xs">
-      <div className="flex items-center gap-2 text-[#fca5a5] min-w-0">
-        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[#ef4444]" />
-        <span className="font-medium shrink-0">
-          {health.hc_found ? "herdr-core Disconnected" : "hc CLI Not Found"}
-        </span>
-        <span className="text-[#a1a1aa] truncate">
-          {health.error || "Waiting for herdr-core daemon..."}
-          {health.hint ? ` — ${health.hint}` : ""}
-        </span>
-      </div>
-      <button
-        onClick={() => void handleReconnect()}
-        disabled={reconnecting}
-        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#28161b] hover:bg-[#361c23] text-[#f87171] border border-[#4a232c] font-medium shrink-0 cursor-pointer transition-colors"
+    <div className="px-3 pb-2 shrink-0">
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-2 rounded-full text-xs"
+        style={{
+          background: "var(--action-soft)",
+          border: "1px solid var(--action-border)",
+        }}
       >
-        <RefreshCw className={`w-3 h-3 ${reconnecting ? "animate-spin" : ""}`} />
-        Reconnect
-      </button>
+        <div
+          className="flex items-center gap-2 min-w-0"
+          style={{ color: "var(--action-fg)" }}
+        >
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span className="font-semibold shrink-0">
+            {health.hc_found ? "herdr-core Disconnected" : "hc CLI Not Found"}
+          </span>
+          <span
+            className="truncate"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            {health.error || "Waiting for herdr-core daemon..."}
+            {health.hint ? ` — ${health.hint}` : ""}
+          </span>
+        </div>
+        <button
+          onClick={() => void handleReconnect()}
+          disabled={reconnecting}
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
+          style={{
+            background: "var(--action-fg)",
+            color: "#ffffff",
+          }}
+        >
+          <RefreshCw
+            className={`w-3 h-3 ${reconnecting ? "animate-spin" : ""}`}
+          />
+          Reconnect
+        </button>
+      </div>
     </div>
   );
 });

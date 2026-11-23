@@ -126,7 +126,12 @@ export interface PromptPreset {
   prompt: string;
 }
 
+export type ThemeId = "aurora" | "lounge" | "nordic" | "botanical";
+export type RadarDensity = "comfortable" | "balanced" | "compact";
+
 export interface AppSettings {
+  theme: ThemeId;
+  radar_density: RadarDensity;
   stuck_minutes: number;
   notify_on_blocked: boolean;
   notify_on_done: boolean;

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -14,13 +14,17 @@ import { RadarTile } from "./RadarTile";
 import { StatusBadge } from "../shared/StatusBadge";
 import { normalizePath } from "../../workers/dashboardLogic";
 import { shortPath } from "../../utils/format";
+import { getRadarDensityPreset } from "../../utils/themes";
 import { killTerminal, launchSession } from "../../services/tauriBridge";
+
+const MIN_CARD_WIDTH_PX = 215;
 
 export const RadarBoardView = React.memo(function RadarBoardView() {
   const matrixLanes = useAppStore((s) => s.computed.matrixLanes);
   const allSessions = useAppStore((s) => s.computed.allSessions);
   const unassigned = useAppStore((s) => s.computed.unassignedSessions);
   const projects = useAppStore((s) => s.projects);
+  const radarDensity = useAppStore((s) => s.settings.radar_density);
 
   const selectedProjectId = useUiStore((s) => s.selectedProjectId);
   const selectedCardKey = useUiStore((s) => s.selectedCardKey);
@@ -31,11 +35,44 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
   const toggleProjectCollapsed = useUiStore((s) => s.toggleProjectCollapsed);
   const clearFilters = useUiStore((s) => s.clearFilters);
   const setProjectModalProject = useUiStore((s) => s.setProjectModalProject);
-  const setCreateWorktreeProjectId = useUiStore((s) => s.setCreateWorktreeProjectId);
+  const setCreateWorktreeProjectId = useUiStore(
+    (s) => s.setCreateWorktreeProjectId
+  );
   const setSelectedCardKey = useUiStore((s) => s.setSelectedCardKey);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
   const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
   const showToast = useUiStore((s) => s.showToast);
+
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardWidth, setBoardWidth] = useState<number>(1280);
+
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const update = () => {
+      if (el.clientWidth > 0) setBoardWidth(el.clientWidth);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const densityPreset = useMemo(
+    () => getRadarDensityPreset(radarDensity),
+    [radarDensity]
+  );
+
+  const desiredCols = attachedAddress
+    ? densityPreset.terminalCols
+    : densityPreset.normalCols;
+
+  // Clamp gracefully only when the window itself is too narrow to prevent card clipping
+  const innerWidth = Math.max(240, boardWidth - 48);
+  const maxFitCols = Math.max(1, Math.floor((innerWidth + 14) / MIN_CARD_WIDTH_PX));
+  const activeCols = Math.min(desiredCols, maxFitCols);
+  const singleSlotWidth = (innerWidth - (activeCols - 1) * 14) / activeCols;
+  const compactSingleHeader = singleSlotWidth < 310;
 
   const handleLaunchStandaloneShell = async () => {
     try {
@@ -89,77 +126,115 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
   if (projects.length === 0 && unassigned.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-11 h-11 rounded-xl bg-[#13161b] border border-[#1e222a] flex items-center justify-center mb-4">
-          <FolderPlus className="w-5 h-5 text-[#a1a1aa]" />
+        <div
+          className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+          style={{
+            background: "var(--pill-bg)",
+            border: "1px solid var(--pill-border)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <FolderPlus className="w-5 h-5" />
         </div>
-        <h2 className="text-sm font-semibold text-[#f4f4f5]">
-          No projects registered
+        <h2
+          className="text-sm font-bold"
+          style={{ color: "var(--text-primary)" }}
+        >
+          등록된 프로젝트가 없습니다
         </h2>
-        <p className="mt-1.5 text-xs text-[#71717a] max-w-sm leading-relaxed">
-          Add a Git repository to monitor all worktrees and AI sessions in a calm, unified radar.
+        <p
+          className="mt-1.5 text-xs max-w-sm leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Git 저장소를 추가하면 모든 Worktree와 AI 세션을 한눈에 쾌적하게 관제할 수 있습니다.
         </p>
         <button
           onClick={() => setProjectModalProject("new")}
-          className="mt-5 px-4 py-2 rounded-lg text-xs font-medium bg-[#f4f4f5] hover:bg-white text-[#0b0c0e] transition-colors cursor-pointer"
+          className="jjdr-primary-btn mt-5 px-4 py-2 rounded-full text-xs font-semibold shadow-sm transition-opacity cursor-pointer"
         >
-          + Add Git Project
+          + Git 프로젝트 추가
         </button>
       </div>
     );
   }
 
-  const tileGridCls = attachedAddress
-    ? "grid-cols-1 xl:grid-cols-2"
-    : "grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4";
+  const shellSpan = Math.max(1, Math.min(Math.max(1, unassigned.length), activeCols));
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-      {/* Subtle Action Pill Strip (only when sessions need attention) */}
+    <div
+      ref={boardRef}
+      className="flex-1 overflow-y-auto px-5 py-5 space-y-5 min-w-0"
+    >
+      {/* Floating Soft Attention Ribbon */}
       {actionable.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap pb-1">
-          <span className="text-[11px] font-medium text-[#71717a] mr-1">
-            Attention
+        <div className="flex items-center gap-2 flex-wrap px-0.5">
+          <span
+            className="text-[11px] font-semibold mr-1"
+            style={{ color: "var(--text-faint)" }}
+          >
+            지금 확인
           </span>
-          {actionable.map((s) => (
-            <button
-              key={s.address}
-              onClick={() => {
-                setSelectedAddress(s.address);
-                if (s.projectId) {
-                  setSelectedCardKey(
-                    `wt::${s.projectId}::${normalizePath(s.worktreePath)}`
-                  );
-                }
-                if (s.terminal.state === "live") {
-                  setAttachedAddress(s.address);
-                }
-              }}
-              className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#13161b] hover:bg-[#191d24] border border-[#222630] text-xs transition-colors cursor-pointer"
-            >
-              <StatusBadge bucket={s.bucket} compact />
-              <span className="text-[#a1a1aa]">{s.projectName}</span>
-              <span className="font-mono-code font-medium text-[#f4f4f5]">
-                {s.branch}
-              </span>
-            </button>
-          ))}
+          {actionable.map((s) => {
+            const isAction = s.bucket === "needs_you";
+            return (
+              <button
+                key={s.address}
+                onClick={() => {
+                  setSelectedAddress(s.address);
+                  if (s.projectId) {
+                    setSelectedCardKey(
+                      `wt::${s.projectId}::${normalizePath(s.worktreePath)}`
+                    );
+                  }
+                  if (s.terminal.state === "live") {
+                    setAttachedAddress(s.address);
+                  }
+                }}
+                className="jjdr-card-lift inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs cursor-pointer"
+                style={{
+                  background: isAction
+                    ? "var(--action-soft)"
+                    : "var(--ready-soft)",
+                  border: `1px solid ${
+                    isAction ? "var(--action-border)" : "var(--ready-border)"
+                  }`,
+                  color: "var(--text-primary)",
+                }}
+              >
+                <StatusBadge bucket={s.bucket} compact />
+                <span style={{ color: "var(--text-secondary)" }}>
+                  {s.projectName}
+                </span>
+                <span className="font-mono-code font-semibold">{s.branch}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Active filter indicator */}
+      {/* Active Filter Pill Banner */}
       {hasFilter && (
-        <div className="flex items-center justify-between gap-2 px-3.5 py-1.5 rounded-lg bg-[#13161b] border border-[#232731] text-xs">
-          <span className="text-[#a1a1aa]">
+        <div
+          className="flex items-center justify-between gap-2 px-4 py-2 rounded-full text-xs"
+          style={{
+            background: "var(--pill-bg)",
+            border: "1px solid var(--pill-border)",
+          }}
+        >
+          <span style={{ color: "var(--text-secondary)" }}>
             Filtered
             {selectedProjectId
-              ? ` · ${projects.find((p) => p.id === selectedProjectId)?.name ?? ""}`
+              ? ` · ${
+                  projects.find((p) => p.id === selectedProjectId)?.name ?? ""
+                }`
               : ""}
             {searchQuery.trim() ? ` · "${searchQuery.trim()}"` : ""}
             {activeGroup !== "All" ? ` · ${activeGroup}` : ""}
           </span>
           <button
             onClick={clearFilters}
-            className="inline-flex items-center gap-1 text-[#e4e4e7] hover:underline text-xs font-medium cursor-pointer"
+            className="inline-flex items-center gap-1 hover:underline text-xs font-semibold cursor-pointer"
+            style={{ color: "var(--accent)" }}
           >
             <X className="w-3 h-3" />
             Reset
@@ -167,181 +242,297 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
         </div>
       )}
 
-      {/* Borderless Project Sections (Whitespace + Clean Typography instead of outer boxes!) */}
-      {matrixLanes.map(({ project, cells }) => {
-        const collapsed = Boolean(collapsedProjects[project.id]);
-        const needs = cells.reduce(
-          (n, c) => n + c.sessions.filter((s) => s.bucket === "needs_you").length,
-          0
-        );
-        const ready = cells.reduce(
-          (n, c) => n + c.sessions.filter((s) => s.bucket === "ready").length,
-          0
-        );
-        const running = cells.reduce(
-          (n, c) => n + c.sessions.filter((s) => s.bucket === "running").length,
-          0
-        );
+      {/* Concept A: Soft Bento Project Trays (Auto-packs single/small projects side-by-side!) */}
+      <div
+        className="grid gap-3.5 items-start"
+        style={{
+          gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`,
+        }}
+      >
+        {matrixLanes.map(({ project, cells }) => {
+          const collapsed = Boolean(collapsedProjects[project.id]);
+          const traySpan = collapsed
+            ? 1
+            : Math.max(1, Math.min(Math.max(1, cells.length), activeCols));
+          const useShortBtn = traySpan === 1 && compactSingleHeader;
 
-        return (
-          <section key={project.id} className="space-y-2.5">
-            <div className="flex items-center justify-between gap-2 px-0.5">
-              <button
-                type="button"
-                onClick={() => toggleProjectCollapsed(project.id)}
-                className="group flex items-center gap-2 min-w-0 text-left cursor-pointer"
-              >
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: project.color }}
-                />
-                <span className="text-[13px] font-semibold tracking-tight text-[#f4f4f5] group-hover:text-white">
-                  {project.name}
-                </span>
-                <span className="text-xs text-[#52525b] tabular-nums">
-                  {cells.length}
-                </span>
-                {collapsed ? (
-                  <ChevronRight className="w-3.5 h-3.5 text-[#52525b]" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5 text-[#52525b] opacity-0 group-hover:opacity-100 transition-opacity" />
-                )}
+          const needs = cells.reduce(
+            (n, c) =>
+              n + c.sessions.filter((s) => s.bucket === "needs_you").length,
+            0
+          );
+          const ready = cells.reduce(
+            (n, c) => n + c.sessions.filter((s) => s.bucket === "ready").length,
+            0
+          );
+          const running = cells.reduce(
+            (n, c) =>
+              n + c.sessions.filter((s) => s.bucket === "running").length,
+            0
+          );
 
-                <div className="flex items-center gap-2 ml-1 font-mono-code text-[11px] tabular-nums">
-                  {needs > 0 && (
-                    <span className="inline-flex items-center gap-1 text-[#f87171]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
-                      {needs}
-                    </span>
-                  )}
-                  {ready > 0 && (
-                    <span className="inline-flex items-center gap-1 text-[#34d399]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
-                      {ready}
-                    </span>
-                  )}
-                  {running > 0 && (
-                    <span className="inline-flex items-center gap-1 text-[#fbbf24]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]" />
-                      {running}
-                    </span>
-                  )}
-                </div>
-              </button>
-
-              <button
-                onClick={() => setCreateWorktreeProjectId(project.id)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[#71717a] hover:text-[#e4e4e7] hover:bg-[#14171d] transition-colors shrink-0 cursor-pointer"
-                title="Create new worktree from current branch"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Worktree</span>
-              </button>
-            </div>
-
-            {!collapsed && (
-              <div className={`grid gap-2.5 ${tileGridCls}`}>
-                {cells.map(({ worktree, sessions }) => (
-                  <RadarTile
-                    key={worktree.path}
-                    project={project}
-                    worktree={worktree}
-                    sessions={sessions}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        );
-      })}
-
-      {/* Borderless Standalone / External Shell Section */}
-      <section className="space-y-2.5 pt-2 border-t border-[#161920]">
-        <div className="flex items-center justify-between gap-2 px-0.5">
-          <div className="flex items-center gap-2 text-xs text-[#71717a]">
-            <Terminal className="w-3.5 h-3.5 text-[#52525b]" />
-            <span className="font-medium text-[#a1a1aa]">Shells & External</span>
-            <span className="text-[#52525b] tabular-nums">
-              {unassigned.length}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => void handleLaunchStandaloneShell()}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[#71717a] hover:text-[#e4e4e7] hover:bg-[#14171d] transition-colors cursor-pointer"
-            title="Launch new PowerShell terminal"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Shell</span>
-          </button>
-        </div>
-
-        {unassigned.length > 0 && (
-          <div className={`grid gap-2.5 ${tileGridCls}`}>
-            {unassigned.map((s) => {
-              const extKey = `ext::${s.address}`;
-              const isSelected = selectedCardKey === extKey;
-              const isAttached = attachedAddress === s.address;
-              const surfaceCls = isAttached
-                ? "bg-[#181c24] border-[#e4e4e7]/50 ring-1 ring-[#e4e4e7]/20"
-                : isSelected
-                ? "bg-[#171a22] border-[#d4d4d8]/40 ring-1 ring-[#d4d4d8]/15"
-                : "bg-[#13161b] border-[#1e222a] hover:bg-[#161a21] hover:border-[#282d38] opacity-75 hover:opacity-100";
-
-              return (
-                <div
-                  key={s.address}
-                  data-jjdr-card={extKey}
-                  data-jjdr-session-addr={s.address}
-                  onClick={() => {
-                    setSelectedCardKey(extKey);
-                    setSelectedAddress(s.address);
-                    if (attachedAddress && s.terminal.state === "live") {
-                      setAttachedAddress(s.address);
-                    }
-                  }}
-                  onDoubleClick={() => {
-                    setSelectedCardKey(extKey);
-                    setSelectedAddress(s.address);
-                    if (s.terminal.state === "live") {
-                      setAttachedAddress(s.address);
-                    }
-                  }}
-                  className={`group rounded-lg border px-3.5 py-2.5 flex items-center justify-between gap-2 cursor-pointer select-none transition-all ${surfaceCls}`}
+          return (
+            <section
+              key={project.id}
+              className="jjdr-tray rounded-[22px] p-3.5 space-y-3 min-w-0"
+              style={{
+                gridColumn: `span ${traySpan} / span ${traySpan}`,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2 px-0.5">
+                <button
+                  type="button"
+                  onClick={() => toggleProjectCollapsed(project.id)}
+                  className="group flex items-center gap-2 min-w-0 text-left cursor-pointer"
                 >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <StatusBadge bucket={s.bucket} compact />
-                      <span className="text-xs font-mono-code font-medium text-[#e4e4e7] truncate">
-                        {s.terminal.name || s.address}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs font-mono-code text-[#6b7280] truncate">
-                      {s.agentLabel} · {shortPath(s.worktreePath)}
-                    </div>
-                  </div>
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1 shrink-0"
+                  <span
+                    className="w-6 h-6 rounded-[9px] flex items-center justify-center text-[11px] font-bold shrink-0"
+                    style={{
+                      backgroundColor: `${project.color}26`,
+                      color: project.color,
+                      border: `1px solid ${project.color}42`,
+                    }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void killTerminal(s.address, true);
-                        if (isAttached) setAttachedAddress(null);
-                      }}
-                      title="Close terminal"
-                      className="hidden group-hover:inline-flex p-1 rounded hover:bg-[#2c191d] text-[#71717a] hover:text-[#f87171] cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                    {project.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span
+                    className="text-[13px] font-bold tracking-tight truncate"
+                    style={{ color: "var(--text-primary)" }}
+                    title={project.name}
+                  >
+                    {project.name}
+                  </span>
+                  <span
+                    className="text-xs font-mono-code tabular-nums shrink-0"
+                    style={{ color: "var(--text-faint)" }}
+                  >
+                    {cells.length}
+                  </span>
+                  {collapsed ? (
+                    <ChevronRight
+                      className="w-3.5 h-3.5 shrink-0"
+                      style={{ color: "var(--text-faint)" }}
+                    />
+                  ) : (
+                    <ChevronDown
+                      className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      style={{ color: "var(--text-faint)" }}
+                    />
+                  )}
+
+                  <div className="flex items-center gap-1 font-mono-code text-[11px] tabular-nums shrink-0">
+                    {needs > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
+                        style={{
+                          background: "var(--action-soft)",
+                          color: "var(--action-fg)",
+                        }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: "var(--action-fg)" }}
+                        />
+                        {needs}
+                      </span>
+                    )}
+                    {ready > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
+                        style={{
+                          background: "var(--ready-soft)",
+                          color: "var(--ready-fg)",
+                        }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: "var(--ready-fg)" }}
+                        />
+                        {ready}
+                      </span>
+                    )}
+                    {running > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
+                        style={{
+                          background: "var(--run-soft)",
+                          color: "var(--run-fg)",
+                        }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: "var(--run-fg)" }}
+                        />
+                        {running}
+                      </span>
+                    )}
                   </div>
+                </button>
+
+                <button
+                  onClick={() => setCreateWorktreeProjectId(project.id)}
+                  className="jjdr-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 cursor-pointer whitespace-nowrap"
+                  style={{ color: "var(--text-secondary)" }}
+                  title="새 Worktree 추가 (현재 브랜치 기준)"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{useShortBtn ? "WT" : "Worktree"}</span>
+                </button>
+              </div>
+
+              {!collapsed && (
+                <div
+                  className="grid gap-3"
+                  style={{
+                    gridTemplateColumns: `repeat(${traySpan}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {cells.map(({ worktree, sessions }) => (
+                    <RadarTile
+                      key={worktree.path}
+                      project={project}
+                      worktree={worktree}
+                      sessions={sessions}
+                    />
+                  ))}
                 </div>
-              );
-            })}
+              )}
+            </section>
+          );
+        })}
+
+        {/* Standalone / External Shell Bento Tray */}
+        <section
+          className="jjdr-tray rounded-[22px] p-3.5 space-y-3 min-w-0"
+          style={{
+            gridColumn: `span ${shellSpan} / span ${shellSpan}`,
+          }}
+        >
+          <div className="flex items-center justify-between gap-2 px-0.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="w-6 h-6 rounded-[9px] flex items-center justify-center shrink-0"
+                style={{
+                  background: "var(--pill-bg)",
+                  border: "1px solid var(--pill-border)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <Terminal className="w-3 h-3" />
+              </span>
+              <span
+                className="text-[13px] font-bold tracking-tight truncate"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Shells & External
+              </span>
+              <span
+                className="text-xs font-mono-code tabular-nums shrink-0"
+                style={{ color: "var(--text-faint)" }}
+              >
+                {unassigned.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleLaunchStandaloneShell()}
+              className="jjdr-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 cursor-pointer whitespace-nowrap"
+              style={{ color: "var(--text-secondary)" }}
+              title="새 PowerShell 터미널 열기"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Shell</span>
+            </button>
           </div>
-        )}
-      </section>
+
+          {unassigned.length > 0 && (
+            <div
+              className="grid gap-3"
+              style={{
+                gridTemplateColumns: `repeat(${shellSpan}, minmax(0, 1fr))`,
+              }}
+            >
+              {unassigned.map((s) => {
+                const extKey = `ext::${s.address}`;
+                const isSelected = selectedCardKey === extKey;
+                const isAttached = attachedAddress === s.address;
+
+                return (
+                  <div
+                    key={s.address}
+                    data-jjdr-card={extKey}
+                    data-jjdr-session-addr={s.address}
+                    onClick={() => {
+                      setSelectedCardKey(extKey);
+                      setSelectedAddress(s.address);
+                      if (attachedAddress && s.terminal.state === "live") {
+                        setAttachedAddress(s.address);
+                      }
+                    }}
+                    onDoubleClick={() => {
+                      setSelectedCardKey(extKey);
+                      setSelectedAddress(s.address);
+                      if (s.terminal.state === "live") {
+                        setAttachedAddress(s.address);
+                      }
+                    }}
+                    className="jjdr-card-lift group rounded-[18px] p-3.5 flex items-center justify-between gap-2 cursor-pointer select-none min-w-0"
+                    style={{
+                      background:
+                        isSelected || isAttached
+                          ? "var(--card-bg)"
+                          : "var(--card-idle-bg)",
+                      border:
+                        isSelected || isAttached
+                          ? "1px solid var(--accent-border)"
+                          : "1px dashed var(--card-idle-border)",
+                      boxShadow:
+                        isSelected || isAttached
+                          ? "var(--card-selected-shadow)"
+                          : "var(--card-shadow)",
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <StatusBadge bucket={s.bucket} compact />
+                        <span
+                          className="text-[13px] font-mono-code font-bold truncate"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {s.terminal.name || s.address}
+                        </span>
+                      </div>
+                      <div
+                        className="mt-1.5 text-xs font-mono-code truncate"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {s.agentLabel} · {shortPath(s.worktreePath)}
+                      </div>
+                    </div>
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-1 shrink-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void killTerminal(s.address, true);
+                          if (isAttached) setAttachedAddress(null);
+                        }}
+                        title="Close terminal"
+                        className="hidden group-hover:inline-flex p-1.5 rounded-full hover:bg-black/15 cursor-pointer"
+                        style={{ color: "var(--action-fg)" }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 });

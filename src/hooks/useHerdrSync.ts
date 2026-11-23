@@ -18,6 +18,7 @@ import { useAppStore } from "../store/useAppStore";
 import { useUiStore } from "../store/useUiStore";
 import type { DashboardWorkerResult, StateBatchPayload } from "../types/domain";
 import type { DashboardComputeInput } from "../workers/dashboardLogic";
+import { getWorktreeLiveSessions } from "../utils/worktreeSessions";
 
 export function useHerdrSync() {
   const workerRef = useRef<Worker | null>(null);
@@ -80,12 +81,24 @@ export function useHerdrSync() {
         }
       }
 
-      // If currently attached terminal just finished, detach gracefully
+      // If currently attached terminal just finished (e.g. user ran `exit` in PowerShell tab),
+      // switch gracefully to another live tab in the same worktree before closing the drawer.
       const curAttached = useUiStore.getState().attachedAddress;
       if (curAttached) {
         const updated = batch.terminals.find((t) => t.address === curAttached);
         if (updated && updated.state !== "live") {
-          useUiStore.getState().setAttachedAddress(null);
+          const allSessions = useAppStore.getState().computed.allSessions;
+          const current =
+            allSessions.find((s) => s.address === curAttached) ?? null;
+          const siblings = getWorktreeLiveSessions(allSessions, current).filter(
+            (s) => s.address !== curAttached
+          );
+          if (siblings.length > 0) {
+            useUiStore.getState().setSelectedAddress(siblings[0].address);
+            useUiStore.getState().setAttachedAddress(siblings[0].address);
+          } else {
+            useUiStore.getState().setAttachedAddress(null);
+          }
         }
       }
 

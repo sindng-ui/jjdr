@@ -22,38 +22,51 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
   if (total === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-11 h-11 rounded-xl bg-[#13161b] border border-[#1e222a] flex items-center justify-center mb-4">
-          <Sparkles className="w-5 h-5 text-[#a1a1aa]" />
+        <div
+          className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+          style={{
+            background: "var(--pill-bg)",
+            border: "1px solid var(--pill-border)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <Sparkles className="w-5 h-5" />
         </div>
-        <h2 className="text-sm font-semibold text-[#f4f4f5]">
+        <h2
+          className="text-sm font-bold"
+          style={{ color: "var(--text-primary)" }}
+        >
           {globalTotal > 0
             ? `No matching sessions (${globalTotal} active)`
             : "Queue is clear"}
         </h2>
-        <p className="mt-1.5 text-xs text-[#71717a] max-w-sm leading-relaxed">
+        <p
+          className="mt-1.5 text-xs max-w-sm leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
           {globalTotal > 0
-            ? "Reset filters to view all active sessions."
-            : "Switch to Radar view and press Ctrl+` on any tile to start an AI session."}
+            ? "필터를 초기화하면 모든 활성 세션을 볼 수 있습니다."
+            : "Radar 뷰에서 카드에 Ctrl+`를 누르면 바로 AI 세션을 시작할 수 있습니다."}
         </p>
         <div className="mt-5 flex items-center gap-2">
           {globalTotal > 0 ? (
             <button
               onClick={clearFilters}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-[#f4f4f5] hover:bg-white text-[#0b0c0e] cursor-pointer"
+              className="jjdr-primary-btn px-4 py-2 rounded-full text-xs font-semibold cursor-pointer"
             >
               Reset Filters ({globalTotal})
             </button>
           ) : projects.length === 0 ? (
             <button
               onClick={() => setProjectModalProject("new")}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-[#f4f4f5] hover:bg-white text-[#0b0c0e] cursor-pointer"
+              className="jjdr-primary-btn px-4 py-2 rounded-full text-xs font-semibold cursor-pointer"
             >
               + Add Git Project
             </button>
           ) : (
             <button
               onClick={() => setViewMode("radar")}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-[#f4f4f5] hover:bg-white text-[#0b0c0e] cursor-pointer"
+              className="jjdr-primary-btn px-4 py-2 rounded-full text-xs font-semibold cursor-pointer"
             >
               Open Radar View
             </button>
@@ -64,10 +77,10 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+    <div className="flex-1 overflow-y-auto px-6 py-6 space-y-7 min-w-0">
       <Section
         title="Action Required"
-        accent="bg-[#ef4444]"
+        dotColor="var(--action-fg)"
         items={byBucket.needs_you}
         selectedAddress={selectedAddress}
         attachedAddress={attachedAddress}
@@ -75,35 +88,36 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
 
       <Section
         title="Ready"
-        accent="bg-[#10b981]"
+        dotColor="var(--ready-fg)"
         items={byBucket.ready}
         selectedAddress={selectedAddress}
         attachedAddress={attachedAddress}
       />
 
       <Section
-        title="Working"
-        accent="bg-[#f59e0b]"
+        title="Running"
+        dotColor="var(--run-fg)"
         items={byBucket.running}
         selectedAddress={selectedAddress}
         attachedAddress={attachedAddress}
       />
 
       {byBucket.idle.length > 0 && (
-        <section className="space-y-2">
+        <section className="space-y-3">
           <button
             onClick={toggleIdleCollapsed}
-            className="flex items-center gap-2 text-xs font-medium text-[#71717a] hover:text-[#d4d4d8] cursor-pointer"
+            className="flex items-center gap-2 text-xs font-semibold cursor-pointer"
+            style={{ color: "var(--text-muted)" }}
           >
             {idleCollapsed ? (
               <ChevronRight className="w-3.5 h-3.5" />
             ) : (
               <ChevronDown className="w-3.5 h-3.5" />
             )}
-            <span>Idle ({byBucket.idle.length})</span>
+            <span>Standby ({byBucket.idle.length})</span>
           </button>
           {!idleCollapsed && (
-            <div className="space-y-2 opacity-75">
+            <div className="space-y-3">
               {byBucket.idle.map((s) => (
                 <SessionCard
                   key={s.address}
@@ -122,7 +136,7 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
 
 interface SectionProps {
   title: string;
-  accent: string;
+  dotColor: string;
   items: EnrichedSession[];
   selectedAddress: string | null;
   attachedAddress: string | null;
@@ -130,24 +144,33 @@ interface SectionProps {
 
 const Section = React.memo(function Section({
   title,
-  accent,
+  dotColor,
   items,
   selectedAddress,
   attachedAddress,
 }: SectionProps) {
   if (items.length === 0) return null;
   return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-2 px-0.5">
-        <span className={`w-1.5 h-1.5 rounded-full ${accent}`} />
-        <h2 className="text-xs font-semibold text-[#e4e4e7] tracking-tight">
+    <section className="space-y-3">
+      <div className="flex items-center gap-2 px-1">
+        <span
+          className="w-2 h-2 rounded-full"
+          style={{ background: dotColor }}
+        />
+        <h2
+          className="text-xs font-bold tracking-tight"
+          style={{ color: "var(--text-primary)" }}
+        >
           {title}
         </h2>
-        <span className="text-xs text-[#52525b] tabular-nums">
+        <span
+          className="text-xs font-mono-code tabular-nums"
+          style={{ color: "var(--text-faint)" }}
+        >
           {items.length}
         </span>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {items.map((s) => (
           <SessionCard
             key={s.address}

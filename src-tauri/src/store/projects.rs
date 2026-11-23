@@ -63,6 +63,10 @@ pub struct PromptPreset {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_radar_density")]
+    pub radar_density: String,
     #[serde(default = "default_stuck_minutes")]
     pub stuck_minutes: u64,
     #[serde(default = "default_true")]
@@ -75,6 +79,12 @@ pub struct AppSettings {
     pub prompt_presets: Vec<PromptPreset>,
 }
 
+fn default_theme() -> String {
+    "aurora".to_string()
+}
+fn default_radar_density() -> String {
+    "balanced".to_string()
+}
 fn default_stuck_minutes() -> u64 {
     5
 }
@@ -109,6 +119,8 @@ fn default_presets() -> Vec<PromptPreset> {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            theme: default_theme(),
+            radar_density: default_radar_density(),
             stuck_minutes: default_stuck_minutes(),
             notify_on_blocked: true,
             notify_on_done: false,

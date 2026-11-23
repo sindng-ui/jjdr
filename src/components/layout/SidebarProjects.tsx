@@ -21,7 +21,9 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
   const toggleSelectedProjectId = useUiStore((s) => s.toggleSelectedProjectId);
   const setSelectedProjectId = useUiStore((s) => s.setSelectedProjectId);
   const setProjectModalProject = useUiStore((s) => s.setProjectModalProject);
-  const setCreateWorktreeProjectId = useUiStore((s) => s.setCreateWorktreeProjectId);
+  const setCreateWorktreeProjectId = useUiStore(
+    (s) => s.setCreateWorktreeProjectId
+  );
   const setSearchQuery = useUiStore((s) => s.setSearchQuery);
   const showToast = useUiStore((s) => s.showToast);
 
@@ -44,11 +46,14 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
   };
 
   return (
-    <aside className="w-52 bg-[#0d0f13] border-r border-[#1c1f26] flex flex-col shrink-0 select-none">
-      <div className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
+    <aside className="w-56 flex flex-col justify-between shrink-0 select-none py-1.5 px-1">
+      <div className="flex-1 overflow-y-auto space-y-5 pr-0.5">
         {/* Top Overview Row */}
-        <div className="space-y-0.5">
-          <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-[#52525b]">
+        <div className="space-y-1.5">
+          <div
+            className="px-3 text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: "var(--text-faint)" }}
+          >
             Workspace
           </div>
           <button
@@ -56,31 +61,38 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
               setSelectedProjectId(null);
               setSearchQuery("");
             }}
-            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
-              selectedProjectId === null
-                ? "bg-[#181b22] text-[#f4f4f5] font-medium"
-                : "text-[#a1a1aa] hover:bg-[#14171d] hover:text-[#e4e4e7]"
+            className={`w-full flex items-center justify-between px-3.5 py-2 rounded-full text-xs transition-colors cursor-pointer ${
+              selectedProjectId === null ? "jjdr-pill-active font-semibold" : ""
             }`}
+            style={
+              selectedProjectId === null
+                ? undefined
+                : { color: "var(--text-secondary)" }
+            }
           >
-            <span className="inline-flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5 text-[#71717a]" />
+            <span className="inline-flex items-center gap-2.5">
+              <Layers className="w-3.5 h-3.5 opacity-80" />
               <span>All Projects</span>
             </span>
-            <span className="font-mono-code text-[11px] text-[#71717a] tabular-nums">
+            <span className="font-mono-code text-[11px] opacity-75 tabular-nums">
               {allSessions.length}
             </span>
           </button>
         </div>
 
-        {/* Flat Project List (No nested boxes!) */}
-        <div className="space-y-0.5">
-          <div className="px-2 pb-1 flex items-center justify-between">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-[#52525b]">
+        {/* Organic Pill Project List */}
+        <div className="space-y-1">
+          <div className="px-3 pb-1 flex items-center justify-between">
+            <span
+              className="text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-faint)" }}
+            >
               Projects ({projects.length})
             </span>
             <button
               onClick={() => setProjectModalProject("new")}
-              className="inline-flex items-center gap-0.5 text-[11px] text-[#71717a] hover:text-[#e4e4e7] transition-colors cursor-pointer"
+              className="inline-flex items-center gap-0.5 text-[11px] font-medium opacity-75 hover:opacity-100 transition-opacity cursor-pointer"
+              style={{ color: "var(--text-secondary)" }}
               title="Add Git project"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -89,11 +101,14 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
           </div>
 
           {projects.length === 0 ? (
-            <div className="px-2 py-3 text-xs text-[#6b7280] space-y-2">
+            <div
+              className="px-3 py-3 text-xs space-y-2.5"
+              style={{ color: "var(--text-muted)" }}
+            >
               <p>등록된 프로젝트가 없습니다.</p>
               <button
                 onClick={() => setProjectModalProject("new")}
-                className="w-full py-1.5 rounded-md bg-[#181b22] hover:bg-[#222631] text-[#e4e4e7] border border-[#272b36] font-medium cursor-pointer"
+                className="jjdr-primary-btn w-full py-2 rounded-full font-semibold cursor-pointer"
               >
                 + Git 프로젝트 추가
               </button>
@@ -120,39 +135,58 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
                   key={proj.id}
                   onClick={() => toggleSelectedProjectId(proj.id)}
                   title={`${proj.name} (${Math.max(1, wts.length)} worktrees)`}
-                  className={`group flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
-                    isSelected
-                      ? "bg-[#181b22] text-[#f4f4f5] font-medium"
-                      : "text-[#a1a1aa] hover:bg-[#14171d] hover:text-[#e4e4e7]"
+                  className={`group flex items-center justify-between gap-1.5 px-3.5 py-2 rounded-full text-xs transition-colors cursor-pointer ${
+                    isSelected ? "jjdr-pill-active font-semibold" : "hover:bg-white/5"
                   }`}
+                  style={
+                    isSelected ? undefined : { color: "var(--text-secondary)" }
+                  }
                 >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <span
-                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{ backgroundColor: proj.color }}
                     />
                     <span className="truncate">{proj.name}</span>
                   </div>
 
-                  {/* Calm Status Dots (Hidden on hover to reveal quick action icons) */}
+                  {/* Soft Status Count Pill */}
                   <div className="flex items-center gap-1.5 font-mono-code text-[11px] tabular-nums group-hover:hidden shrink-0">
                     {needsCount > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-[#f87171] font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                      <span
+                        className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                        style={{
+                          background: "var(--action-soft)",
+                          color: "var(--action-fg)",
+                        }}
+                      >
                         {needsCount}
                       </span>
                     ) : readyCount > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-[#34d399]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
+                      <span
+                        className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                        style={{
+                          background: "var(--ready-soft)",
+                          color: "var(--ready-fg)",
+                        }}
+                      >
                         {readyCount}
                       </span>
                     ) : runCount > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-[#fbbf24]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]" />
+                      <span
+                        className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                        style={{
+                          background: "var(--run-soft)",
+                          color: "var(--run-fg)",
+                        }}
+                      >
                         {runCount}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-[#52525b]">
+                      <span
+                        className="text-[11px]"
+                        style={{ color: "var(--text-faint)" }}
+                      >
                         {Math.max(1, wts.length)}
                       </span>
                     )}
@@ -166,21 +200,24 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
                     <button
                       onClick={() => setCreateWorktreeProjectId(proj.id)}
                       title="새 Worktree 추가"
-                      className="p-1 rounded hover:bg-[#222631] text-[#a1a1aa] hover:text-[#f4f4f5] cursor-pointer"
+                      className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                      style={{ color: "var(--text-primary)" }}
                     >
                       <GitBranchPlus className="w-3 h-3" />
                     </button>
                     <button
                       onClick={() => setProjectModalProject(proj)}
                       title="프로젝트 수정"
-                      className="p-1 rounded hover:bg-[#222631] text-[#71717a] hover:text-[#e4e4e7] cursor-pointer"
+                      className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                      style={{ color: "var(--text-secondary)" }}
                     >
                       <Pencil className="w-3 h-3" />
                     </button>
                     <button
                       onClick={() => void handleDelete(proj.id, proj.name)}
                       title="프로젝트 삭제"
-                      className="p-1 rounded hover:bg-[#2c191d] text-[#71717a] hover:text-[#f87171] cursor-pointer"
+                      className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                      style={{ color: "var(--action-fg)" }}
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -196,13 +233,14 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
                 setSelectedProjectId(null);
                 setSearchQuery("External / hc");
               }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-[#71717a] hover:bg-[#14171d] hover:text-[#a1a1aa] transition-colors cursor-pointer"
+              className="w-full flex items-center justify-between px-3.5 py-2 rounded-full text-xs hover:bg-white/5 transition-colors cursor-pointer"
+              style={{ color: "var(--text-muted)" }}
             >
-              <span className="inline-flex items-center gap-2">
-                <Terminal className="w-3 h-3 text-[#52525b]" />
+              <span className="inline-flex items-center gap-2.5">
+                <Terminal className="w-3.5 h-3.5 opacity-75" />
                 <span>Shells / hc</span>
               </span>
-              <span className="font-mono-code text-[11px] tabular-nums">
+              <span className="font-mono-code text-[11px] tabular-nums opacity-75">
                 {unassignedCount}
               </span>
             </button>
@@ -210,19 +248,50 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
         </div>
       </div>
 
-      {/* Minimal Keyboard Hints Footer */}
-      <div className="px-3.5 py-2.5 border-t border-[#1c1f26] text-[10px] text-[#52525b] space-y-1">
+      {/* Soft Floating Shortcut Card (No rigid border-t!) */}
+      <div
+        className="mt-3 rounded-2xl p-3 text-[11px] space-y-1.5"
+        style={{
+          background: "var(--shortcut-bg)",
+          border: "1px solid var(--pill-border)",
+          color: "var(--text-muted)",
+        }}
+      >
         <div className="flex justify-between">
-          <span>Navigate</span>
-          <kbd className="text-[#71717a] font-mono-code">Ctrl+↑↓←→</kbd>
+          <span>카드 이동</span>
+          <kbd
+            className="font-mono-code text-[10px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Ctrl+↑↓←→
+          </kbd>
         </div>
         <div className="flex justify-between">
-          <span>Terminal</span>
-          <kbd className="text-[#71717a] font-mono-code">Ctrl+`</kbd>
+          <span>터미널 / 탭 전환</span>
+          <kbd
+            className="font-mono-code text-[10px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Ctrl+` / Tab
+          </kbd>
         </div>
         <div className="flex justify-between">
-          <span>Next / Palette</span>
-          <kbd className="text-[#71717a] font-mono-code">Ctrl+N / K</kbd>
+          <span>Shell / AI 추가</span>
+          <kbd
+            className="font-mono-code text-[10px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Ctrl+⇧+T / A
+          </kbd>
+        </div>
+        <div className="flex justify-between">
+          <span>다음 / 검색</span>
+          <kbd
+            className="font-mono-code text-[10px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Ctrl+N / F
+          </kbd>
         </div>
       </div>
     </aside>

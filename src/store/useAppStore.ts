@@ -10,8 +10,20 @@ import type {
   TerminalPreview,
   WorktreeInfo,
 } from "../types/domain";
+import {
+  applyThemeToDom,
+  DEFAULT_RADAR_DENSITY,
+  normalizeRadarDensity,
+  normalizeThemeId,
+  readStoredTheme,
+} from "../utils/themes";
+
+const INITIAL_THEME = readStoredTheme();
+applyThemeToDom(INITIAL_THEME);
 
 const DEFAULT_SETTINGS: AppSettings = {
+  theme: INITIAL_THEME,
+  radar_density: DEFAULT_RADAR_DENSITY,
   stuck_minutes: 5,
   notify_on_blocked: true,
   notify_on_done: false,
@@ -128,16 +140,32 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       worktreesByProject: { ...state.worktreesByProject, [projectId]: list },
     })),
   setTemplates: (templates) => set({ templates }),
-  setSettings: (settings) => set({ settings }),
-  setHydratedData: ({ projects, settings, ackTurns, queuedPrompts, lastAgentByWorktree }) =>
+  setSettings: (settings) => {
+    const normalized: AppSettings = {
+      ...settings,
+      theme: normalizeThemeId(settings.theme),
+      radar_density: normalizeRadarDensity(settings.radar_density),
+    };
+    applyThemeToDom(normalized.theme);
+    set({ settings: normalized });
+  },
+  setHydratedData: ({ projects, settings, ackTurns, queuedPrompts, lastAgentByWorktree }) => {
+    const normalizedSettings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      ...settings,
+      theme: normalizeThemeId(settings?.theme),
+      radar_density: normalizeRadarDensity(settings?.radar_density),
+    };
+    applyThemeToDom(normalizedSettings.theme);
     set({
       projects,
-      settings,
+      settings: normalizedSettings,
       ackTurns,
       queuedPrompts,
       lastAgentByWorktree,
       hydrated: true,
-    }),
+    });
+  },
 
   acknowledgeTurn: (address, turn) =>
     set((state) => ({
