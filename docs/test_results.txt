@@ -1,0 +1,25 @@
+# jjdr Verification & Test Results (2026-11-24 — Obsidian "Calm Precision" UI Overhaul)
+
+## 1. Frontend Unit Tests (`npm run test`)
+- Runner: Vitest v3.2.7
+- Status: PASS (3 test suites, 6 tests passed in 616ms)
+  - `src/utils/agents.test.ts` (2 tests) — Default autonomous (YOLO) CLI flags (`agy`, `claude`, `gemini`, `codex`) & prompt construction
+  - `src/utils/spatialNav.test.ts` (2 tests) — 2D spatial arrow-key card navigation (`Ctrl + Arrow`)
+  - `src/workers/dashboardLogic.test.ts` (2 tests) — Project/worktree/terminal grouping, attention queue prioritization, and finished terminal session filtering
+
+## 2. Frontend TypeScript & Production Bundle (`npm run build`)
+- Compiler: `tsc && vite build` (Vite v6.4.6)
+- Status: PASS (built in 2.89s)
+  - `dist/index.html`: 0.53 kB
+  - `dist/assets/dashboardWorker-*.js`: 4.63 kB
+  - `dist/assets/index-*.css`: 28.44 kB
+  - `dist/assets/index-*.js`: 334.31 kB
+  - `dist/assets/AttachedTerminalDrawer-*.js`: 397.78 kB
+
+## 3. Rust Backend Check (`cargo check --offline --manifest-path src-tauri/Cargo.toml`)
+- Status: PASS (`Finished dev profile target(s) in 9.13s`, 0 errors)
+- Default `xterm.js` and `herdr-core` display background updated to `#0b0c0e` (Obsidian canvas).
+
+## 4. Constraint & Performance Checks
+- Maximum file line count: 613 lines (`src-tauri/src/git/worktree.rs`) — all 52 files strictly under the 900-line limit.
+- CSS blur check: 0 occurrences of `backdrop-filter` or `blur()` across all stylesheets and components.

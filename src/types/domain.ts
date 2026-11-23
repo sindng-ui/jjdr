@@ -1,0 +1,221 @@
+export interface StatusInfo {
+  state: "idle" | "working" | "done" | "blocked" | "error" | string;
+  app?: string | null;
+  kind?: "permission" | "question" | "auth" | string | null;
+  msg?: string | null;
+  progress?: number | null;
+  title?: string | null;
+}
+
+export interface ForegroundInfo {
+  pid: number;
+  name: string;
+  argv: string[];
+  cwd: string;
+}
+
+export interface TerminalInfo {
+  address: string;
+  name?: string | null;
+  labels: Record<string, string>;
+  argv: string[];
+  cwd: string;
+  state: "live" | "finished" | string;
+  created_ms: number;
+  finished_ms?: number | null;
+  exit_code?: number | null;
+  signal?: number | null;
+  screen: string;
+  cols: number;
+  rows: number;
+  status?: StatusInfo | null;
+  status_ms?: number | null;
+  turn: number;
+  title: string;
+  template?: string | null;
+  keep: boolean;
+  pid?: number | null;
+  parent?: string | null;
+  reason?: string | null;
+  foreground?: ForegroundInfo | null;
+}
+
+export interface TerminalPreview {
+  address: string;
+  lines: string[];
+  updated_ms: number;
+}
+
+export interface HerdrHealth {
+  connected: boolean;
+  hc_found: boolean;
+  version?: string | null;
+  core_name?: string | null;
+  error?: string | null;
+  hint?: string | null;
+}
+
+export interface StateBatchPayload {
+  full_sync: boolean;
+  terminals: TerminalInfo[];
+  removed_addresses: string[];
+  previews: TerminalPreview[];
+  health: HerdrHealth;
+  seq: number;
+}
+
+export interface TemplateInfo {
+  name: string;
+  description: string;
+}
+
+export interface BootstrapConfig {
+  copy_files: string[];
+  setup_command?: string | null;
+}
+
+export interface ProjectConfig {
+  id: string;
+  name: string;
+  repo_path: string;
+  color: string;
+  default_branch: string;
+  default_agent: string;
+  verify_command?: string | null;
+  bootstrap: BootstrapConfig;
+  group: string;
+}
+
+export interface WorktreeInfo {
+  path: string;
+  head: string;
+  branch: string;
+  is_main: boolean;
+  is_bare: boolean;
+  is_detached: boolean;
+  is_merged: boolean;
+  dirty_count: number;
+  added_lines: number;
+  deleted_lines: number;
+  changed_files: string[];
+  overlap_files: string[];
+}
+
+export interface DiffDetail {
+  worktree_path: string;
+  branch: string;
+  stat_summary: string;
+  diff_text: string;
+  changed_files: string[];
+}
+
+export interface RepoInspectInfo {
+  canonical_path: string;
+  suggested_name: string;
+  current_branch: string;
+  default_branch: string;
+  branches: string[];
+  detected_env_files: string[];
+  suggested_verify_commands: string[];
+  suggested_setup_commands: string[];
+}
+
+export interface PromptPreset {
+  id: string;
+  label: string;
+  prompt: string;
+}
+
+export interface AppSettings {
+  stuck_minutes: number;
+  notify_on_blocked: boolean;
+  notify_on_done: boolean;
+  show_merge_overlap: boolean;
+  prompt_presets: PromptPreset[];
+}
+
+export interface PersistedUiState {
+  view_mode: "attention" | "matrix" | string;
+  selected_terminal?: string | null;
+  attached_terminal?: string | null;
+  active_group: string;
+  ack_turns: Record<string, number>;
+  queued_prompts: Record<string, string[]>;
+  last_agent_by_worktree: Record<string, string[]>;
+}
+
+export interface PersistedBundle {
+  projects: ProjectConfig[];
+  ui_state: PersistedUiState;
+  settings: AppSettings;
+}
+
+export interface AttachResult {
+  channel: number;
+  terminal: TerminalInfo;
+  resize_notifications: boolean;
+}
+
+export interface TermDataEvent {
+  channel: number;
+  address: string;
+  data_b64: string;
+}
+
+export interface TermClosedEvent {
+  channel: number;
+  address: string;
+}
+
+export type AttentionBucket = "needs_you" | "ready" | "running" | "idle";
+
+export interface EnrichedSession {
+  address: string;
+  terminal: TerminalInfo;
+  bucket: AttentionBucket;
+  priorityScore: number;
+  isStuck: boolean;
+  stuckMinutes: number;
+  unackedDone: boolean;
+  projectId: string | null;
+  projectName: string;
+  projectColor: string;
+  projectGroup: string;
+  worktreePath: string;
+  branch: string;
+  worktree: WorktreeInfo | null;
+  previewLines: string[];
+  queuedCount: number;
+  agentLabel: string;
+  elapsedMs: number;
+}
+
+export interface MatrixWorktreeCell {
+  worktree: WorktreeInfo;
+  sessions: EnrichedSession[];
+  topBucket: AttentionBucket;
+}
+
+export interface MatrixProjectLane {
+  project: ProjectConfig;
+  cells: MatrixWorktreeCell[];
+}
+
+export interface DashboardCounts {
+  needsYou: number;
+  ready: number;
+  running: number;
+  idle: number;
+  total: number;
+}
+
+export interface DashboardWorkerResult {
+  allSessions: EnrichedSession[];
+  sessions: EnrichedSession[];
+  byBucket: Record<AttentionBucket, EnrichedSession[]>;
+  matrixLanes: MatrixProjectLane[];
+  unassignedSessions: EnrichedSession[];
+  counts: DashboardCounts;
+  globalCounts: DashboardCounts;
+  groups: string[];
+}

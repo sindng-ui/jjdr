@@ -1,0 +1,43 @@
+jjdr Test & Performance Verification Report
+Date: 2026-11-24
+Environment: Windows / rustc 1.99.1 / cargo 1.99.1 / node v24.11.1 / npm 11.6.2 / git 2.51.2 / hc 0.1.17
+
+1. Frontend Unit Tests (Vitest)
+   Command: npm run test
+   Result: PASS (1 file, 2/2 tests, 3ms)
+   - dashboardLogic > prioritizes blocked, stuck, ready, running, and idle accurately: PASS
+   - dashboardLogic > rehydrates external sessions without jjdr labels by longest CWD match: PASS
+
+2. Frontend Typecheck & Production Build (Vite + TypeScript + React.lazy code splitting)
+   Command: npm run build
+   Result: PASS (3.57s, 0 TypeScript errors, 0 chunk warnings)
+   Bundle Breakdown:
+   - dist/index.html: 0.53 kB (gzip 0.36 kB)
+   - dist/assets/dashboardWorker-*.js: 4.06 kB (Web Worker chunk)
+   - dist/assets/index-*.css: 23.62 kB (gzip 5.53 kB)
+   - dist/assets/index-*.js: 316.49 kB (gzip 91.70 kB — initial Mission Control UI without xterm)
+   - dist/assets/AttachedTerminalDrawer-*.js: 395.49 kB (gzip 99.28 kB — lazy-loaded on Attach only)
+
+3. Rust Backend Unit Tests
+   Command: cargo test --offline --manifest-path src-tauri/Cargo.toml --lib
+   Result: PASS (5/5 tests, 0.00s)
+   - herdr::protocol::tests::strip_ansi_removes_csi_and_osc: ok
+   - herdr::protocol::tests::frame_roundtrip_all_kinds: ok
+   - herdr::protocol::tests::frame_large_payload_roundtrip: ok
+   - git::worktree::tests::parses_porcelain_worktrees: ok
+   - git::worktree::tests::detects_merge_overlap_across_worktrees: ok
+
+4. Rust Tauri v2 Desktop Executable Build
+   Command: cargo build --offline --manifest-path src-tauri/Cargo.toml
+   Result: PASS (0 errors, jjdr.exe built cleanly)
+
+5. Performance & Code Quality Audit
+   - Total source files (.ts, .tsx, .css, .rs): 47
+   - Files exceeding 900 lines: 0 (largest: src-tauri/src/git/worktree.rs at 498 lines)
+   - CSS backdrop-filter / blur() occurrences: 0
+   - Off-main-thread execution:
+     * Rust Tokio workers: hc connect Framed MUX, events.subscribe, 30ms state batching, 16ms PTY batching, parallel Git worktree JoinSet
+     * Frontend Web Worker: dashboardWorker.ts (attention sorting, stuck detection, fuzzy search, matrix lane & CWD rehydration)
+   - Memory hygiene:
+     * Hybrid Mode C: 0 xterm.js instances mounted during normal monitoring; React.lazy chunk split; single active terminal detaches & disposes immediately on switch/Esc
+     * Session persistence: terminal.run with outlive_parent=true, no_parent=true, keep=true; app exit disconnects bridge only without killing herdr-core or AI sessions

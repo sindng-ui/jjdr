@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* Obsidian "Calm Precision" Native Theme (Zero-Blur, High-Contrast Monochrome + Semantic Signals) */
+:root {
+  color-scheme: dark;
+  --bg-root: #0b0c0e;
+  --bg-chrome: #0e1013;
+  --bg-surface: #13161b;
+  --bg-elevated: #181c23;
+  --bg-hover: #1c2029;
+  --border-hairline: #1e222a;
+  --border-strong: #2e3440;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #6b7280;
+  --signal-red: #ef4444;
+  --signal-green: #10b981;
+  --signal-amber: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-root);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.font-mono-code {
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ultra-slim minimal scrollbars (No blur/filters) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #232730;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #343a46;
+}

@@ -1,0 +1,29 @@
+[package]
+name = "jjdr"
+version = "0.1.0"
+description = "jjdr — Low-cognitive-load AI worktree mission control on herdr-core"
+authors = ["jjdr"]
+edition = "2021"
+
+[lib]
+name = "jjdr_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+bytes = "1"
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+base64 = "0.22"
+dirs = "6"
+chrono = { version = "0.4", features = ["serde"] }
