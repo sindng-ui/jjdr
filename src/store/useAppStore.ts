@@ -8,6 +8,7 @@ import type {
   TemplateInfo,
   TerminalInfo,
   TerminalPreview,
+  WorktreeCardMeta,
   WorktreeInfo,
 } from "../types/domain";
 import {
@@ -58,6 +59,8 @@ interface AppStoreState {
   ackTurns: Record<string, number>;
   queuedPrompts: Record<string, string[]>;
   lastAgentByWorktree: Record<string, string[]>;
+  worktreeMeta: Record<string, WorktreeCardMeta>;
+  worktreeOrderByProject: Record<string, string[]>;
   computed: DashboardWorkerResult;
   hydrated: boolean;
   seq: number;
@@ -75,12 +78,16 @@ interface AppStoreState {
     ackTurns: Record<string, number>;
     queuedPrompts: Record<string, string[]>;
     lastAgentByWorktree: Record<string, string[]>;
+    worktreeMeta: Record<string, WorktreeCardMeta>;
+    worktreeOrderByProject: Record<string, string[]>;
   }) => void;
   acknowledgeTurn: (address: string, turn: number) => void;
   enqueuePrompt: (address: string, prompt: string) => void;
   popQueuedPrompt: (address: string) => string | null;
   removeQueuedPrompt: (address: string, index: number) => void;
   recordLastAgent: (normWorktreePath: string, argv: string[]) => void;
+  setWorktreeMeta: (normWorktreePath: string, meta: WorktreeCardMeta | null) => void;
+  setProjectWorktreeOrder: (projectId: string, orderedNormPaths: string[]) => void;
   setComputed: (result: DashboardWorkerResult) => void;
 }
 
@@ -102,6 +109,8 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   ackTurns: {},
   queuedPrompts: {},
   lastAgentByWorktree: {},
+  worktreeMeta: {},
+  worktreeOrderByProject: {},
   computed: EMPTY_COMPUTED,
   hydrated: false,
   seq: 0,
@@ -149,7 +158,15 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     applyThemeToDom(normalized.theme);
     set({ settings: normalized });
   },
-  setHydratedData: ({ projects, settings, ackTurns, queuedPrompts, lastAgentByWorktree }) => {
+  setHydratedData: ({
+    projects,
+    settings,
+    ackTurns,
+    queuedPrompts,
+    lastAgentByWorktree,
+    worktreeMeta,
+    worktreeOrderByProject,
+  }) => {
     const normalizedSettings: AppSettings = {
       ...DEFAULT_SETTINGS,
       ...settings,
@@ -163,6 +180,8 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       ackTurns,
       queuedPrompts,
       lastAgentByWorktree,
+      worktreeMeta,
+      worktreeOrderByProject,
       hydrated: true,
     });
   },
@@ -208,6 +227,30 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       lastAgentByWorktree: {
         ...state.lastAgentByWorktree,
         [normWorktreePath]: argv,
+      },
+    })),
+
+  setWorktreeMeta: (normWorktreePath, meta) =>
+    set((state) => {
+      const next = { ...state.worktreeMeta };
+      const cleanedName = meta?.display_name?.trim() || null;
+      const cleanedNote = meta?.note?.trim() || null;
+      if (!cleanedName && !cleanedNote) {
+        delete next[normWorktreePath];
+      } else {
+        next[normWorktreePath] = {
+          display_name: cleanedName,
+          note: cleanedNote,
+        };
+      }
+      return { worktreeMeta: next };
+    }),
+
+  setProjectWorktreeOrder: (projectId, orderedNormPaths) =>
+    set((state) => ({
+      worktreeOrderByProject: {
+        ...state.worktreeOrderByProject,
+        [projectId]: orderedNormPaths,
       },
     })),
 

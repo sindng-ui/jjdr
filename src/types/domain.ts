@@ -139,6 +139,11 @@ export interface AppSettings {
   prompt_presets: PromptPreset[];
 }
 
+export interface WorktreeCardMeta {
+  display_name?: string | null;
+  note?: string | null;
+}
+
 export interface PersistedUiState {
   view_mode: "attention" | "matrix" | string;
   selected_terminal?: string | null;
@@ -147,6 +152,9 @@ export interface PersistedUiState {
   ack_turns: Record<string, number>;
   queued_prompts: Record<string, string[]>;
   last_agent_by_worktree: Record<string, string[]>;
+  terminal_width_px?: number | null;
+  worktree_meta?: Record<string, WorktreeCardMeta>;
+  worktree_order_by_project?: Record<string, string[]>;
 }
 
 export interface PersistedBundle {

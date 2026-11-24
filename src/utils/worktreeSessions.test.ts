@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { EnrichedSession } from "../types/domain";
 import {
+  countWorktreeLiveShells,
   getCycledSession,
   getWorktreeLiveSessions,
+  MAX_SHELLS_PER_WORKTREE,
   pickPreferredWorktreeSession,
 } from "./worktreeSessions";
 
@@ -74,5 +76,21 @@ describe("worktreeSessions", () => {
     expect(getCycledSession(tabs, "t1", 1)?.address).toBe("t4");
     expect(getCycledSession(tabs, "t7", 1)?.address).toBe("t1");
     expect(getCycledSession(tabs, "t1", -1)?.address).toBe("t7");
+  });
+
+  it("counts only live plain shells in a specific worktree against the max-2 limit", () => {
+    const s1 = mockSession("t1", "shell", 1000, "live", "K:/repo/wt-a", "proj-1");
+    const s2 = mockSession("t2", "pwsh", 2000, "live", "K:/repo/wt-a", "proj-1");
+    const sDead = mockSession("t3", "shell", 500, "finished", "K:/repo/wt-a", "proj-1");
+    const sAi = mockSession("t4", "gemini", 3000, "live", "K:/repo/wt-a", "proj-1");
+    const sOther = mockSession("t5", "shell", 4000, "live", "K:/repo/wt-b", "proj-1");
+
+    expect(MAX_SHELLS_PER_WORKTREE).toBe(2);
+    expect(
+      countWorktreeLiveShells([s1, s2, sDead, sAi, sOther], "k:\\repo\\wt-a", "proj-1")
+    ).toBe(2);
+    expect(
+      countWorktreeLiveShells([s1, s2, sDead, sAi, sOther], "K:/repo/wt-b", "proj-1")
+    ).toBe(1);
   });
 });

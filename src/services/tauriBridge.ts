@@ -81,6 +81,69 @@ export async function windowStartDragging(): Promise<void> {
   return invoke<void>("window_start_dragging");
 }
 
+export async function openInExplorer(path: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("open_in_explorer", { path });
+}
+
+export interface TextFileContent {
+  path: string;
+  content: string;
+  size_bytes: number;
+  truncated: boolean;
+}
+
+export interface FileMatchItem {
+  path: string;
+  score: number;
+}
+
+export interface FileSearchResult {
+  root_path: string;
+  total_indexed: number;
+  matches: FileMatchItem[];
+  from_cache: boolean;
+}
+
+export async function warmProjectFileIndex(
+  projectId: string,
+  worktreePath?: string | null
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("warm_project_file_index", {
+    projectId,
+    worktreePath: worktreePath ?? null,
+  });
+}
+
+export async function searchProjectFiles(
+  projectId: string,
+  worktreePath: string | null,
+  query: string,
+  limit = 80
+): Promise<FileSearchResult> {
+  return invoke<FileSearchResult>("search_project_files", {
+    projectId,
+    worktreePath,
+    query,
+    limit,
+  });
+}
+
+export async function readTextFile(path: string): Promise<TextFileContent> {
+  return invoke<TextFileContent>("read_text_file", { path });
+}
+
+export async function openWithDefaultApp(path: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("open_with_default_app", { path });
+}
+
+export async function openInVsCode(path: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("open_in_vscode", { path });
+}
+
 export interface UpsertProjectPayload {
   id?: string;
   name: string;
@@ -109,6 +172,12 @@ export async function deleteProject(
   projectId: string
 ): Promise<ProjectConfig[]> {
   return invoke<ProjectConfig[]>("delete_project", { projectId });
+}
+
+export async function reorderProjects(
+  orderedIds: string[]
+): Promise<ProjectConfig[]> {
+  return invoke<ProjectConfig[]>("reorder_projects", { orderedIds });
 }
 
 export async function listAllWorktrees(): Promise<
@@ -164,6 +233,18 @@ export async function teardownWorktree(
   input: RemoveWorktreePayload
 ): Promise<void> {
   return invoke<void>("teardown_worktree", { input });
+}
+
+export interface RenameBranchPayload {
+  project_id: string;
+  old_branch: string;
+  new_branch: string;
+}
+
+export async function renameWorktreeBranch(
+  input: RenameBranchPayload
+): Promise<void> {
+  return invoke<void>("rename_worktree_branch", { input });
 }
 
 export async function fetchWorktreeDiff(

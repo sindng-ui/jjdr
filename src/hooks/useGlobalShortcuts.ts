@@ -1,92 +1,21 @@
 import { useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { useUiStore } from "../store/useUiStore";
-import { launchSession } from "../services/tauriBridge";
-import { normalizePath } from "../workers/dashboardLogic";
+import type { NavDirection } from "../utils/spatialNav";
 import {
-  findNextCardInDirection,
-  type CardRect,
-  type NavDirection,
-} from "../utils/spatialNav";
-import {
-  cardKeyForSession,
-  getCycledSession,
-  getWorktreeLiveSessions,
-} from "../utils/worktreeSessions";
+  cycleCurrentWorktreeTab,
+  jumpToNextActionable,
+  moveQueueSelection,
+  moveRadarSpatial,
+  openAiLauncherForAttachedWorktree,
+  openContextMenuForSelectedCard,
+  openOrLaunchCard,
+  readBoardCards,
+  spawnShellTabInAttachedWorktree,
+  toggleSelectedTerminal,
+} from "../utils/shortcutActions";
 
-interface DomBoardCard extends CardRect {
-  el: HTMLElement;
-  addr: string | null;
-  projectId: string | null;
-  worktreePath: string | null;
-  branch: string | null;
-}
-
-function readBoardCards(): DomBoardCard[] {
-  const nodes = Array.from(
-    document.querySelectorAll<HTMLElement>("[data-jjdr-card]")
-  );
-  return nodes
-    .map((el) => {
-      const r = el.getBoundingClientRect();
-      return {
-        key: el.dataset.jjdrCard || "",
-        addr: el.dataset.jjdrSessionAddr || null,
-        projectId: el.dataset.jjdrProjectId || null,
-        worktreePath: el.dataset.jjdrWorktreePath || null,
-        branch: el.dataset.jjdrBranch || null,
-        el,
-        left: r.left,
-        right: r.right,
-        top: r.top,
-        bottom: r.bottom,
-        cx: r.left + r.width / 2,
-        cy: r.top + r.height / 2,
-      };
-    })
-    .filter((c) => c.key && c.right > c.left && c.bottom > c.top);
-}
-
-async function openOrLaunchCard(card: DomBoardCard | null, fallbackAddr: string | null) {
-  const ui = useUiStore.getState();
-  const app = useAppStore.getState();
-
-  const addr = card?.addr ?? fallbackAddr;
-  if (addr) {
-    const term = app.terminals[addr];
-    if (term && term.state === "live") {
-      ui.setSelectedAddress(addr);
-      ui.setAttachedAddress(addr);
-      return;
-    }
-  }
-
-  // No live AI in this card yet -> auto-launch default AI (YOLO) & attach right pane immediately!
-  if (card?.projectId && card.worktreePath) {
-    const proj = app.projects.find((p) => p.id === card.projectId);
-    if (!proj) return;
-    try {
-      const defaultCmd = proj.default_agent || "agy";
-      const argv = defaultCmd.split(/\s+/).filter(Boolean);
-      const newAddr = await launchSession({
-        project_id: proj.id,
-        cwd: card.worktreePath,
-        branch: card.branch ?? undefined,
-        argv,
-        name: `${proj.name}-${(card.branch || "main").replace(/[/\\ ]/g, "-")}`,
-        autonomous: true,
-      });
-      app.recordLastAgent(normalizePath(card.worktreePath), argv);
-      if (newAddr) {
-        ui.setSelectedCardKey(card.key);
-        ui.setSelectedAddress(newAddr);
-        ui.setAttachedAddress(newAddr);
-      }
-    } catch (err) {
-      ui.showToast(`AI 시작 실패: ${String(err)}`, "error");
-    }
-  }
-}
+export { jumpToNextActionable };
 
 export function useGlobalShortcuts() {
   useEffect(() => {
@@ -101,7 +30,7 @@ export function useGlobalShortcuts() {
       const inXterm = target?.closest(".xterm") !== null;
       const ui = useUiStore.getState();
 
-      // 1. Ctrl+` (Backquote): toggle right terminal pane anywhere (including inside xterm!)
+      // 1. Ctrl+` (Backquote): toggle right terminal pane anywhere
       const isTerminalToggle =
         (e.ctrlKey || e.metaKey) &&
         !e.altKey &&
@@ -113,7 +42,7 @@ export function useGlobalShortcuts() {
         return;
       }
 
-      // 2. Ctrl + Arrow keys: switch left card focus AND sync right terminal pane even while focused inside xterm!
+      // 2. Ctrl + Arrow keys: switch card focus & sync right terminal pane even inside xterm
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         const ctrlDirMap: Record<string, NavDirection> = {
           ArrowUp: "up",
@@ -141,16 +70,46 @@ export function useGlobalShortcuts() {
       const isDetachCombo =
         (e.ctrlKey && !e.altKey && (e.key === "\\" || e.code === "Backslash")) ||
         (e.altKey && e.key === "Escape");
-      if (isDetachCombo && ui.attachedAddress) {
+      if (isDetachCombo && (ui.terminalDrawerOpen || ui.attachedAddress)) {
         e.preventDefault();
         e.stopPropagation();
-        ui.setAttachedAddress(null);
+        ui.closeTerminalDrawer();
         (document.activeElement as HTMLElement | null)?.blur();
         return;
       }
 
-      // 3b. Ctrl+Tab / Ctrl+Shift+Tab: Cycle between AI & Shell tabs inside current worktree!
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "Tab" || e.code === "Tab")) {
+      // 3a. Alt+Enter: open keyboard-navigable context menu (works inside xterm terminal pane too!)
+      if (
+        e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        e.key === "Enter" &&
+        (!inInput || inXterm) &&
+        !ui.commandPaletteOpen &&
+        !ui.quickFileOpen &&
+        !ui.markdownViewerTarget &&
+        !ui.projectModalProject &&
+        !ui.createWorktreeProjectId &&
+        !ui.editWorktreeTarget &&
+        !ui.launchTarget &&
+        !ui.teardownTarget &&
+        !ui.diffTarget &&
+        !ui.settingsOpen
+      ) {
+        if (openContextMenuForSelectedCard()) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+
+      // 3b. Ctrl+Tab / Ctrl+Shift+Tab: Cycle between AI & Shell tabs inside current worktree
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        (e.key === "Tab" || e.code === "Tab")
+      ) {
         if (ui.attachedAddress) {
           e.preventDefault();
           e.stopPropagation();
@@ -159,8 +118,13 @@ export function useGlobalShortcuts() {
         }
       }
 
-      // 3c. Ctrl+Shift+T (+Shell tab) / Ctrl+Shift+A (+AI tab) inside current worktree
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && ui.attachedAddress) {
+      // 3c. Ctrl+Shift+T (+Shell tab) / Ctrl+Shift+A (+Session modal)
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        (ui.terminalDrawerOpen || ui.attachedAddress)
+      ) {
         const k = e.key.toLowerCase();
         if (k === "t" || e.code === "KeyT") {
           e.preventDefault();
@@ -176,7 +140,7 @@ export function useGlobalShortcuts() {
         }
       }
 
-      // 4. Global Ctrl shortcuts that work EVERYWHERE (including while right xterm terminal is open/focused, and under Korean IME)
+      // 4. Global Ctrl shortcuts (IME-independent via e.code)
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
         if (k === "n" || e.code === "KeyN") {
@@ -201,6 +165,12 @@ export function useGlobalShortcuts() {
           e.preventDefault();
           e.stopPropagation();
           ui.setCommandPaletteOpen(!ui.commandPaletteOpen);
+          return;
+        }
+        if (k === "p" || e.code === "KeyP") {
+          e.preventDefault();
+          e.stopPropagation();
+          ui.setQuickFileOpen(!ui.quickFileOpen);
           return;
         }
         if (k === "m" || e.code === "KeyM") {
@@ -229,8 +199,20 @@ export function useGlobalShortcuts() {
         }
       }
 
-      // 6. Escape: close modals -> blur search input -> detach terminal (when outside xterm)
+      // 5. Escape: context menu -> modals -> input blur -> close terminal -> clear search -> clear project filter (#9)
       if (e.key === "Escape") {
+        if (ui.contextMenu) {
+          ui.setContextMenu(null);
+          return;
+        }
+        if (ui.quickFileOpen) {
+          ui.setQuickFileOpen(false);
+          return;
+        }
+        if (ui.markdownViewerTarget) {
+          ui.setMarkdownViewerTarget(null);
+          return;
+        }
         if (ui.commandPaletteOpen) {
           ui.setCommandPaletteOpen(false);
           return;
@@ -249,6 +231,10 @@ export function useGlobalShortcuts() {
         }
         if (ui.createWorktreeProjectId) {
           ui.setCreateWorktreeProjectId(null);
+          return;
+        }
+        if (ui.editWorktreeTarget) {
+          ui.setEditWorktreeTarget(null);
           return;
         }
         if (ui.launchTarget) {
@@ -296,9 +282,9 @@ export function useGlobalShortcuts() {
           target.blur();
           return;
         }
-        if (!inXterm && ui.attachedAddress) {
+        if (!inXterm && (ui.terminalDrawerOpen || ui.attachedAddress)) {
           e.preventDefault();
-          ui.setAttachedAddress(null);
+          ui.closeTerminalDrawer();
           return;
         }
         if (!inXterm && ui.searchQuery.trim().length > 0) {
@@ -306,11 +292,18 @@ export function useGlobalShortcuts() {
           ui.setSearchQuery("");
           return;
         }
+        // #9: Press Esc to clear single-project filter and show all projects again
+        if (!inXterm && ui.selectedProjectId !== null) {
+          e.preventDefault();
+          ui.setSelectedProjectId(null);
+          return;
+        }
       }
 
-      if (inInput || inXterm) return;
+      if (inInput || inXterm || ui.contextMenu) return;
 
-      // 7. Plain navigation (when board/queue has focus)
+      // 6. Plain navigation (when board/queue has focus)
+      const drawerActive = ui.terminalDrawerOpen || Boolean(ui.attachedAddress);
       if (ui.viewMode === "radar") {
         const dirMap: Record<string, NavDirection> = {
           ArrowUp: "up",
@@ -325,7 +318,7 @@ export function useGlobalShortcuts() {
         const dir = dirMap[e.key];
         if (dir) {
           e.preventDefault();
-          moveRadarSpatial(dir, Boolean(ui.attachedAddress));
+          moveRadarSpatial(dir, drawerActive);
           return;
         }
 
@@ -345,10 +338,10 @@ export function useGlobalShortcuts() {
       // Queue view: linear vertical navigation
       if (e.key === "j" || e.key === "ArrowDown") {
         e.preventDefault();
-        moveQueueSelection(1, Boolean(ui.attachedAddress));
+        moveQueueSelection(1, drawerActive);
       } else if (e.key === "k" || e.key === "ArrowUp") {
         e.preventDefault();
-        moveQueueSelection(-1, Boolean(ui.attachedAddress));
+        moveQueueSelection(-1, drawerActive);
       } else if (e.key === "Enter" && ui.selectedAddress) {
         e.preventDefault();
         void openOrLaunchCard(null, ui.selectedAddress);
@@ -358,240 +351,4 @@ export function useGlobalShortcuts() {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
-}
-
-async function toggleSelectedTerminal(fromXterm: boolean) {
-  const ui = useUiStore.getState();
-
-  // Inside xterm -> Ctrl+` always detaches cleanly back to radar/queue
-  if (fromXterm && ui.attachedAddress) {
-    ui.setAttachedAddress(null);
-    (document.activeElement as HTMLElement | null)?.blur();
-    return;
-  }
-
-  let currentCard: DomBoardCard | null = null;
-  let targetAddr: string | null = ui.selectedAddress;
-
-  if (ui.viewMode === "radar") {
-    const cards = readBoardCards();
-    currentCard = cards.find((c) => c.key === ui.selectedCardKey) ?? cards[0] ?? null;
-    if (currentCard) {
-      ui.setSelectedCardKey(currentCard.key);
-      targetAddr = currentCard.addr;
-      ui.setSelectedAddress(targetAddr);
-    }
-  }
-
-  // Pressing Ctrl+` again on the already-attached session detaches it
-  if (ui.attachedAddress && (!targetAddr || ui.attachedAddress === targetAddr)) {
-    ui.setAttachedAddress(null);
-    (document.activeElement as HTMLElement | null)?.blur();
-    return;
-  }
-
-  await openOrLaunchCard(currentCard, targetAddr);
-}
-
-const pendingShellLaunches = new Set<string>();
-
-async function launchDefaultShellAndAttach(card: DomBoardCard) {
-  if (!card.worktreePath || pendingShellLaunches.has(card.key)) return;
-  pendingShellLaunches.add(card.key);
-  const ui = useUiStore.getState();
-  const app = useAppStore.getState();
-  const proj = card.projectId
-    ? app.projects.find((p) => p.id === card.projectId)
-    : undefined;
-
-  try {
-    const newAddr = await launchSession({
-      project_id: card.projectId ?? undefined,
-      cwd: card.worktreePath,
-      branch: card.branch ?? undefined,
-      // Empty argv -> herdr-core spawns the OS default shell (PowerShell/pwsh on Windows)
-      argv: [],
-      name: proj
-        ? `${proj.name}-${(card.branch || "main").replace(/[/\\ ]/g, "-")}-sh`
-        : undefined,
-    });
-    if (newAddr) {
-      // Only attach if the user is still focused on this card and pane is still open
-      const latestUi = useUiStore.getState();
-      if (latestUi.selectedCardKey === card.key && latestUi.attachedAddress !== null) {
-        latestUi.setSelectedAddress(newAddr);
-        latestUi.setAttachedAddress(newAddr);
-      }
-    }
-  } catch (err) {
-    ui.showToast(`PowerShell 실행 실패: ${String(err)}`, "error");
-  } finally {
-    pendingShellLaunches.delete(card.key);
-  }
-}
-
-function moveRadarSpatial(dir: NavDirection, syncAttachedPane: boolean) {
-  const cards = readBoardCards();
-  if (cards.length === 0) return;
-
-  const ui = useUiStore.getState();
-  const nextKey = findNextCardInDirection(cards, ui.selectedCardKey, dir);
-  if (!nextKey) return;
-
-  const nextCard = cards.find((c) => c.key === nextKey);
-  if (!nextCard) return;
-
-  ui.setSelectedCardKey(nextCard.key);
-  ui.setSelectedAddress(nextCard.addr);
-  nextCard.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-
-  if (syncAttachedPane && ui.attachedAddress) {
-    if (nextCard.addr) {
-      const term = useAppStore.getState().terminals[nextCard.addr];
-      if (term && term.state === "live") {
-        ui.setAttachedAddress(nextCard.addr);
-        return;
-      }
-    }
-    // Keep right pane open and launch default PowerShell at this project/worktree path!
-    if (nextCard.worktreePath) {
-      void launchDefaultShellAndAttach(nextCard);
-    }
-  }
-}
-
-export function jumpToNextActionable(delta: 1 | -1 = 1) {
-  const { allSessions } = useAppStore.getState().computed;
-  const actionable = allSessions.filter(
-    (s) => s.bucket === "needs_you" || s.bucket === "ready"
-  );
-  if (actionable.length === 0) {
-    useUiStore
-      .getState()
-      .showToast("확인할 작업이 없습니다!", "success");
-    return;
-  }
-  const ui = useUiStore.getState();
-  const curIdx = actionable.findIndex((s) => s.address === ui.selectedAddress);
-  const nextIdx =
-    curIdx === -1
-      ? delta > 0
-        ? 0
-        : actionable.length - 1
-      : (curIdx + delta + actionable.length) % actionable.length;
-  const next = actionable[nextIdx];
-  if (ui.selectedProjectId && next.projectId !== ui.selectedProjectId) {
-    ui.setSelectedProjectId(null);
-  }
-  ui.setSelectedAddress(next.address);
-  if (ui.viewMode === "radar" && next.projectId) {
-    const syncRadarCard = () => {
-      const cards = readBoardCards();
-      const match = cards.find((c) => c.addr === next.address);
-      if (match) {
-        useUiStore.getState().setSelectedCardKey(match.key);
-        match.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        return true;
-      }
-      return false;
-    };
-    if (!syncRadarCard()) {
-      requestAnimationFrame(() => {
-        syncRadarCard();
-      });
-    }
-  }
-  if (ui.attachedAddress && next.terminal.state === "live") {
-    ui.setAttachedAddress(next.address);
-  }
-}
-
-function moveQueueSelection(delta: number, syncAttachedPane: boolean) {
-  const sessions = useAppStore.getState().computed.sessions;
-  if (sessions.length === 0) return;
-  const ui = useUiStore.getState();
-  const curIdx = sessions.findIndex((s) => s.address === ui.selectedAddress);
-  const nextIdx =
-    curIdx === -1
-      ? delta > 0
-        ? 0
-        : sessions.length - 1
-      : (curIdx + delta + sessions.length) % sessions.length;
-  const next = sessions[nextIdx];
-  ui.setSelectedAddress(next.address);
-
-  if (syncAttachedPane && ui.attachedAddress && next.terminal.state === "live") {
-    ui.setAttachedAddress(next.address);
-  }
-}
-
-function cycleCurrentWorktreeTab(delta: 1 | -1) {
-  const ui = useUiStore.getState();
-  if (!ui.attachedAddress) return;
-  const allSessions = useAppStore.getState().computed.allSessions;
-  const current =
-    allSessions.find((s) => s.address === ui.attachedAddress) ?? null;
-  if (!current) return;
-
-  const tabs = getWorktreeLiveSessions(allSessions, current);
-  const next = getCycledSession(tabs, ui.attachedAddress, delta);
-  if (next) {
-    ui.setSelectedAddress(next.address);
-    ui.setAttachedAddress(next.address);
-    ui.rememberCardSession(cardKeyForSession(next), next.address);
-  } else if (current.projectId) {
-    ui.showToast("열린 탭이 1개입니다 · Ctrl+Shift+T로 Shell 탭 추가", "info");
-  }
-}
-
-let spawningShortcutShell = false;
-
-async function spawnShellTabInAttachedWorktree() {
-  if (spawningShortcutShell) return;
-  const ui = useUiStore.getState();
-  if (!ui.attachedAddress) return;
-  const allSessions = useAppStore.getState().computed.allSessions;
-  const current =
-    allSessions.find((s) => s.address === ui.attachedAddress) ?? null;
-  if (!current || !current.projectId || !current.worktreePath) return;
-
-  spawningShortcutShell = true;
-  try {
-    const newAddr = await launchSession({
-      project_id: current.projectId,
-      cwd: current.worktreePath,
-      branch: current.branch || undefined,
-      argv: [],
-      name: `${current.projectName}-${(current.branch || "main").replace(
-        /[/\\ ]/g,
-        "-"
-      )}-sh`,
-    });
-    if (newAddr) {
-      ui.setSelectedAddress(newAddr);
-      ui.setAttachedAddress(newAddr);
-      ui.rememberCardSession(cardKeyForSession(current), newAddr);
-    }
-  } catch (err) {
-    ui.showToast(`PowerShell 탭 추가 실패: ${String(err)}`, "error");
-  } finally {
-    spawningShortcutShell = false;
-  }
-}
-
-function openAiLauncherForAttachedWorktree() {
-  const ui = useUiStore.getState();
-  if (!ui.attachedAddress) return;
-  const app = useAppStore.getState();
-  const current =
-    app.computed.allSessions.find((s) => s.address === ui.attachedAddress) ??
-    null;
-  if (!current || !current.projectId || !current.worktreePath) return;
-  const proj = app.projects.find((p) => p.id === current.projectId);
-  ui.setLaunchTarget({
-    projectId: current.projectId,
-    cwd: current.worktreePath,
-    branch: current.branch || undefined,
-    defaultAgent: proj?.default_agent,
-  });
 }

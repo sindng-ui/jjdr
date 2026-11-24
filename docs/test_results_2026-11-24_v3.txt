@@ -1,0 +1,37 @@
+=== jjdr v0.3.0 Final Test & Audit Results ===
+Date: 2026-11-24
+Scope:
+- Worktree Right-Click Context Menu + Explorer open
+- Version bump to 0.3.0 (package.json, tauri.conf.json, Cargo.toml)
+- Ctrl+P Quick File Search (lazy on-focus Rust background cache, LRU max 6 projects, Shared Base + Worktree Delta, native Rust fuzzy search)
+- Built-in Ultra-light GitHub-style Markdown Viewer (lazy chunk 4.58 kB / gzip 1.75 kB)
+- Max 2 PowerShell sessions per worktree (frontend + backend enforcement & numbered tabs)
+- Smooth zero-flash Ctrl+Tab session switching (DEC 2026 atomic first paint, history 30, 32ms initial burst coalescing, full Ctrl+Tab key isolation)
+
+1. Frontend Unit Tests (`npm run test` / Vitest 3.2.7)
+- src/utils/themes.test.ts (3 tests): PASS
+- src/utils/agents.test.ts (2 tests): PASS
+- src/utils/markdownRenderer.test.ts (3 tests): PASS
+- src/utils/spatialNav.test.ts (2 tests): PASS
+- src/utils/worktreeSessions.test.ts (3 tests): PASS
+- src/hooks/usePointerReorder.test.ts (3 tests): PASS
+- src/workers/dashboardLogic.test.ts (3 tests): PASS
+Result: 7 passed (7), 19 passed (19)
+
+2. Frontend Typecheck & Production Bundle (`npm run build` / tsc + Vite 6.4.6)
+- TypeScript: 0 errors
+- Vite build: 1653 modules transformed
+  - dist/assets/MarkdownViewerModal.js (lazy): 4.58 kB (gzip 1.75 kB)
+  - dist/assets/MarkdownViewerModal.css (lazy): 3.93 kB (gzip 1.12 kB)
+  - dist/assets/index.js: 394.11 kB (gzip 111.48 kB)
+  - dist/assets/AttachedTerminalDrawer.js (lazy): 410.18 kB (gzip 104.45 kB)
+
+3. Rust Backend Unit Tests (`cargo test`)
+- 12 passed; 0 failed (includes file_index delta, file_matcher fuzzy/merge, naming sanitization, project reorder, git porcelain/overlap, protocol framing)
+
+4. Rust Compile Check (`cargo check`)
+- Finished with 0 errors, 0 warnings
+
+5. File Size Audit (500-line rule)
+- Largest source file: 496 lines (src/components/modals/QuickFileModal.tsx)
+- Files over 500 lines: 0

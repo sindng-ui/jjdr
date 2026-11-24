@@ -1,0 +1,38 @@
+=== jjdr 14-Item Improvement & Refactoring Test Results ===
+Date: 2026-11-24
+Scope: Phase 1 (#6, #11, #13, #14) + Phase 2 (#5, #7, #8, #9, #12) + Phase 3 (#1, #2, #10) + Phase 4 (#3, #4) + 500-line Refactoring
+
+1. Frontend Unit Tests (`npm run test` / Vitest 3.2.7)
+- src/utils/agents.test.ts (2 tests): PASS
+- src/utils/themes.test.ts (3 tests): PASS
+- src/utils/worktreeSessions.test.ts (2 tests): PASS
+- src/hooks/usePointerReorder.test.ts (3 tests): PASS
+- src/workers/dashboardLogic.test.ts (3 tests): PASS (includes custom worktree ordering & custom display_name/note search)
+- src/utils/spatialNav.test.ts (2 tests): PASS
+Result: 6 passed (6), 15 passed (15) in 529ms
+
+2. Frontend Typecheck & Production Bundle (`npm run build` / tsc + Vite 6.4.6)
+- TypeScript typecheck: 0 errors
+- Vite bundle: 1647 modules transformed, built in 2.42s
+  - dist/assets/index.js: 370.59 kB (gzip 105.06 kB)
+  - dist/assets/AttachedTerminalDrawer.js (lazy): 409.03 kB (gzip 103.91 kB)
+  - dist/assets/dashboardWorker.js: 5.04 kB
+
+3. Rust Backend Unit Tests (`cargo test`)
+- git::worktree::tests::parses_porcelain_worktrees: ok
+- git::worktree::tests::detects_merge_overlap_across_worktrees: ok
+- herdr::naming::tests::sanitizes_leading_dash_and_non_ascii_names: ok
+- herdr::naming::tests::truncates_long_names_cleanly: ok
+- herdr::protocol::tests::strip_ansi_removes_csi_and_osc: ok
+- herdr::protocol::tests::smart_preview_filters_tui_chrome_and_keeps_answer: ok
+- herdr::protocol::tests::frame_roundtrip_all_kinds: ok
+- herdr::protocol::tests::frame_large_payload_roundtrip: ok
+- store::projects::tests::reorders_projects_and_keeps_missing_ones: ok
+Result: 9 passed; 0 failed
+
+4. Rust Backend Compile Check (`cargo check`)
+- Result: Finished cleanly with 0 errors, 0 warnings
+
+5. File Size Audit (500-line rule)
+- Largest source file across src/ and src-tauri/src/: 484 lines (src-tauri/src/herdr/events.rs)
+- Files over 500 lines: 0

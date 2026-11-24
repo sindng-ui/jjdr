@@ -1,53 +1,40 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Terminal as XTerm } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
-import {
-  ExternalLink,
-  FileDiff,
-  OctagonX,
-  Settings2,
-  X,
-} from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import {
-  attachTerminal,
-  detachTerminal,
-  focusTerminal,
   interruptTerminal,
   killTerminal,
   launchSession,
-  listenTermClosed,
-  listenTermData,
   popoutExternalTerminal,
-  resizeTerminal,
   sendTerminalText,
-  writeTerminalInput,
 } from "../../services/tauriBridge";
-import { StatusBadge } from "../shared/StatusBadge";
 import { TerminalSessionTabs } from "./TerminalSessionTabs";
-import { getThemePreset } from "../../utils/themes";
+import { TerminalDrawerHeader } from "./TerminalDrawerHeader";
+import { TerminalEmptyState } from "./TerminalEmptyState";
+import { useXtermSession } from "../../hooks/useXtermSession";
 import {
   cardKeyForSession,
+  countWorktreeLiveShells,
   getWorktreeLiveSessions,
+  MAX_SHELLS_PER_WORKTREE,
 } from "../../utils/worktreeSessions";
+import { normalizePath } from "../../workers/dashboardLogic";
 
-function decodeBase64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) {
-    bytes[i] = bin.charCodeAt(i);
-  }
-  return bytes;
-}
+const MIN_DRAWER_WIDTH_PX = 360;
+const MAX_DRAWER_RATIO = 0.78;
 
 export const AttachedTerminalDrawer = React.memo(
   function AttachedTerminalDrawer() {
+    const terminalDrawerOpen = useUiStore((s) => s.terminalDrawerOpen);
     const attachedAddress = useUiStore((s) => s.attachedAddress);
+    const selectedCardKey = useUiStore((s) => s.selectedCardKey);
+    const terminalWidthPx = useUiStore((s) => s.terminalWidthPx);
+    const setTerminalWidthPx = useUiStore((s) => s.setTerminalWidthPx);
     const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
     const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
+    const detachToEmptyDrawer = useUiStore((s) => s.detachToEmptyDrawer);
+    const closeTerminalDrawer = useUiStore((s) => s.closeTerminalDrawer);
     const rememberCardSession = useUiStore((s) => s.rememberCardSession);
     const setDiffTarget = useUiStore((s) => s.setDiffTarget);
     const setLaunchTarget = useUiStore((s) => s.setLaunchTarget);
@@ -55,9 +42,9 @@ export const AttachedTerminalDrawer = React.memo(
     const showToast = useUiStore((s) => s.showToast);
 
     const allSessions = useAppStore((s) => s.computed.allSessions);
+    const matrixLanes = useAppStore((s) => s.computed.matrixLanes);
     const projects = useAppStore((s) => s.projects);
     const presets = useAppStore((s) => s.settings.prompt_presets);
-    const themeId = useAppStore((s) => s.settings.theme);
 
     const session = useMemo(
       () =>
@@ -67,218 +54,107 @@ export const AttachedTerminalDrawer = React.memo(
       [allSessions, attachedAddress]
     );
 
+    // Resolve the currently selected empty worktree card when attachedAddress is null
+    const selectedWorktreeInfo = useMemo(() => {
+      if (session || !selectedCardKey || !selectedCardKey.startsWith("wt::")) {
+        return null;
+      }
+      for (const lane of matrixLanes) {
+        for (const cell of lane.cells) {
+          const key = `wt::${lane.project.id}::${normalizePath(cell.worktree.path)}`;
+          if (key === selectedCardKey) {
+            return { project: lane.project, worktree: cell.worktree, key };
+          }
+        }
+      }
+      return null;
+    }, [session, selectedCardKey, matrixLanes]);
+
     const worktreeTabs = useMemo(
       () => getWorktreeLiveSessions(allSessions, session),
       [allSessions, session]
     );
 
-    const containerRef = useRef<HTMLDivElement>(null);
-    const termRef = useRef<XTerm | null>(null);
-    const [statusText, setStatusText] = useState<string>("Connecting...");
-    const [spawningShell, setSpawningShell] = useState(false);
+    const worktreeShellCount = useMemo(() => {
+      const targetCwd = session?.worktreePath ?? selectedWorktreeInfo?.worktree.path;
+      const targetProjId = session?.projectId ?? selectedWorktreeInfo?.project.id;
+      if (!targetCwd) return 0;
+      return countWorktreeLiveShells(allSessions, targetCwd, targetProjId);
+    }, [allSessions, session, selectedWorktreeInfo]);
 
-    // Remember whichever session tab the user is actively viewing in this worktree
+    const drawerRef = useRef<HTMLElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [spawningShell, setSpawningShell] = useState(false);
+    const [resizing, setResizing] = useState(false);
+
+    const { statusText, fitNow } = useXtermSession(containerRef, attachedAddress);
+
+    // Remember active tab per worktree
     useEffect(() => {
       if (session && attachedAddress === session.address) {
         rememberCardSession(cardKeyForSession(session), session.address);
       }
     }, [session, attachedAddress, rememberCardSession]);
 
-    // Sync xterm color theme live whenever user switches themes in Settings!
-    useEffect(() => {
-      if (termRef.current) {
-        termRef.current.options.theme = getThemePreset(themeId).xterm;
-      }
-    }, [themeId]);
+    // Drag-to-resize right terminal pane width (#12)
+    const handleStartResize = useCallback(
+      (e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        const sectionEl = drawerRef.current;
+        const parentEl = sectionEl?.parentElement;
+        if (!sectionEl || !parentEl) return;
 
-    useEffect(() => {
-      if (!attachedAddress || !containerRef.current) return;
+        const startX = e.clientX;
+        const startWidth = sectionEl.getBoundingClientRect().width;
+        const maxWidth = Math.max(
+          MIN_DRAWER_WIDTH_PX,
+          Math.floor(parentEl.clientWidth * MAX_DRAWER_RATIO)
+        );
 
-      let disposed = false;
-      let activeChannel: number | null = null;
-      let unlistenData: (() => void) | null = null;
-      let unlistenClosed: (() => void) | null = null;
-      let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-      const earlyChunks: Uint8Array[] = [];
+        setResizing(true);
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
 
-      setStatusText("Attaching...");
+        let rafId: number | null = null;
+        let latestWidth = startWidth;
 
-      const initialXtermTheme = getThemePreset(
-        useAppStore.getState().settings.theme
-      ).xterm;
-
-      const term = new XTerm({
-        cursorBlink: true,
-        fontSize: 13,
-        lineHeight: 1.25,
-        fontFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
-        scrollback: 2000,
-        theme: initialXtermTheme,
-      });
-      termRef.current = term;
-
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
-      term.open(containerRef.current);
-
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => webgl.dispose());
-        term.loadAddon(webgl);
-      } catch {
-        // Fallback gracefully to canvas/DOM
-      }
-
-      fitAddon.fit();
-
-      term.attachCustomKeyEventHandler((ev) => {
-        if (ev.type !== "keydown") return true;
-        const hasCtrl = ev.ctrlKey || ev.metaKey;
-        const isPlainCtrl = hasCtrl && !ev.altKey && !ev.shiftKey;
-        const isCtrlShift = hasCtrl && !ev.altKey && ev.shiftKey;
-        const k = ev.key.toLowerCase();
-
-        const isReserved =
-          // Ctrl+Tab / Ctrl+Shift+Tab -> switch session tabs within current worktree
-          (hasCtrl && !ev.altKey && (ev.key === "Tab" || ev.code === "Tab")) ||
-          // Ctrl+Shift+T (+Shell) / Ctrl+Shift+A (+AI)
-          (isCtrlShift &&
-            (k === "t" ||
-              ev.code === "KeyT" ||
-              k === "a" ||
-              ev.code === "KeyA")) ||
-          (isPlainCtrl &&
-            (ev.code === "Backquote" ||
-              ev.key === "`" ||
-              ev.key === "ArrowUp" ||
-              ev.key === "ArrowDown" ||
-              ev.key === "ArrowLeft" ||
-              ev.key === "ArrowRight" ||
-              k === "n" ||
-              ev.code === "KeyN" ||
-              k === "f" ||
-              ev.code === "KeyF" ||
-              k === "k" ||
-              ev.code === "KeyK" ||
-              k === "m" ||
-              ev.code === "KeyM" ||
-              k === "b" ||
-              ev.code === "KeyB" ||
-              k === "1" ||
-              ev.code === "Digit1" ||
-              k === "2" ||
-              ev.code === "Digit2" ||
-              ev.key === "\\" ||
-              ev.code === "Backslash")) ||
-          (ev.altKey && ev.key === "Escape");
-
-        if (isReserved) {
-          return false;
-        }
-        return true;
-      });
-
-      const dataSub = term.onData((data) => {
-        if (activeChannel !== null) {
-          void writeTerminalInput(activeChannel, data);
-        }
-      });
-
-      const onFocusIn = () => {
-        if (activeChannel !== null) void focusTerminal(activeChannel, true);
-      };
-      const onFocusOut = () => {
-        if (activeChannel !== null) void focusTerminal(activeChannel, false);
-      };
-      const hostEl = containerRef.current;
-      hostEl.addEventListener("focusin", onFocusIn);
-      hostEl.addEventListener("focusout", onFocusOut);
-
-      const resizeObserver = new ResizeObserver(() => {
-        if (resizeTimer) clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-          if (disposed) return;
-          fitAddon.fit();
-          if (activeChannel !== null) {
-            void resizeTerminal(activeChannel, term.cols, term.rows);
-          }
-        }, 50);
-      });
-      resizeObserver.observe(hostEl);
-
-      const connectStream = async () => {
-        try {
-          unlistenData = await listenTermData((ev) => {
-            if (disposed || ev.address !== attachedAddress) return;
-            const bytes = decodeBase64ToBytes(ev.data_b64);
-            if (activeChannel === null) {
-              earlyChunks.push(bytes);
-            } else if (ev.channel === activeChannel) {
-              term.write(bytes);
-            }
-          });
-
-          unlistenClosed = await listenTermClosed((ev) => {
-            if (disposed || ev.address !== attachedAddress) return;
-            if (activeChannel === null || ev.channel === activeChannel) {
-              setStatusText("Closed");
-            }
-          });
-
-          const res = await attachTerminal(
-            attachedAddress,
-            term.cols || 100,
-            term.rows || 30,
-            false
+        const onPointerMove = (moveEv: PointerEvent) => {
+          const delta = startX - moveEv.clientX;
+          latestWidth = Math.round(
+            Math.max(MIN_DRAWER_WIDTH_PX, Math.min(maxWidth, startWidth + delta))
           );
-
-          if (disposed) {
-            void detachTerminal(res.channel);
-            return;
+          if (rafId === null) {
+            rafId = requestAnimationFrame(() => {
+              rafId = null;
+              setTerminalWidthPx(latestWidth);
+            });
           }
+        };
 
-          activeChannel = res.channel;
-          setStatusText(`ch ${res.channel}`);
-          for (const chunk of earlyChunks.splice(0)) {
-            term.write(chunk);
+        const onPointerUp = () => {
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
           }
-          term.focus();
-          void focusTerminal(res.channel, true);
-        } catch (err) {
-          if (!disposed) {
-            const msg = String(err);
-            if (msg.includes("has finished") || msg.includes("not_found")) {
-              setAttachedAddress(null);
-              showToast(
-                "종료된 세션입니다. 타일에서 새 세션을 시작하세요.",
-                "info"
-              );
-            } else {
-              setStatusText("Error");
-              showToast(`Attach failed: ${msg}`, "error");
-            }
-          }
-        }
-      };
+          setTerminalWidthPx(latestWidth);
+          setResizing(false);
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onPointerUp);
+          requestAnimationFrame(() => fitNow());
+        };
 
-      void connectStream();
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+      },
+      [setTerminalWidthPx, fitNow]
+    );
 
-      return () => {
-        disposed = true;
-        termRef.current = null;
-        if (resizeTimer) clearTimeout(resizeTimer);
-        resizeObserver.disconnect();
-        hostEl.removeEventListener("focusin", onFocusIn);
-        hostEl.removeEventListener("focusout", onFocusOut);
-        dataSub.dispose();
-        if (unlistenData) unlistenData();
-        if (unlistenClosed) unlistenClosed();
-        if (activeChannel !== null) {
-          void detachTerminal(activeChannel);
-        }
-        term.dispose();
-      };
-    }, [attachedAddress, setAttachedAddress, showToast]);
+    const handleResetWidth = useCallback(() => {
+      setTerminalWidthPx(null);
+      requestAnimationFrame(() => fitNow());
+    }, [setTerminalWidthPx, fitNow]);
 
     const handleSelectTab = useCallback(
       (addr: string) => {
@@ -303,7 +179,7 @@ export const AttachedTerminalDrawer = React.memo(
               setAttachedAddress(next.address);
               rememberCardSession(cardKeyForSession(next), next.address);
             } else {
-              setAttachedAddress(null);
+              detachToEmptyDrawer();
             }
           }
         } catch (err) {
@@ -315,29 +191,50 @@ export const AttachedTerminalDrawer = React.memo(
         attachedAddress,
         setSelectedAddress,
         setAttachedAddress,
+        detachToEmptyDrawer,
         rememberCardSession,
         showToast,
       ]
     );
 
     const handleAddShell = useCallback(async () => {
-      if (!session || spawningShell) return;
+      const targetProjId = session?.projectId ?? selectedWorktreeInfo?.project.id;
+      const targetCwd = session?.worktreePath ?? selectedWorktreeInfo?.worktree.path;
+      const targetBranch = session?.branch ?? selectedWorktreeInfo?.worktree.branch;
+      const targetProjName = session?.projectName ?? selectedWorktreeInfo?.project.name;
+      const cardKey = session
+        ? cardKeyForSession(session)
+        : selectedWorktreeInfo?.key;
+      if (!targetCwd || spawningShell) return;
+
+      const curShells = countWorktreeLiveShells(
+        useAppStore.getState().computed.allSessions,
+        targetCwd,
+        targetProjId
+      );
+      if (curShells >= MAX_SHELLS_PER_WORKTREE) {
+        showToast(
+          `한 Worktree당 PowerShell은 최대 ${MAX_SHELLS_PER_WORKTREE}개까지 열 수 있습니다.`,
+          "info"
+        );
+        return;
+      }
+
       setSpawningShell(true);
       try {
         const newAddr = await launchSession({
-          project_id: session.projectId ?? undefined,
-          cwd: session.worktreePath,
-          branch: session.branch || undefined,
+          project_id: targetProjId ?? undefined,
+          cwd: targetCwd,
+          branch: targetBranch || undefined,
           argv: [],
-          name: `${session.projectName}-${(session.branch || "main").replace(
-            /[/\\ ]/g,
-            "-"
-          )}-sh`,
+          name: targetProjName
+            ? `${targetProjName}-${targetBranch || "main"}-sh`
+            : undefined,
         });
         if (newAddr) {
           setSelectedAddress(newAddr);
           setAttachedAddress(newAddr);
-          rememberCardSession(cardKeyForSession(session), newAddr);
+          if (cardKey) rememberCardSession(cardKey, newAddr);
         }
       } catch (err) {
         showToast(`PowerShell 추가 실패: ${String(err)}`, "error");
@@ -346,6 +243,42 @@ export const AttachedTerminalDrawer = React.memo(
       }
     }, [
       session,
+      selectedWorktreeInfo,
+      spawningShell,
+      setSelectedAddress,
+      setAttachedAddress,
+      rememberCardSession,
+      showToast,
+    ]);
+
+    const handleLaunchDefaultAi = useCallback(async () => {
+      if (!selectedWorktreeInfo || spawningShell) return;
+      const { project, worktree, key } = selectedWorktreeInfo;
+      setSpawningShell(true);
+      try {
+        const defaultCmd = project.default_agent || "agy";
+        const argv = defaultCmd.split(/\s+/).filter(Boolean);
+        const newAddr = await launchSession({
+          project_id: project.id,
+          cwd: worktree.path,
+          branch: worktree.branch,
+          argv,
+          name: `${project.name}-${worktree.branch || "main"}`,
+          autonomous: true,
+        });
+        useAppStore.getState().recordLastAgent(normalizePath(worktree.path), argv);
+        if (newAddr) {
+          setSelectedAddress(newAddr);
+          setAttachedAddress(newAddr);
+          rememberCardSession(key, newAddr);
+        }
+      } catch (err) {
+        showToast(`AI 시작 실패: ${String(err)}`, "error");
+      } finally {
+        setSpawningShell(false);
+      }
+    }, [
+      selectedWorktreeInfo,
       spawningShell,
       setSelectedAddress,
       setAttachedAddress,
@@ -354,167 +287,159 @@ export const AttachedTerminalDrawer = React.memo(
     ]);
 
     const handleAddAi = useCallback(() => {
-      if (!session) return;
-      const proj = session.projectId
-        ? projects.find((p) => p.id === session.projectId)
-        : undefined;
-      setLaunchTarget({
-        projectId: session.projectId ?? undefined,
-        cwd: session.worktreePath,
-        branch: session.branch || undefined,
-        defaultAgent: proj?.default_agent,
-      });
-    }, [session, projects, setLaunchTarget]);
-
-    if (!attachedAddress) return null;
-
-    const handleSendPreset = async (prompt: string) => {
-      if (!prompt.trim()) return;
-      try {
-        await sendTerminalText(attachedAddress, prompt, false);
-        if (session) {
-          useAppStore
-            .getState()
-            .acknowledgeTurn(attachedAddress, session.terminal.turn);
-        }
-      } catch (err) {
-        showToast(`프리셋 전송 실패: ${String(err)}`, "error");
+      if (session) {
+        const proj = session.projectId
+          ? projects.find((p) => p.id === session.projectId)
+          : undefined;
+        setLaunchTarget({
+          projectId: session.projectId ?? undefined,
+          cwd: session.worktreePath,
+          branch: session.branch || undefined,
+          defaultAgent: proj?.default_agent,
+        });
+      } else if (selectedWorktreeInfo) {
+        setLaunchTarget({
+          projectId: selectedWorktreeInfo.project.id,
+          cwd: selectedWorktreeInfo.worktree.path,
+          branch: selectedWorktreeInfo.worktree.branch,
+          defaultAgent: selectedWorktreeInfo.project.default_agent,
+        });
       }
-    };
+    }, [session, selectedWorktreeInfo, projects, setLaunchTarget]);
+
+    const handleSendPreset = useCallback(
+      async (prompt: string) => {
+        if (!prompt.trim() || !attachedAddress) return;
+        try {
+          await sendTerminalText(attachedAddress, prompt, false);
+          if (session) {
+            useAppStore
+              .getState()
+              .acknowledgeTurn(attachedAddress, session.terminal.turn);
+          }
+        } catch (err) {
+          showToast(`프리셋 전송 실패: ${String(err)}`, "error");
+        }
+      },
+      [attachedAddress, session, showToast]
+    );
+
+    if (!terminalDrawerOpen && !attachedAddress) return null;
 
     const canSpawnInWorktree = Boolean(session?.projectId && session.worktreePath);
 
+    const widthStyle: React.CSSProperties = terminalWidthPx
+      ? { width: `${terminalWidthPx}px` }
+      : { width: "50%" };
+
     return (
-      <section className="w-[50%] min-w-[440px] max-w-[860px] p-2.5 pl-0 flex flex-col shrink-0">
-        {/* Floating Rounded Terminal Card Inside Stage */}
+      <section
+        ref={drawerRef}
+        style={widthStyle}
+        className="relative min-w-[360px] max-w-[78%] p-2.5 pl-0 flex shrink-0"
+      >
+        {/* Left Drag-to-Resize Handle (#12) */}
         <div
-          className="h-full rounded-[18px] overflow-hidden flex flex-col text-slate-100"
+          onPointerDown={handleStartResize}
+          onDoubleClick={handleResetWidth}
+          title="드래그하여 터미널 너비 조절 · 더블클릭으로 기본 너비 복원"
+          className="group w-2.5 -ml-1 mr-0.5 flex items-center justify-center cursor-col-resize shrink-0 select-none"
+        >
+          <div
+            className="w-1 h-14 rounded-full transition-all group-hover:h-24"
+            style={{
+              background: resizing ? "var(--accent)" : "var(--pill-border)",
+              opacity: resizing ? 1 : 0.65,
+            }}
+          />
+        </div>
+
+        {/* Floating Rounded Terminal Card */}
+        <div
+          className="flex-1 h-full rounded-[18px] overflow-hidden flex flex-col text-slate-100 min-w-0"
           style={{
             background: "var(--term-bg)",
             border: "1px solid var(--term-border)",
           }}
         >
-          {/* Floating Terminal Header */}
-          <div
-            className="h-11 px-4 flex items-center justify-between gap-2 shrink-0 select-none"
-            style={{
-              background: "var(--term-header-bg)",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
-            }}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              {session && (
-                <StatusBadge
-                  bucket={session.bucket}
-                  status={session.terminal.status}
-                  compact
-                />
-              )}
-              <span className="text-xs font-medium text-slate-300 truncate">
-                {session ? session.projectName : "Terminal"}
-              </span>
-              {session && (
-                <>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-xs font-mono-code font-bold text-white truncate">
-                    {session.branch}
-                  </span>
-                </>
-              )}
-              <span className="text-[11px] font-mono-code text-slate-400 shrink-0">
-                {attachedAddress} · {statusText}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              {session?.projectId && session.worktree && (
-                <button
-                  onClick={() =>
+          <TerminalDrawerHeader
+            session={session}
+            attachedAddress={attachedAddress}
+            fallbackTitle={selectedWorktreeInfo?.project.name}
+            fallbackBranch={selectedWorktreeInfo?.worktree.branch}
+            statusText={statusText}
+            presets={presets}
+            onOpenDiff={
+              session?.projectId && session.worktree
+                ? () =>
                     setDiffTarget({
                       projectId: session.projectId!,
                       worktreePath: session.worktree!.path,
                       branch: session.worktree!.branch,
                     })
-                  }
-                  title="View Git Diff"
-                  className="p-1.5 rounded-full hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  <FileDiff className="w-3.5 h-3.5" />
-                </button>
-              )}
-              <button
-                onClick={() => void interruptTerminal(attachedAddress)}
-                title="Send interrupt signal"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] bg-white/8 hover:bg-amber-500/20 text-slate-200 hover:text-amber-300 transition-colors cursor-pointer"
-              >
-                <OctagonX className="w-3 h-3" />
-                Stop
-              </button>
-              <button
-                onClick={() => void popoutExternalTerminal(attachedAddress)}
-                title="Pop out in external terminal"
-                className="p-1.5 rounded-full hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setAttachedAddress(null)}
-                title="Close terminal pane (Ctrl+`)"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] bg-white/10 hover:bg-white/15 text-slate-100 transition-colors cursor-pointer"
-              >
-                <X className="w-3 h-3" />
-                <kbd className="text-[10px] text-slate-300 font-mono-code">
-                  Ctrl+`
-                </kbd>
-              </button>
-            </div>
-          </div>
-
-          {/* Worktree Multi-Session Tab Bar ([agy] [shell] [+ Shell] [+ AI]) */}
-          <TerminalSessionTabs
-            tabs={worktreeTabs}
-            activeAddress={attachedAddress}
-            canSpawnInWorktree={canSpawnInWorktree}
-            spawningShell={spawningShell}
-            onSelectTab={handleSelectTab}
-            onCloseTab={(addr) => void handleCloseTab(addr)}
-            onAddShell={() => void handleAddShell()}
-            onAddAi={handleAddAi}
+                : selectedWorktreeInfo
+                ? () =>
+                    setDiffTarget({
+                      projectId: selectedWorktreeInfo.project.id,
+                      worktreePath: selectedWorktreeInfo.worktree.path,
+                      branch: selectedWorktreeInfo.worktree.branch,
+                    })
+                : undefined
+            }
+            onInterrupt={
+              attachedAddress
+                ? () => void interruptTerminal(attachedAddress)
+                : undefined
+            }
+            onPopout={
+              attachedAddress
+                ? () => void popoutExternalTerminal(attachedAddress)
+                : undefined
+            }
+            onClose={closeTerminalDrawer}
+            onSendPreset={(p) => void handleSendPreset(p)}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
 
-          {/* Pill Preset Strip */}
-          <div
-            className="px-3.5 py-1.5 flex items-center gap-1.5 flex-wrap shrink-0 select-none"
-            style={{
-              borderBottom: "1px solid rgba(255,255,255,0.05)",
-            }}
-          >
-            {presets.slice(0, 8).map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => void handleSendPreset(p.prompt)}
-                title={p.prompt}
-                className="px-3 py-0.5 rounded-full text-[11px] bg-white/8 hover:bg-white/15 text-slate-200 hover:text-white transition-colors cursor-pointer"
-              >
-                {p.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              title="프롬프트 프리셋 편집"
-              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] text-slate-400 hover:text-white transition-colors cursor-pointer"
-            >
-              <Settings2 className="w-3 h-3" />
-              <span>Edit</span>
-            </button>
-          </div>
+          {attachedAddress && (
+            <TerminalSessionTabs
+              tabs={worktreeTabs}
+              activeAddress={attachedAddress}
+              canSpawnInWorktree={canSpawnInWorktree}
+              spawningShell={spawningShell}
+              shellCount={worktreeShellCount}
+              onSelectTab={handleSelectTab}
+              onCloseTab={(addr) => void handleCloseTab(addr)}
+              onAddShell={() => void handleAddShell()}
+              onAddAi={handleAddAi}
+            />
+          )}
 
-          <div
-            ref={containerRef}
-            className="flex-1 w-full h-full p-2.5 overflow-hidden"
-          />
+          {/* Keep XTerm host mounted while drawer stays open so WebGL context is reused (0ms switch) */}
+          <div className="relative flex-1 w-full h-full overflow-hidden">
+            <div
+              ref={containerRef}
+              className={`absolute inset-0 p-2.5 overflow-hidden ${
+                attachedAddress
+                  ? "visible opacity-100"
+                  : "invisible opacity-0 pointer-events-none"
+              }`}
+            />
+            {!attachedAddress && (
+              <div className="relative z-10 h-full flex">
+                <TerminalEmptyState
+                  projectName={selectedWorktreeInfo?.project.name}
+                  branch={selectedWorktreeInfo?.worktree.branch}
+                  cwd={selectedWorktreeInfo?.worktree.path}
+                  defaultAgent={selectedWorktreeInfo?.project.default_agent}
+                  launching={spawningShell}
+                  onLaunchDefaultAi={() => void handleLaunchDefaultAi()}
+                  onLaunchShell={() => void handleAddShell()}
+                  onOpenSessionPicker={handleAddAi}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </section>
     );

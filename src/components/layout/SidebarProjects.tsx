@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import {
   GitBranchPlus,
+  GripVertical,
   Layers,
   Pencil,
   Plus,
@@ -9,7 +10,8 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
-import { deleteProject } from "../../services/tauriBridge";
+import { deleteProject, reorderProjects } from "../../services/tauriBridge";
+import { usePointerReorder } from "../../hooks/usePointerReorder";
 
 export const SidebarProjects = React.memo(function SidebarProjects() {
   const projects = useAppStore((s) => s.projects);
@@ -26,6 +28,37 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
   );
   const setSearchQuery = useUiStore((s) => s.setSearchQuery);
   const showToast = useUiStore((s) => s.showToast);
+
+  const listRef = useRef<HTMLDivElement>(null);
+  const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
+
+  const handleReorderProjects = useCallback(
+    async (nextIds: string[]) => {
+      const prev = useAppStore.getState().projects;
+      const byId = new Map(prev.map((p) => [p.id, p]));
+      const optimistic = nextIds
+        .map((id) => byId.get(id))
+        .filter((p): p is NonNullable<typeof p> => Boolean(p));
+      // Optimistic 0ms reorder in UI & RadarBoardView
+      useAppStore.getState().setProjects(optimistic);
+      try {
+        const persisted = await reorderProjects(nextIds);
+        useAppStore.getState().setProjects(persisted);
+      } catch (e) {
+        useAppStore.getState().setProjects(prev);
+        showToast(`프로젝트 순서 저장 실패: ${String(e)}`, "error");
+      }
+    },
+    [showToast]
+  );
+
+  const { draggingId, overId, startDrag, shouldSuppressClick } =
+    usePointerReorder({
+      ids: projectIds,
+      containerRef: listRef,
+      onReorder: (nextIds) => void handleReorderProjects(nextIds),
+      disabled: projects.length <= 1,
+    });
 
   const handleDelete = async (id: string, name: string) => {
     if (
@@ -80,7 +113,7 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
           </button>
         </div>
 
-        {/* Organic Pill Project List */}
+        {/* Drag-to-Reorder Project List (#3) */}
         <div className="space-y-1">
           <div className="px-3 pb-1 flex items-center justify-between">
             <span
@@ -114,117 +147,138 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
               </button>
             </div>
           ) : (
-            projects.map((proj) => {
-              const wts = worktreesByProject[proj.id] ?? [];
-              const projSessions = allSessions.filter(
-                (s) => s.projectId === proj.id
-              );
-              const needsCount = projSessions.filter(
-                (s) => s.bucket === "needs_you"
-              ).length;
-              const readyCount = projSessions.filter(
-                (s) => s.bucket === "ready"
-              ).length;
-              const runCount = projSessions.filter(
-                (s) => s.bucket === "running"
-              ).length;
-              const isSelected = selectedProjectId === proj.id;
+            <div ref={listRef} className="space-y-1">
+              {projects.map((proj) => {
+                const wts = worktreesByProject[proj.id] ?? [];
+                const projSessions = allSessions.filter(
+                  (s) => s.projectId === proj.id
+                );
+                const needsCount = projSessions.filter(
+                  (s) => s.bucket === "needs_you"
+                ).length;
+                const readyCount = projSessions.filter(
+                  (s) => s.bucket === "ready"
+                ).length;
+                const runCount = projSessions.filter(
+                  (s) => s.bucket === "running"
+                ).length;
+                const isSelected = selectedProjectId === proj.id;
+                const isDragging = draggingId === proj.id;
+                const isDropTarget =
+                  overId === proj.id && draggingId !== null && !isDragging;
 
-              return (
-                <div
-                  key={proj.id}
-                  onClick={() => toggleSelectedProjectId(proj.id)}
-                  title={`${proj.name} (${Math.max(1, wts.length)} worktrees)`}
-                  className={`group flex items-center justify-between gap-1.5 px-3.5 py-2 rounded-full text-xs transition-colors cursor-pointer ${
-                    isSelected ? "jjdr-pill-active font-semibold" : "hover:bg-white/5"
-                  }`}
-                  style={
-                    isSelected ? undefined : { color: "var(--text-secondary)" }
-                  }
-                >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: proj.color }}
-                    />
-                    <span className="truncate">{proj.name}</span>
-                  </div>
-
-                  {/* Soft Status Count Pill */}
-                  <div className="flex items-center gap-1.5 font-mono-code text-[11px] tabular-nums group-hover:hidden shrink-0">
-                    {needsCount > 0 ? (
-                      <span
-                        className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
-                        style={{
-                          background: "var(--action-soft)",
-                          color: "var(--action-fg)",
-                        }}
-                      >
-                        {needsCount}
-                      </span>
-                    ) : readyCount > 0 ? (
-                      <span
-                        className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
-                        style={{
-                          background: "var(--ready-soft)",
-                          color: "var(--ready-fg)",
-                        }}
-                      >
-                        {readyCount}
-                      </span>
-                    ) : runCount > 0 ? (
-                      <span
-                        className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
-                        style={{
-                          background: "var(--run-soft)",
-                          color: "var(--run-fg)",
-                        }}
-                      >
-                        {runCount}
-                      </span>
-                    ) : (
-                      <span
-                        className="text-[11px]"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        {Math.max(1, wts.length)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Hover Action Icons */}
+                return (
                   <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="hidden group-hover:flex items-center gap-0.5 shrink-0"
+                    key={proj.id}
+                    data-reorder-id={proj.id}
+                    onPointerDown={(e) => startDrag(proj.id, e)}
+                    onClick={() => {
+                      if (shouldSuppressClick()) return;
+                      toggleSelectedProjectId(proj.id);
+                    }}
+                    title={`${proj.name} (${Math.max(1, wts.length)} worktrees) · 드래그하여 순서 변경`}
+                    className={`group flex items-center justify-between gap-1.5 pl-2.5 pr-3 py-2 rounded-full text-xs transition-all cursor-pointer ${
+                      isSelected
+                        ? "jjdr-pill-active font-semibold"
+                        : "hover:bg-white/5"
+                    }`}
+                    style={{
+                      color: isSelected ? undefined : "var(--text-secondary)",
+                      opacity: isDragging ? 0.45 : 1,
+                      boxShadow: isDropTarget
+                        ? "inset 0 0 0 1.5px var(--accent)"
+                        : undefined,
+                    }}
                   >
-                    <button
-                      onClick={() => setCreateWorktreeProjectId(proj.id)}
-                      title="새 Worktree 추가"
-                      className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
-                      style={{ color: "var(--text-primary)" }}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <GripVertical
+                        className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-55 transition-opacity"
+                        style={{ color: "var(--text-faint)" }}
+                      />
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: proj.color }}
+                      />
+                      <span className="truncate">{proj.name}</span>
+                    </div>
+
+                    {/* Soft Status Count Pill */}
+                    <div className="flex items-center gap-1.5 font-mono-code text-[11px] tabular-nums group-hover:hidden shrink-0">
+                      {needsCount > 0 ? (
+                        <span
+                          className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                          style={{
+                            background: "var(--action-soft)",
+                            color: "var(--action-fg)",
+                          }}
+                        >
+                          {needsCount}
+                        </span>
+                      ) : readyCount > 0 ? (
+                        <span
+                          className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                          style={{
+                            background: "var(--ready-soft)",
+                            color: "var(--ready-fg)",
+                          }}
+                        >
+                          {readyCount}
+                        </span>
+                      ) : runCount > 0 ? (
+                        <span
+                          className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                          style={{
+                            background: "var(--run-soft)",
+                            color: "var(--run-fg)",
+                          }}
+                        >
+                          {runCount}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-[11px]"
+                          style={{ color: "var(--text-faint)" }}
+                        >
+                          {Math.max(1, wts.length)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Hover Action Icons */}
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      data-no-drag="true"
+                      className="hidden group-hover:flex items-center gap-0.5 shrink-0"
                     >
-                      <GitBranchPlus className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={() => setProjectModalProject(proj)}
-                      title="프로젝트 수정"
-                      className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={() => void handleDelete(proj.id, proj.name)}
-                      title="프로젝트 삭제"
-                      className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
-                      style={{ color: "var(--action-fg)" }}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                      <button
+                        onClick={() => setCreateWorktreeProjectId(proj.id)}
+                        title="새 Worktree 추가"
+                        className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        <GitBranchPlus className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => setProjectModalProject(proj)}
+                        title="프로젝트 수정"
+                        className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => void handleDelete(proj.id, proj.name)}
+                        title="프로젝트 삭제"
+                        className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                        style={{ color: "var(--action-fg)" }}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
 
           {unassignedCount > 0 && (
@@ -248,7 +302,7 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
         </div>
       </div>
 
-      {/* Soft Floating Shortcut Card (No rigid border-t!) */}
+      {/* Soft Floating Shortcut Card */}
       <div
         className="mt-3 rounded-2xl p-3 text-[11px] space-y-1.5"
         style={{
@@ -276,7 +330,7 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
           </kbd>
         </div>
         <div className="flex justify-between">
-          <span>Shell / AI 추가</span>
+          <span>Shell / 세션 추가</span>
           <kbd
             className="font-mono-code text-[10px]"
             style={{ color: "var(--text-secondary)" }}
@@ -285,12 +339,12 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
           </kbd>
         </div>
         <div className="flex justify-between">
-          <span>다음 / 검색</span>
+          <span>파일 검색 / 해제</span>
           <kbd
             className="font-mono-code text-[10px]"
             style={{ color: "var(--text-secondary)" }}
           >
-            Ctrl+N / F
+            Ctrl+P / Esc
           </kbd>
         </div>
       </div>

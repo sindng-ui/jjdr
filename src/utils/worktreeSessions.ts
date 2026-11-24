@@ -12,9 +12,28 @@ const PLAIN_SHELL_LABELS = new Set([
   "fish",
 ]);
 
+export const MAX_SHELLS_PER_WORKTREE = 2;
+
 export function isPlainShellSession(session: EnrichedSession): boolean {
   const lbl = (session.agentLabel || "").trim().toLowerCase();
   return lbl === "" || PLAIN_SHELL_LABELS.has(lbl);
+}
+
+export function countWorktreeLiveShells(
+  allSessions: EnrichedSession[],
+  worktreePath: string,
+  projectId?: string | null
+): number {
+  const targetNorm = normalizePath(worktreePath);
+  if (!targetNorm) return 0;
+  let count = 0;
+  for (const s of allSessions) {
+    if (s.terminal.state !== "live") continue;
+    if (projectId && s.projectId !== projectId) continue;
+    if (normalizePath(s.worktreePath) !== targetNorm) continue;
+    if (isPlainShellSession(s)) count += 1;
+  }
+  return count;
 }
 
 export function cardKeyForSession(session: EnrichedSession): string {

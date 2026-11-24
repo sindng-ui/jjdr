@@ -2,13 +2,17 @@ import React from "react";
 import { Bot, Plus, Terminal, X } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
 import { StatusBadge } from "../shared/StatusBadge";
-import { isPlainShellSession } from "../../utils/worktreeSessions";
+import {
+  isPlainShellSession,
+  MAX_SHELLS_PER_WORKTREE,
+} from "../../utils/worktreeSessions";
 
 interface TerminalSessionTabsProps {
   tabs: EnrichedSession[];
   activeAddress: string;
   canSpawnInWorktree: boolean;
   spawningShell: boolean;
+  shellCount: number;
   onSelectTab: (address: string) => void;
   onCloseTab: (address: string) => void;
   onAddShell: () => void;
@@ -20,6 +24,7 @@ export const TerminalSessionTabs = React.memo(function TerminalSessionTabs({
   activeAddress,
   canSpawnInWorktree,
   spawningShell,
+  shellCount,
   onSelectTab,
   onCloseTab,
   onAddShell,
@@ -27,12 +32,13 @@ export const TerminalSessionTabs = React.memo(function TerminalSessionTabs({
 }: TerminalSessionTabsProps) {
   if (!canSpawnInWorktree && tabs.length <= 1) return null;
 
-  // Count duplicate labels so two shells or two agy sessions show their address suffix clearly
   const labelCounts = new Map<string, number>();
   for (const t of tabs) {
     const key = (t.agentLabel || "shell").toLowerCase();
     labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
   }
+  const labelSeen = new Map<string, number>();
+  const shellLimitReached = shellCount >= MAX_SHELLS_PER_WORKTREE;
 
   return (
     <div
@@ -48,7 +54,10 @@ export const TerminalSessionTabs = React.memo(function TerminalSessionTabs({
           const isActive = tab.address === activeAddress;
           const isShell = isPlainShellSession(tab);
           const rawLabel = tab.agentLabel || (isShell ? "shell" : "AI");
-          const hasDup = (labelCounts.get(rawLabel.toLowerCase()) ?? 0) > 1;
+          const lowerKey = rawLabel.toLowerCase();
+          const hasDup = (labelCounts.get(lowerKey) ?? 0) > 1;
+          const dupIndex = (labelSeen.get(lowerKey) ?? 0) + 1;
+          labelSeen.set(lowerKey, dupIndex);
 
           return (
             <div
@@ -78,7 +87,7 @@ export const TerminalSessionTabs = React.memo(function TerminalSessionTabs({
               )}
               <span className="font-mono-code">
                 {rawLabel}
-                {hasDup ? ` · ${tab.address}` : ""}
+                {hasDup ? ` #${dupIndex}` : ""}
               </span>
               <button
                 type="button"
@@ -111,13 +120,20 @@ export const TerminalSessionTabs = React.memo(function TerminalSessionTabs({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            disabled={spawningShell}
+            disabled={spawningShell || shellLimitReached}
             onClick={onAddShell}
-            title="이 Worktree에 PowerShell 탭 추가 (Ctrl+Shift+T)"
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-white/7 hover:bg-white/15 text-slate-200 hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
+            title={
+              shellLimitReached
+                ? `한 Worktree당 PowerShell은 최대 ${MAX_SHELLS_PER_WORKTREE}개까지 가능합니다 (${shellCount}/${MAX_SHELLS_PER_WORKTREE})`
+                : `이 Worktree에 PowerShell 탭 추가 (${shellCount}/${MAX_SHELLS_PER_WORKTREE} · Ctrl+Shift+T)`
+            }
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-white/7 hover:bg-white/15 text-slate-200 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
           >
             <Plus className="w-3 h-3" />
-            <span>Shell</span>
+            <span>
+              Shell
+              {shellCount > 0 ? ` ${shellCount}/${MAX_SHELLS_PER_WORKTREE}` : ""}
+            </span>
           </button>
           <button
             type="button"

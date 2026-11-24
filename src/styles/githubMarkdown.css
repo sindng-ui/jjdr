@@ -1,0 +1,256 @@
+/* GitHub-inspired Markdown typography synced with jjdr 4-theme CSS tokens */
+.jjdr-md-body {
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.72;
+  word-wrap: break-word;
+}
+
+.jjdr-md-body > *:first-child {
+  margin-top: 0 !important;
+}
+
+.jjdr-md-body h1,
+.jjdr-md-body h2,
+.jjdr-md-body h3,
+.jjdr-md-body h4,
+.jjdr-md-body h5,
+.jjdr-md-body h6 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.jjdr-md-body h1 {
+  font-size: 1.85em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--divider);
+}
+
+.jjdr-md-body h2 {
+  font-size: 1.45em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--divider);
+}
+
+.jjdr-md-body h3 {
+  font-size: 1.2em;
+}
+
+.jjdr-md-body h4 {
+  font-size: 1.05em;
+}
+
+.jjdr-md-body p {
+  margin-top: 0;
+  margin-bottom: 14px;
+  color: var(--text-primary);
+}
+
+.jjdr-md-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.jjdr-md-body a:hover {
+  text-decoration: underline;
+}
+
+.jjdr-md-body hr {
+  height: 1px;
+  border: 0;
+  background: var(--divider);
+  margin: 22px 0;
+}
+
+.jjdr-md-body ul,
+.jjdr-md-body ol {
+  margin-top: 0;
+  margin-bottom: 14px;
+  padding-left: 1.7em;
+}
+
+.jjdr-md-body ul {
+  list-style-type: disc;
+}
+
+.jjdr-md-body ol {
+  list-style-type: decimal;
+}
+
+.jjdr-md-body li {
+  margin-bottom: 4px;
+}
+
+.jjdr-md-body li.md-task-item {
+  list-style: none;
+  margin-left: -1.3em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jjdr-md-body code {
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 0.87em;
+  padding: 0.16em 0.42em;
+  border-radius: 6px;
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-border);
+  color: var(--text-primary);
+}
+
+.jjdr-md-body .md-code-block {
+  margin: 14px 0 18px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--modal-border);
+  background: var(--term-bg);
+}
+
+.jjdr-md-body .md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--term-header-bg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.jjdr-md-body .md-code-lang {
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  text-transform: lowercase;
+}
+
+.jjdr-md-body .md-copy-btn {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 11px;
+  cursor: pointer;
+  border: none;
+  transition: background 120ms ease;
+}
+
+.jjdr-md-body .md-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.jjdr-md-body pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  line-height: 1.55;
+  color: #e2e8f0;
+}
+
+.jjdr-md-body pre code {
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-size: 12.5px;
+  color: inherit;
+}
+
+.jjdr-md-body blockquote {
+  margin: 0 0 14px;
+  padding: 4px 16px;
+  border-left: 3.5px solid var(--accent-border);
+  color: var(--text-secondary);
+  background: var(--tray-bg);
+  border-radius: 0 10px 10px 0;
+}
+
+.jjdr-md-body .md-alert {
+  margin: 14px 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border-left: 4px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.jjdr-md-body .md-alert-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.jjdr-md-body .md-alert-tip {
+  border-left-color: var(--ready-fg);
+  background: var(--ready-soft);
+}
+.jjdr-md-body .md-alert-tip .md-alert-title {
+  color: var(--ready-fg);
+}
+
+.jjdr-md-body .md-alert-warning {
+  border-left-color: var(--warn-fg);
+  background: var(--warn-soft);
+}
+.jjdr-md-body .md-alert-warning .md-alert-title {
+  color: var(--warn-fg);
+}
+
+.jjdr-md-body .md-alert-caution {
+  border-left-color: var(--action-fg);
+  background: var(--action-soft);
+}
+.jjdr-md-body .md-alert-caution .md-alert-title {
+  color: var(--action-fg);
+}
+
+.jjdr-md-body .md-alert-body p:last-child {
+  margin-bottom: 0;
+}
+
+.jjdr-md-body .md-table-wrap {
+  overflow-x: auto;
+  margin: 14px 0 18px;
+  border-radius: 12px;
+  border: 1px solid var(--divider);
+}
+
+.jjdr-md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.jjdr-md-body th,
+.jjdr-md-body td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+  border-right: 1px solid var(--divider);
+}
+
+.jjdr-md-body th:last-child,
+.jjdr-md-body td:last-child {
+  border-right: none;
+}
+
+.jjdr-md-body tr:last-child td {
+  border-bottom: none;
+}
+
+.jjdr-md-body thead th {
+  background: var(--tray-bg);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.jjdr-md-body tbody tr:nth-child(even) {
+  background: var(--tray-bg);
+}
+
+.jjdr-md-body img {
+  max-width: 100%;
+  border-radius: 10px;
+}

@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import type { ProjectConfig } from "../types/domain";
+import type {
+  EnrichedSession,
+  ProjectConfig,
+  WorktreeInfo,
+} from "../types/domain";
 
 export type ViewMode = "radar" | "queue";
 
@@ -25,6 +29,29 @@ export interface LaunchModalTarget {
   defaultAgent?: string;
 }
 
+export interface EditWorktreeTarget {
+  projectId: string;
+  worktreePath: string;
+  branch: string;
+  isMain: boolean;
+}
+
+export interface WorktreeContextMenuTarget {
+  x: number;
+  y: number;
+  cardKey: string;
+  project: ProjectConfig;
+  worktree: WorktreeInfo;
+  sessions: EnrichedSession[];
+}
+
+export interface MarkdownViewerTarget {
+  absolutePath: string;
+  relativePath: string;
+  projectName: string;
+  rootPath: string;
+}
+
 interface UiStoreState {
   viewMode: ViewMode;
   activeGroup: string;
@@ -34,13 +61,19 @@ interface UiStoreState {
   selectedAddress: string | null;
   hoveredAddress: string | null;
   attachedAddress: string | null;
+  terminalDrawerOpen: boolean;
+  terminalWidthPx: number | null;
   lastSessionByCardKey: Record<string, string>;
   sidebarOpen: boolean;
   collapsedProjects: Record<string, boolean>;
   idleCollapsed: boolean;
   commandPaletteOpen: boolean;
+  quickFileOpen: boolean;
+  markdownViewerTarget: MarkdownViewerTarget | null;
   projectModalProject: ProjectConfig | "new" | null;
   createWorktreeProjectId: string | null;
+  editWorktreeTarget: EditWorktreeTarget | null;
+  contextMenu: WorktreeContextMenuTarget | null;
   diffTarget: DiffModalTarget | null;
   teardownTarget: TeardownModalTarget | null;
   launchTarget: LaunchModalTarget | null;
@@ -58,13 +91,21 @@ interface UiStoreState {
   setSelectedAddress: (addr: string | null) => void;
   setHoveredAddress: (addr: string | null) => void;
   setAttachedAddress: (addr: string | null) => void;
+  setTerminalDrawerOpen: (open: boolean) => void;
+  detachToEmptyDrawer: () => void;
+  closeTerminalDrawer: () => void;
+  setTerminalWidthPx: (widthPx: number | null) => void;
   rememberCardSession: (cardKey: string, addr: string) => void;
   toggleSidebar: () => void;
   toggleProjectCollapsed: (projectId: string) => void;
   toggleIdleCollapsed: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
+  setQuickFileOpen: (open: boolean) => void;
+  setMarkdownViewerTarget: (t: MarkdownViewerTarget | null) => void;
   setProjectModalProject: (p: ProjectConfig | "new" | null) => void;
   setCreateWorktreeProjectId: (id: string | null) => void;
+  setEditWorktreeTarget: (t: EditWorktreeTarget | null) => void;
+  setContextMenu: (m: WorktreeContextMenuTarget | null) => void;
   setDiffTarget: (t: DiffModalTarget | null) => void;
   setTeardownTarget: (t: TeardownModalTarget | null) => void;
   setLaunchTarget: (t: LaunchModalTarget | null) => void;
@@ -84,13 +125,19 @@ export const useUiStore = create<UiStoreState>((set) => ({
   selectedAddress: null,
   hoveredAddress: null,
   attachedAddress: null,
+  terminalDrawerOpen: false,
+  terminalWidthPx: null,
   lastSessionByCardKey: {},
   sidebarOpen: true,
   collapsedProjects: {},
   idleCollapsed: false,
   commandPaletteOpen: false,
+  quickFileOpen: false,
+  markdownViewerTarget: null,
   projectModalProject: null,
   createWorktreeProjectId: null,
+  editWorktreeTarget: null,
+  contextMenu: null,
   diffTarget: null,
   teardownTarget: null,
   launchTarget: null,
@@ -110,7 +157,27 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setSelectedCardKey: (selectedCardKey) => set({ selectedCardKey }),
   setSelectedAddress: (selectedAddress) => set({ selectedAddress }),
   setHoveredAddress: (hoveredAddress) => set({ hoveredAddress }),
-  setAttachedAddress: (attachedAddress) => set({ attachedAddress }),
+  setAttachedAddress: (attachedAddress) =>
+    set({
+      attachedAddress,
+      terminalDrawerOpen: attachedAddress !== null,
+    }),
+  setTerminalDrawerOpen: (terminalDrawerOpen) =>
+    set((s) => ({
+      terminalDrawerOpen,
+      attachedAddress: terminalDrawerOpen ? s.attachedAddress : null,
+    })),
+  detachToEmptyDrawer: () =>
+    set({
+      attachedAddress: null,
+      terminalDrawerOpen: true,
+    }),
+  closeTerminalDrawer: () =>
+    set({
+      attachedAddress: null,
+      terminalDrawerOpen: false,
+    }),
+  setTerminalWidthPx: (terminalWidthPx) => set({ terminalWidthPx }),
   rememberCardSession: (cardKey, addr) =>
     set((s) => ({
       lastSessionByCardKey: { ...s.lastSessionByCardKey, [cardKey]: addr },
@@ -125,9 +192,14 @@ export const useUiStore = create<UiStoreState>((set) => ({
     })),
   toggleIdleCollapsed: () => set((s) => ({ idleCollapsed: !s.idleCollapsed })),
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+  setQuickFileOpen: (quickFileOpen) => set({ quickFileOpen }),
+  setMarkdownViewerTarget: (markdownViewerTarget) =>
+    set({ markdownViewerTarget }),
   setProjectModalProject: (projectModalProject) => set({ projectModalProject }),
   setCreateWorktreeProjectId: (createWorktreeProjectId) =>
     set({ createWorktreeProjectId }),
+  setEditWorktreeTarget: (editWorktreeTarget) => set({ editWorktreeTarget }),
+  setContextMenu: (contextMenu) => set({ contextMenu }),
   setDiffTarget: (diffTarget) => set({ diffTarget }),
   setTeardownTarget: (teardownTarget) => set({ teardownTarget }),
   setLaunchTarget: (launchTarget) => set({ launchTarget }),

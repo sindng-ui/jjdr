@@ -7,6 +7,7 @@ import type {
   ProjectConfig,
   TerminalInfo,
   TerminalPreview,
+  WorktreeCardMeta,
   WorktreeInfo,
 } from "../types/domain";
 
@@ -17,6 +18,8 @@ export interface DashboardComputeInput {
   worktreesByProject: Record<string, WorktreeInfo[]>;
   ackTurns: Record<string, number>;
   queuedPrompts: Record<string, string[]>;
+  worktreeMeta?: Record<string, WorktreeCardMeta>;
+  worktreeOrderByProject?: Record<string, string[]>;
   stuckMinutesThreshold: number;
   searchQuery: string;
   activeGroup: string;
@@ -194,6 +197,8 @@ export function computeDashboard(
     worktreesByProject,
     ackTurns,
     queuedPrompts,
+    worktreeMeta = {},
+    worktreeOrderByProject = {},
     stuckMinutesThreshold,
     searchQuery,
     activeGroup,
@@ -288,7 +293,9 @@ export function computeDashboard(
     if (selectedProjectId && session.projectId !== selectedProjectId) {
       continue;
     }
-    const searchBlob = `${t.address} ${t.name ?? ""} ${t.title} ${projectName} ${branch} ${agentLabel} ${t.cwd} ${t.status?.msg ?? ""}`;
+    const normWtPath = normalizePath(worktree?.path || t.cwd);
+    const meta = worktreeMeta[normWtPath];
+    const searchBlob = `${t.address} ${t.name ?? ""} ${t.title} ${projectName} ${branch} ${meta?.display_name ?? ""} ${meta?.note ?? ""} ${agentLabel} ${t.cwd} ${t.status?.msg ?? ""}`;
     if (!fuzzyMatches(searchBlob, searchQuery)) {
       continue;
     }
@@ -338,9 +345,14 @@ export function computeDashboard(
       continue;
     }
     const rawWts = worktreesByProject[proj.id] ?? [];
-    const wts: WorktreeInfo[] =
+    const normRepo = normalizePath(proj.repo_path);
+    const baseWts: WorktreeInfo[] =
       rawWts.length > 0
-        ? rawWts
+        ? rawWts.map((w, idx) =>
+            w.is_main || normalizePath(w.path) === normRepo || (idx === 0 && !rawWts.some((item) => item.is_main))
+              ? { ...w, is_main: true }
+              : w
+          )
         : [
             {
               path: proj.repo_path,
@@ -358,11 +370,26 @@ export function computeDashboard(
             },
           ];
 
+    const customOrder = worktreeOrderByProject[proj.id];
+    const wts: WorktreeInfo[] =
+      customOrder && customOrder.length > 0
+        ? [...baseWts].sort((a, b) => {
+            const ia = customOrder.indexOf(normalizePath(a.path));
+            const ib = customOrder.indexOf(normalizePath(b.path));
+            if (ia === -1 && ib === -1) return 0;
+            if (ia === -1) return 1;
+            if (ib === -1) return -1;
+            return ia - ib;
+          })
+        : baseWts;
+
     const cells = wts
       .filter((wt) => {
         if (!searchQuery.trim()) return true;
-        const blob = `${proj.name} ${wt.branch} ${wt.path}`;
-        const key = `${proj.id}::${normalizePath(wt.path)}`;
+        const normWt = normalizePath(wt.path);
+        const meta = worktreeMeta[normWt];
+        const blob = `${proj.name} ${wt.branch} ${meta?.display_name ?? ""} ${meta?.note ?? ""} ${wt.path}`;
+        const key = `${proj.id}::${normWt}`;
         return fuzzyMatches(blob, searchQuery) || (sessionsByWt.get(key)?.length ?? 0) > 0;
       })
       .map((wt) => {

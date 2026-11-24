@@ -132,4 +132,107 @@ describe("dashboardLogic", () => {
     expect(res.sessions[0].branch).toBe("feat/login");
     expect(res.matrixLanes[0].cells[1].sessions).toHaveLength(1);
   });
+
+  it("applies custom worktree ordering and matches custom display name/note in search", () => {
+    const projects: ProjectConfig[] = [
+      {
+        id: "p1",
+        name: "jjdr",
+        repo_path: "K:/repo/jjdr",
+        color: "#58a6ff",
+        default_branch: "main",
+        default_agent: "agy",
+        bootstrap: { copy_files: [] },
+        group: "Work",
+      },
+    ];
+    const worktreesByProject: Record<string, WorktreeInfo[]> = {
+      p1: [
+        {
+          path: "K:/repo/jjdr",
+          head: "aaa",
+          branch: "main",
+          is_main: true,
+          is_bare: false,
+          is_detached: false,
+          is_merged: false,
+          dirty_count: 0,
+          added_lines: 0,
+          deleted_lines: 0,
+          changed_files: [],
+          overlap_files: [],
+        },
+        {
+          path: "K:/repo/jjdr-wt-a",
+          head: "bbb",
+          branch: "feat/a",
+          is_main: false,
+          is_bare: false,
+          is_detached: false,
+          is_merged: false,
+          dirty_count: 0,
+          added_lines: 0,
+          deleted_lines: 0,
+          changed_files: [],
+          overlap_files: [],
+        },
+        {
+          path: "K:/repo/jjdr-wt-b",
+          head: "ccc",
+          branch: "feat/b",
+          is_main: false,
+          is_bare: false,
+          is_detached: false,
+          is_merged: false,
+          dirty_count: 0,
+          added_lines: 0,
+          deleted_lines: 0,
+          changed_files: [],
+          overlap_files: [],
+        },
+      ],
+    };
+
+    const ordered = computeDashboard({
+      terminals: [],
+      previews: {},
+      projects,
+      worktreesByProject,
+      ackTurns: {},
+      queuedPrompts: {},
+      worktreeOrderByProject: {
+        p1: ["k:/repo/jjdr-wt-b", "k:/repo/jjdr"],
+      },
+      stuckMinutesThreshold: 5,
+      searchQuery: "",
+      activeGroup: "All",
+      nowMs: 2_000_000,
+    });
+    expect(ordered.matrixLanes[0].cells.map((c) => c.worktree.branch)).toEqual([
+      "feat/b",
+      "main",
+      "feat/a",
+    ]);
+
+    const searched = computeDashboard({
+      terminals: [],
+      previews: {},
+      projects,
+      worktreesByProject,
+      ackTurns: {},
+      queuedPrompts: {},
+      worktreeMeta: {
+        "k:/repo/jjdr-wt-a": {
+          display_name: "결제 API 리팩토링",
+          note: "긴급 확인",
+        },
+      },
+      stuckMinutesThreshold: 5,
+      searchQuery: "결제",
+      activeGroup: "All",
+      nowMs: 2_000_000,
+    });
+    expect(searched.matrixLanes[0].cells).toHaveLength(1);
+    expect(searched.matrixLanes[0].cells[0].worktree.branch).toBe("feat/a");
+  });
 });

@@ -1,65 +1,40 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-
-use base64::engine::general_purpose::STANDARD as BASE64;
-use base64::Engine;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
-use tauri::{AppHandle, Emitter, State};
-use tokio::sync::Mutex;
+use tauri::State;
 
 use crate::git::worktree::normalize_path;
 use crate::herdr::client::HerdrClient;
-use crate::herdr::protocol::{Frame, FrameKind};
-use crate::herdr::types::AttachResult;
+use crate::herdr::naming::{is_recoverable_name_error, sanitize_herdr_name};
+use crate::herdr::types::Terminal;
 use crate::AppState;
 
-pub const TERM_DATA_EVENT: &str = "jjdr:term-data";
-pub const TERM_CLOSED_EVENT: &str = "jjdr:term-closed";
+pub use super::attach::AttachManager;
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TermDataEvent {
-    pub channel: u32,
-    pub address: String,
-    pub data_b64: String,
+pub const MAX_SHELLS_PER_WORKTREE: usize = 2;
+
+fn is_plain_shell_bin(raw_bin: &str) -> bool {
+    let bin = raw_bin
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .unwrap_or(raw_bin)
+        .trim_end_matches(".exe")
+        .to_lowercase();
+    matches!(
+        bin.as_str(),
+        "" | "shell" | "pwsh" | "powershell" | "cmd" | "bash" | "zsh" | "sh" | "fish"
+    )
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TermClosedEvent {
-    pub channel: u32,
-    pub address: String,
+fn is_plain_shell_argv(argv: &[String]) -> bool {
+    argv.is_empty() || is_plain_shell_bin(&argv[0])
 }
 
-pub struct AttachManager {
-    active_channels: Mutex<HashMap<u32, String>>,
-}
-
-impl AttachManager {
-    pub fn new() -> Self {
-        Self {
-            active_channels: Mutex::new(HashMap::new()),
-        }
+fn is_plain_shell_terminal(t: &Terminal) -> bool {
+    if let Some(agent) = t.labels.get("jjdr.agent") {
+        return is_plain_shell_bin(agent);
     }
-
-    pub async fn detach_all(&self, client: &Arc<HerdrClient>) {
-        let channels: Vec<u32> = {
-            let mut guard = self.active_channels.lock().await;
-            let keys: Vec<u32> = guard.keys().copied().collect();
-            guard.clear();
-            keys
-        };
-        for ch in channels {
-            let _ = client.send_frame(Frame::close(ch)).await;
-            client.unregister_channel(ch).await;
-        }
-    }
-
-    pub async fn detach(&self, client: &Arc<HerdrClient>, channel: u32) {
-        self.active_channels.lock().await.remove(&channel);
-        let _ = client.send_frame(Frame::close(channel)).await;
-        client.unregister_channel(channel).await;
-    }
+    is_plain_shell_argv(&t.argv)
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +104,37 @@ pub fn normalize_agent_argv(
     argv
 }
 
+/// Invoke `terminal.run` with sanitized `name`, falling back cleanly without `name`
+/// if herdr-core rejects the name (invalid syntax or duplicate session name).
+pub async fn call_terminal_run_safe(
+    client: &HerdrClient,
+    mut params: serde_json::Value,
+    raw_name: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let sanitized = raw_name.and_then(sanitize_herdr_name);
+    if let Some(ref name) = sanitized {
+        params["name"] = json!(name);
+    }
+
+    match client.call("terminal.run", params.clone()).await {
+        Ok(res) => Ok(res),
+        Err(err) => {
+            let err_str = err.to_string();
+            if sanitized.is_some() && is_recoverable_name_error(&err_str) {
+                if let Some(obj) = params.as_object_mut() {
+                    obj.remove("name");
+                }
+                client
+                    .call("terminal.run", params)
+                    .await
+                    .map_err(|e| e.to_string())
+            } else {
+                Err(err_str)
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn launch_session(
     state: State<'_, AppState>,
@@ -142,16 +148,45 @@ pub async fn launch_session(
         input.cwd
     };
 
-    let is_plain_shell = input.argv.is_empty();
+    let is_plain_shell = is_plain_shell_argv(&input.argv);
+    let norm_cwd = normalize_path(&cwd);
+
+    // Enforce max 2 live shells per worktree when launching inside a project worktree
+    let mut existing_live_shells = 0usize;
+    if is_plain_shell && input.project_id.is_some() {
+        let map = state.hub.terminals.read().await;
+        for t in map.values() {
+            if t.state != "live" || !is_plain_shell_terminal(t) {
+                continue;
+            }
+            let same_wt = t
+                .labels
+                .get("jjdr.worktree")
+                .map(|w| normalize_path(w) == norm_cwd)
+                .unwrap_or_else(|| normalize_path(&t.cwd) == norm_cwd);
+            if same_wt {
+                existing_live_shells += 1;
+            }
+        }
+        if existing_live_shells >= MAX_SHELLS_PER_WORKTREE {
+            return Err(format!(
+                "한 Worktree당 PowerShell(터미널)은 최대 {}개까지 열 수 있습니다.",
+                MAX_SHELLS_PER_WORKTREE
+            ));
+        }
+    }
+
     let autonomous = input.autonomous.unwrap_or(true);
-    let argv = if is_plain_shell {
+    let argv = if input.argv.is_empty() {
         Vec::new()
+    } else if is_plain_shell {
+        input.argv
     } else {
         normalize_agent_argv(input.argv, input.initial_prompt, autonomous)
     };
 
     let mut labels = serde_json::Map::new();
-    labels.insert("jjdr.worktree".into(), json!(normalize_path(&cwd)));
+    labels.insert("jjdr.worktree".into(), json!(norm_cwd));
     labels.insert(
         "jjdr.agent".into(),
         json!(if is_plain_shell { "shell" } else { argv[0].as_str() }),
@@ -171,19 +206,19 @@ pub async fn launch_session(
         "keep": true,
         "wait": false
     });
-    // Omitting `argv` lets herdr-core launch the OS default shell (PowerShell/pwsh on Windows)
     if !argv.is_empty() {
         params["argv"] = json!(argv);
     }
-    if let Some(name) = input.name.filter(|s| !s.trim().is_empty()) {
-        params["name"] = json!(name);
-    }
 
-    let res = state
-        .herdr
-        .call("terminal.run", params)
-        .await
-        .map_err(|e| e.to_string())?;
+    let effective_name = input.name.map(|n| {
+        if is_plain_shell && existing_live_shells > 0 {
+            format!("{}-{}", n, existing_live_shells + 1)
+        } else {
+            n
+        }
+    });
+
+    let res = call_terminal_run_safe(&state.herdr, params, effective_name.as_deref()).await?;
 
     let address = res
         .get("terminal")
@@ -273,178 +308,9 @@ pub async fn kill_terminal(
 }
 
 #[tauri::command]
-pub async fn attach_terminal(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    address: String,
-    cols: u16,
-    rows: u16,
-    keep_existing: Option<bool>,
-) -> Result<AttachResult, String> {
-    // Hybrid Mode C: by default detach any prior attached terminal immediately to keep WebView memory flat.
-    if !keep_existing.unwrap_or(false) {
-        state.attach.detach_all(&state.herdr).await;
-    }
-
-    let val = state
-        .herdr
-        .call(
-            "terminal.attach",
-            json!({
-                "terminal": address,
-                "cols": cols.max(20),
-                "rows": rows.max(5),
-                "history": 400,
-                "display": {
-                    "bg": "#0e1322",
-                    "fg": "#eef2ff",
-                    "cursor": "#818cf8"
-                }
-            }),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let attach_res: AttachResult = serde_json::from_value(val).map_err(|e| e.to_string())?;
-    let channel = attach_res.channel;
-
-    let mut rx = state
-        .herdr
-        .register_channel(channel)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    state
-        .attach
-        .active_channels
-        .lock()
-        .await
-        .insert(channel, address.clone());
-
-    // Stream raw bytes in 16ms coalesced batches so xterm.js renders smoothly at 60fps.
-    let client = state.herdr.clone();
-    let addr_clone = address.clone();
-    tokio::spawn(async move {
-        let mut buf = Vec::<u8>::with_capacity(8192);
-        let mut uncredited: u32 = 0;
-        let mut flush_tick = tokio::time::interval(Duration::from_millis(16));
-        flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-        loop {
-            tokio::select! {
-                maybe_frame = rx.recv() => {
-                    match maybe_frame {
-                        Some(frame) => match frame.kind {
-                            FrameKind::Data => {
-                                uncredited = uncredited.saturating_add(frame.payload.len() as u32);
-                                buf.extend_from_slice(&frame.payload);
-                                if buf.len() >= 16384 {
-                                    emit_term_chunk(&app, channel, &addr_clone, &mut buf);
-                                }
-                                if uncredited >= 8192 {
-                                    let _ = client.send_frame(Frame::credit(channel, uncredited)).await;
-                                    uncredited = 0;
-                                }
-                            }
-                            FrameKind::Close => {
-                                if !buf.is_empty() {
-                                    emit_term_chunk(&app, channel, &addr_clone, &mut buf);
-                                }
-                                let _ = app.emit(TERM_CLOSED_EVENT, TermClosedEvent { channel, address: addr_clone.clone() });
-                                break;
-                            }
-                            _ => {}
-                        },
-                        None => {
-                            if !buf.is_empty() {
-                                emit_term_chunk(&app, channel, &addr_clone, &mut buf);
-                            }
-                            let _ = app.emit(TERM_CLOSED_EVENT, TermClosedEvent { channel, address: addr_clone.clone() });
-                            break;
-                        }
-                    }
-                }
-                _ = flush_tick.tick() => {
-                    if !buf.is_empty() {
-                        emit_term_chunk(&app, channel, &addr_clone, &mut buf);
-                    }
-                    if uncredited > 0 {
-                        let _ = client.send_frame(Frame::credit(channel, uncredited)).await;
-                        uncredited = 0;
-                    }
-                }
-            }
-        }
-        client.unregister_channel(channel).await;
-    });
-
-    Ok(attach_res)
-}
-
-fn emit_term_chunk(app: &AppHandle, channel: u32, address: &str, buf: &mut Vec<u8>) {
-    let encoded = BASE64.encode(&buf);
-    buf.clear();
-    let _ = app.emit(
-        TERM_DATA_EVENT,
-        TermDataEvent {
-            channel,
-            address: address.to_string(),
-            data_b64: encoded,
-        },
-    );
-}
-
-#[tauri::command]
-pub async fn detach_terminal(state: State<'_, AppState>, channel: u32) -> Result<(), String> {
-    state.attach.detach(&state.herdr, channel).await;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn write_terminal_input(
-    state: State<'_, AppState>,
-    channel: u32,
-    data: String,
-) -> Result<(), String> {
-    state
-        .herdr
-        .send_frame(Frame::data(channel, data.into_bytes()))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn resize_terminal(
-    state: State<'_, AppState>,
-    channel: u32,
-    cols: u16,
-    rows: u16,
-) -> Result<(), String> {
-    state
-        .herdr
-        .send_frame(Frame::resize(channel, cols.max(20), rows.max(5)))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn focus_terminal(
-    state: State<'_, AppState>,
-    channel: u32,
-    focused: bool,
-) -> Result<(), String> {
-    state
-        .herdr
-        .send_frame(Frame::focus(channel, focused))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub async fn popout_external_terminal(address: String) -> Result<(), String> {
     #[cfg(windows)]
     {
-        // Prefer Windows Terminal if available, fallback to cmd start
         let wt = std::process::Command::new("wt.exe")
             .args(["hc", "attach", &address])
             .spawn();

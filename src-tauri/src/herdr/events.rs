@@ -5,11 +5,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, RwLock};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use super::client::HerdrClient;
-use super::protocol::{extract_smart_preview_lines, Frame, FrameKind};
-use super::types::{ReadResult, StateBatchPayload, SubscribeResult, Terminal, TerminalPreview};
+use super::preview::spawn_preview_worker;
+use super::protocol::{Frame, FrameKind};
+use super::types::{StateBatchPayload, SubscribeResult, Terminal, TerminalPreview};
 
 pub const STATE_BATCH_EVENT: &str = "jjdr:state-batch";
 pub const DOC_CHANGED_EVENT: &str = "jjdr:doc-changed";
@@ -42,55 +43,28 @@ impl TerminalStateHub {
         })
     }
 
-    pub fn start_preview_worker(self: &Arc<Self>, client: Arc<HerdrClient>) {
-        let hub_clone = self.clone();
-        tauri::async_runtime::spawn(async move {
-            let maybe_rx = hub_clone.preview_rx.lock().await.take();
-            let Some(mut preview_rx) = maybe_rx else {
-                return;
-            };
-            let mut last_fetched: HashMap<String, u64> = HashMap::new();
-            while let Some(addr) = preview_rx.recv().await {
-                let now = now_ms();
-                if let Some(&prev) = last_fetched.get(&addr) {
-                    if now.saturating_sub(prev) < 600 {
-                        continue;
-                    }
-                }
-                last_fetched.insert(addr.clone(), now);
+    pub async fn take_preview_rx(&self) -> Option<mpsc::UnboundedReceiver<String>> {
+        self.preview_rx.lock().await.take()
+    }
 
-                match client
-                    .call("terminal.read", json!({ "terminal": addr, "lines": 0 }))
-                    .await
-                {
-                    Ok(val) => {
-                        if let Ok(read_res) = serde_json::from_value::<ReadResult>(val) {
-                            let lines = extract_preview_lines(&read_res.text, 16);
-                            let changed = {
-                                let prev_map = hub_clone.previews.read().await;
-                                prev_map.get(&addr).map(|p| &p.lines) != Some(&lines)
-                            };
-                            if changed {
-                                let preview = TerminalPreview {
-                                    address: addr.clone(),
-                                    lines,
-                                    updated_ms: now_ms(),
-                                };
-                                hub_clone
-                                    .previews
-                                    .write()
-                                    .await
-                                    .insert(addr.clone(), preview);
-                                hub_clone.dirty_previews.write().await.insert(addr);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        debug!("preview fetch skipped for {}: {}", addr, e);
-                    }
-                }
-            }
-        });
+    pub async fn update_preview_if_changed(&self, addr: String, lines: Vec<String>) {
+        let changed = {
+            let prev_map = self.previews.read().await;
+            prev_map.get(&addr).map(|p| &p.lines) != Some(&lines)
+        };
+        if changed {
+            let preview = TerminalPreview {
+                address: addr.clone(),
+                lines,
+                updated_ms: now_ms(),
+            };
+            self.previews.write().await.insert(addr.clone(), preview);
+            self.dirty_previews.write().await.insert(addr);
+        }
+    }
+
+    pub fn start_preview_worker(self: &Arc<Self>, client: Arc<HerdrClient>) {
+        spawn_preview_worker(self.clone(), client);
     }
 
     pub async fn snapshot(&self, client: &HerdrClient) -> StateBatchPayload {
@@ -216,7 +190,6 @@ impl TerminalStateHub {
             _ => {}
         }
 
-        // If the event carries a full terminal object, upsert it directly.
         if let Some(term_val) = raw.get("terminal").filter(|v| v.is_object()) {
             if let Ok(term) = serde_json::from_value::<Terminal>(term_val.clone()) {
                 let addr = term.address.clone();
@@ -233,7 +206,6 @@ impl TerminalStateHub {
             }
         }
 
-        // Otherwise apply incremental fact patch to an existing terminal.
         if let Some(addr) = extract_address(raw) {
             let mut map = self.terminals.write().await;
             if let Some(term) = map.get_mut(&addr) {
@@ -280,7 +252,10 @@ impl TerminalStateHub {
                 if kind == "finished" {
                     term.state = "finished".to_string();
                     term.exit_code = raw.get("exit_code").and_then(|v| v.as_i64()).map(|v| v as i32);
-                    term.finished_ms = raw.get("finished_ms").and_then(|v| v.as_u64()).or_else(|| Some(now_ms()));
+                    term.finished_ms = raw
+                        .get("finished_ms")
+                        .and_then(|v| v.as_u64())
+                        .or_else(|| Some(now_ms()));
                     trigger_preview = true;
                 }
                 self.dirty_terminals.write().await.insert(addr.clone());
@@ -291,8 +266,12 @@ impl TerminalStateHub {
         }
     }
 
-    /// Flush coalesced 30ms delta batch to frontend.
-    async fn flush_batch(&self, app: &AppHandle, client: &HerdrClient, last_connected: &mut Option<bool>) {
+    async fn flush_batch(
+        &self,
+        app: &AppHandle,
+        client: &HerdrClient,
+        last_connected: &mut Option<bool>,
+    ) {
         let health = client.health().await;
         let health_changed = *last_connected != Some(health.connected);
         *last_connected = Some(health.connected);
@@ -367,7 +346,6 @@ pub fn spawn_herdr_supervisor(
 ) {
     hub.start_preview_worker(client.clone());
 
-    // 30ms coalesced batch emitter (keeps UI main thread completely free of bursts)
     let app_emit = app.clone();
     let client_emit = client.clone();
     let hub_emit = hub.clone();
@@ -383,11 +361,11 @@ pub fn spawn_herdr_supervisor(
         }
     });
 
-    // Lightweight 2.5s live-preview & turn/status refresher so board cards always show real AI answers & READY state
+    // Periodic lightweight sync (3.5s) to keep turn/status fresh without contending with attach RPCs.
     let hub_prev = hub.clone();
     let client_prev = client.clone();
     tauri::async_runtime::spawn(async move {
-        let mut ticker = tokio::time::interval(Duration::from_millis(2500));
+        let mut ticker = tokio::time::interval(Duration::from_millis(3500));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             ticker.tick().await;
@@ -398,7 +376,6 @@ pub fn spawn_herdr_supervisor(
         }
     });
 
-    // Connection + subscribe supervisor with exponential backoff
     tauri::async_runtime::spawn(async move {
         let mut backoff_ms: u64 = 500;
         loop {
@@ -409,7 +386,10 @@ pub fn spawn_herdr_supervisor(
                         warn!("herdr subscribe session ended: {}", err);
                     }
                     client
-                        .set_disconnected_error("Connection to herdr-core lost; reconnecting...".into(), None)
+                        .set_disconnected_error(
+                            "Connection to herdr-core lost; reconnecting...".into(),
+                            None,
+                        )
                         .await;
                     *hub.full_sync_pending.write().await = true;
                 }
@@ -470,7 +450,6 @@ async fn run_subscribe_session(
                     }
                 }
 
-                // Return flow-control credit promptly so herdr-core never stalls the event channel.
                 if uncredited_bytes >= 4096 {
                     let _ = client
                         .send_frame(Frame::credit(channel, uncredited_bytes))
@@ -495,10 +474,6 @@ fn extract_address(val: &Value) -> Option<String> {
         .or_else(|| val.get("terminal"))
         .and_then(|v| v.as_str())
         .map(String::from)
-}
-
-pub fn extract_preview_lines(raw_text: &str, max_lines: usize) -> Vec<String> {
-    extract_smart_preview_lines(raw_text, max_lines)
 }
 
 pub fn now_ms() -> u64 {

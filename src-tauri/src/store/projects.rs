@@ -34,6 +34,14 @@ pub struct ProjectConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WorktreeCardMeta {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PersistedUiState {
     #[serde(default)]
     pub view_mode: String,
@@ -52,6 +60,15 @@ pub struct PersistedUiState {
     /// Map of worktree normalized path -> last agent command for quick resume after reboot
     #[serde(default)]
     pub last_agent_by_worktree: HashMap<String, Vec<String>>,
+    /// User-adjusted right terminal drawer width in pixels
+    #[serde(default)]
+    pub terminal_width_px: Option<u32>,
+    /// Custom display name / note per normalized worktree path
+    #[serde(default)]
+    pub worktree_meta: HashMap<String, WorktreeCardMeta>,
+    /// Custom worktree card ordering per project id (normalized worktree paths)
+    #[serde(default)]
+    pub worktree_order_by_project: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +242,21 @@ impl PersistenceStore {
         list
     }
 
+    pub async fn reorder_projects(
+        &self,
+        client: &Arc<HerdrClient>,
+        ordered_ids: &[String],
+    ) -> Vec<ProjectConfig> {
+        let list = {
+            let mut guard = self.projects.write().await;
+            *guard = apply_project_order(std::mem::take(&mut *guard), ordered_ids);
+            guard.clone()
+        };
+        write_local_json(&self.local_dir.join("projects.json"), &list);
+        doc_set_best_effort(client, DOC_PROJECTS_KEY, json!(list)).await;
+        list
+    }
+
     pub async fn save_ui_state(&self, client: &Arc<HerdrClient>, state: PersistedUiState) {
         *self.ui_state.write().await = state.clone();
         write_local_json(&self.local_dir.join("ui_state.json"), &state);
@@ -280,5 +312,52 @@ fn read_local_json<T: for<'de> Deserialize<'de>>(path: &PathBuf) -> Option<T> {
 fn write_local_json<T: Serialize>(path: &PathBuf, value: &T) {
     if let Ok(text) = serde_json::to_string_pretty(value) {
         let _ = std::fs::write(path, text);
+    }
+}
+
+pub fn apply_project_order(
+    projects: Vec<ProjectConfig>,
+    ordered_ids: &[String],
+) -> Vec<ProjectConfig> {
+    let mut by_id: HashMap<String, ProjectConfig> = projects
+        .into_iter()
+        .map(|p| (p.id.clone(), p))
+        .collect();
+    let mut reordered = Vec::with_capacity(by_id.len());
+    for id in ordered_ids {
+        if let Some(proj) = by_id.remove(id) {
+            reordered.push(proj);
+        }
+    }
+    let mut remaining: Vec<ProjectConfig> = by_id.into_values().collect();
+    remaining.sort_by(|a, b| a.name.cmp(&b.name));
+    reordered.extend(remaining);
+    reordered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_proj(id: &str, name: &str) -> ProjectConfig {
+        ProjectConfig {
+            id: id.into(),
+            name: name.into(),
+            repo_path: format!("/repo/{}", id),
+            color: "#fff".into(),
+            default_branch: "main".into(),
+            default_agent: "agy".into(),
+            verify_command: None,
+            bootstrap: BootstrapConfig::default(),
+            group: "Default".into(),
+        }
+    }
+
+    #[test]
+    fn reorders_projects_and_keeps_missing_ones() {
+        let list = vec![mk_proj("a", "Alpha"), mk_proj("b", "Beta"), mk_proj("c", "Gamma")];
+        let out = apply_project_order(list, &["c".into(), "a".into()]);
+        let ids: Vec<&str> = out.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["c", "a", "b"]);
     }
 }

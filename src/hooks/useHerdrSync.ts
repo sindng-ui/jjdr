@@ -153,6 +153,8 @@ export function useHerdrSync() {
           ackTurns: bundle.ui_state.ack_turns ?? {},
           queuedPrompts: bundle.ui_state.queued_prompts ?? {},
           lastAgentByWorktree: bundle.ui_state.last_agent_by_worktree ?? {},
+          worktreeMeta: bundle.ui_state.worktree_meta ?? {},
+          worktreeOrderByProject: bundle.ui_state.worktree_order_by_project ?? {},
         });
 
         const ui = useUiStore.getState();
@@ -166,6 +168,12 @@ export function useHerdrSync() {
         }
         if (bundle.ui_state.selected_terminal) {
           ui.setSelectedAddress(bundle.ui_state.selected_terminal);
+        }
+        if (
+          typeof bundle.ui_state.terminal_width_px === "number" &&
+          bundle.ui_state.terminal_width_px >= 320
+        ) {
+          ui.setTerminalWidthPx(bundle.ui_state.terminal_width_px);
         }
         // Defer restoring attached_terminal until verified `live` in snapshot
         if (bundle.ui_state.attached_terminal) {
@@ -224,6 +232,8 @@ export function useHerdrSync() {
   const worktreesByProject = useAppStore((s) => s.worktreesByProject);
   const ackTurns = useAppStore((s) => s.ackTurns);
   const queuedPrompts = useAppStore((s) => s.queuedPrompts);
+  const worktreeMeta = useAppStore((s) => s.worktreeMeta);
+  const worktreeOrderByProject = useAppStore((s) => s.worktreeOrderByProject);
   const stuckMinutes = useAppStore((s) => s.settings.stuck_minutes);
   const searchQuery = useUiStore((s) => s.searchQuery);
   const activeGroup = useUiStore((s) => s.activeGroup);
@@ -240,6 +250,8 @@ export function useHerdrSync() {
         worktreesByProject,
         ackTurns,
         queuedPrompts,
+        worktreeMeta,
+        worktreeOrderByProject,
         stuckMinutesThreshold: stuckMinutes,
         searchQuery,
         activeGroup,
@@ -260,6 +272,8 @@ export function useHerdrSync() {
     worktreesByProject,
     ackTurns,
     queuedPrompts,
+    worktreeMeta,
+    worktreeOrderByProject,
     stuckMinutes,
     searchQuery,
     activeGroup,
@@ -282,6 +296,7 @@ export function useHerdrSync() {
   const viewMode = useUiStore((s) => s.viewMode);
   const selectedAddress = useUiStore((s) => s.selectedAddress);
   const attachedAddress = useUiStore((s) => s.attachedAddress);
+  const terminalWidthPx = useUiStore((s) => s.terminalWidthPx);
 
   useEffect(() => {
     if (!hydrated || !isTauriRuntime()) return;
@@ -294,6 +309,9 @@ export function useHerdrSync() {
         ack_turns: ackTurns,
         queued_prompts: queuedPrompts,
         last_agent_by_worktree: lastAgentByWorktree,
+        terminal_width_px: terminalWidthPx,
+        worktree_meta: worktreeMeta,
+        worktree_order_by_project: worktreeOrderByProject,
       }).catch(() => {});
     }, 800);
     return () => clearTimeout(timer);
@@ -302,10 +320,13 @@ export function useHerdrSync() {
     viewMode,
     selectedAddress,
     attachedAddress,
+    terminalWidthPx,
     activeGroup,
     ackTurns,
     queuedPrompts,
     lastAgentByWorktree,
+    worktreeMeta,
+    worktreeOrderByProject,
   ]);
 }
 

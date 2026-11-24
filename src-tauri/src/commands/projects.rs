@@ -71,3 +71,14 @@ pub async fn delete_project(
         .delete_project(&state.herdr, &project_id)
         .await)
 }
+
+#[tauri::command]
+pub async fn reorder_projects(
+    state: State<'_, AppState>,
+    ordered_ids: Vec<String>,
+) -> Result<Vec<ProjectConfig>, String> {
+    Ok(state
+        .store
+        .reorder_projects(&state.herdr, &ordered_ids)
+        .await)
+}

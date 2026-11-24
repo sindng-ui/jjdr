@@ -4,6 +4,7 @@ import {
   Check,
   ExternalLink,
   FileDiff,
+  Home,
   OctagonX,
   Terminal,
   Trash2,
@@ -13,6 +14,7 @@ import { StatusBadge } from "../shared/StatusBadge";
 import { formatElapsed } from "../../utils/format";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
+import { normalizePath } from "../../workers/dashboardLogic";
 import {
   interruptTerminal,
   killTerminal,
@@ -32,16 +34,21 @@ export const SessionCard = React.memo(function SessionCard({
   attached,
 }: SessionCardProps) {
   const showOverlap = useAppStore((s) => s.settings.show_merge_overlap);
+  const cardMeta = useAppStore(
+    (s) => s.worktreeMeta[normalizePath(session.worktreePath)]
+  );
 
   const attachedAddress = useUiStore((s) => s.attachedAddress);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
   const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
+  const closeTerminalDrawer = useUiStore((s) => s.closeTerminalDrawer);
   const setDiffTarget = useUiStore((s) => s.setDiffTarget);
   const setTeardownTarget = useUiStore((s) => s.setTeardownTarget);
   const showToast = useUiStore((s) => s.showToast);
 
   const { terminal, worktree, bucket } = session;
   const isLive = terminal.state === "live";
+  const displayName = cardMeta?.display_name?.trim() || "";
 
   const lastSummary =
     terminal.status?.msg ||
@@ -73,21 +80,18 @@ export const SessionCard = React.memo(function SessionCard({
       background = "var(--run-bg)";
       border = "1px solid var(--run-border)";
     } else {
-      background =
-        selected || attached ? "var(--card-bg)" : "var(--card-idle-bg)";
-      border =
-        selected || attached
-          ? "1px solid var(--accent-border)"
-          : "1px dashed var(--card-idle-border)";
+      background = selected ? "var(--card-bg)" : "var(--card-idle-bg)";
+      border = selected
+        ? "1px solid var(--accent-border)"
+        : "1px dashed var(--card-idle-border)";
     }
 
     return {
       background,
       border,
-      boxShadow:
-        selected || attached
-          ? "var(--card-selected-shadow)"
-          : "var(--card-shadow)",
+      boxShadow: selected
+        ? "var(--card-selected-shadow)"
+        : "var(--card-shadow)",
     };
   })();
 
@@ -118,11 +122,24 @@ export const SessionCard = React.memo(function SessionCard({
             {session.projectName}
           </span>
           <span style={{ color: "var(--text-faint)" }}>/</span>
+          {worktree?.is_main && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[9.5px] px-1.5 py-0.5 rounded-full font-bold uppercase"
+              style={{
+                background: "var(--accent-soft)",
+                border: "1px solid var(--accent-border)",
+                color: "var(--accent)",
+              }}
+            >
+              <Home className="w-2.5 h-2.5" />
+              ROOT
+            </span>
+          )}
           <span
             className="text-[13px] font-mono-code font-bold"
             style={{ color: "var(--text-primary)" }}
           >
-            {session.branch}
+            {displayName || session.branch}
           </span>
         </div>
 
@@ -130,32 +147,6 @@ export const SessionCard = React.memo(function SessionCard({
           onClick={(e) => e.stopPropagation()}
           className="flex items-center gap-2 shrink-0 text-[11px] font-mono-code tabular-nums"
         >
-          {worktree &&
-            (worktree.added_lines > 0 ||
-              worktree.deleted_lines > 0 ||
-              worktree.dirty_count > 0) && (
-              <button
-                onClick={() => {
-                  if (session.projectId) {
-                    setDiffTarget({
-                      projectId: session.projectId,
-                      worktreePath: worktree.path,
-                      branch: worktree.branch,
-                    });
-                  }
-                }}
-                className="inline-flex items-center gap-1 font-semibold hover:underline cursor-pointer"
-                title="View Git Diff"
-              >
-                <span style={{ color: "var(--ready-fg)" }}>
-                  +{worktree.added_lines}
-                </span>
-                <span style={{ color: "var(--action-fg)" }}>
-                  -{worktree.deleted_lines}
-                </span>
-              </button>
-            )}
-
           {showOverlap && worktree && worktree.overlap_files.length > 0 && (
             <span
               title={`Potential merge overlap:\n${worktree.overlap_files.join(
@@ -260,7 +251,7 @@ export const SessionCard = React.memo(function SessionCard({
           {isLive && (
             <button
               onClick={() =>
-                setAttachedAddress(attached ? null : session.address)
+                attached ? closeTerminalDrawer() : setAttachedAddress(session.address)
               }
               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-semibold transition-colors cursor-pointer ${
                 attached ? "jjdr-primary-btn" : "jjdr-pill"

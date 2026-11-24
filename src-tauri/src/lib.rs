@@ -21,6 +21,8 @@ use herdr::client::HerdrClient;
 #[cfg(not(test))]
 use herdr::events::{spawn_herdr_supervisor, TerminalStateHub};
 #[cfg(not(test))]
+use store::file_index::FileIndexStore;
+#[cfg(not(test))]
 use store::projects::PersistenceStore;
 
 #[cfg(not(test))]
@@ -29,6 +31,7 @@ pub struct AppState {
     pub hub: Arc<TerminalStateHub>,
     pub store: Arc<PersistenceStore>,
     pub attach: Arc<AttachManager>,
+    pub file_index: Arc<FileIndexStore>,
 }
 
 #[cfg(not(test))]
@@ -44,12 +47,14 @@ pub fn run() {
     let hub = TerminalStateHub::new();
     let store = Arc::new(PersistenceStore::new());
     let attach = Arc::new(AttachManager::new());
+    let file_index = Arc::new(FileIndexStore::new());
 
     let state = AppState {
         herdr: herdr.clone(),
         hub: hub.clone(),
         store,
         attach: attach.clone(),
+        file_index,
     };
 
     let app = tauri::Builder::default()
@@ -75,25 +80,33 @@ pub fn run() {
             commands::system::window_toggle_maximize,
             commands::system::window_close,
             commands::system::window_start_dragging,
+            commands::system::open_in_explorer,
+            commands::files::warm_project_file_index,
+            commands::files::search_project_files,
+            commands::files::read_text_file,
+            commands::files::open_with_default_app,
+            commands::files::open_in_vscode,
             commands::projects::inspect_git_repo,
             commands::projects::list_projects,
             commands::projects::upsert_project,
             commands::projects::delete_project,
+            commands::projects::reorder_projects,
             commands::worktrees::list_all_worktrees,
             commands::worktrees::list_project_worktrees,
             commands::worktrees::create_worktree_and_launch,
             commands::worktrees::teardown_worktree,
+            commands::worktrees::rename_worktree_branch,
             commands::worktrees::fetch_worktree_diff,
             commands::terminals::launch_session,
             commands::terminals::send_terminal_text,
             commands::terminals::send_terminal_keys,
             commands::terminals::interrupt_terminal,
             commands::terminals::kill_terminal,
-            commands::terminals::attach_terminal,
-            commands::terminals::detach_terminal,
-            commands::terminals::write_terminal_input,
-            commands::terminals::resize_terminal,
-            commands::terminals::focus_terminal,
+            commands::attach::attach_terminal,
+            commands::attach::detach_terminal,
+            commands::attach::write_terminal_input,
+            commands::attach::resize_terminal,
+            commands::attach::focus_terminal,
             commands::terminals::popout_external_terminal,
         ])
         .build(tauri::generate_context!())

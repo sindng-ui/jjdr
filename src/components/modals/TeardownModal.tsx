@@ -6,6 +6,7 @@ import {
   listProjectWorktrees,
   teardownWorktree,
 } from "../../services/tauriBridge";
+import { normalizePath } from "../../workers/dashboardLogic";
 
 export const TeardownModal = React.memo(function TeardownModal() {
   const target = useUiStore((s) => s.teardownTarget);
@@ -54,6 +55,23 @@ export const TeardownModal = React.memo(function TeardownModal() {
       showToast(`Cleaned up worktree ${target.branch}`, "success");
       setTarget(null);
     } catch (err) {
+      // On slower Windows PCs (antivirus/Node.js locks), git may report a transient error even after removing the worktree.
+      // Re-query the actual worktree list and treat it as success if the worktree is already gone.
+      const latest = await listProjectWorktrees(target.projectId).catch(
+        () => null
+      );
+      if (latest) {
+        useAppStore.getState().setProjectWorktrees(target.projectId, latest);
+        const normTarget = normalizePath(target.worktreePath);
+        const stillPresent = latest.some(
+          (w) => normalizePath(w.path) === normTarget
+        );
+        if (!stillPresent) {
+          showToast(`Cleaned up worktree ${target.branch}`, "success");
+          setTarget(null);
+          return;
+        }
+      }
       setError(String(err));
     } finally {
       setRunning(false);

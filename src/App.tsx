@@ -1,15 +1,19 @@
 import { Suspense, lazy } from "react";
 import { useHerdrSync } from "./hooks/useHerdrSync";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
+import { useFileIndexWarmup } from "./hooks/useFileIndexWarmup";
 import { useUiStore } from "./store/useUiStore";
 import { TopStatusBar } from "./components/layout/TopStatusBar";
 import { SidebarProjects } from "./components/layout/SidebarProjects";
 import { HerdrHealthBanner } from "./components/shared/HerdrHealthBanner";
 import { AttentionBoard } from "./components/attention/AttentionBoard";
 import { RadarBoardView } from "./components/board/RadarBoardView";
+import { WorktreeContextMenu } from "./components/board/WorktreeContextMenu";
 import { CommandPalette } from "./components/modals/CommandPalette";
+import { QuickFileModal } from "./components/modals/QuickFileModal";
 import { ProjectModal } from "./components/modals/ProjectModal";
 import { CreateWorktreeModal } from "./components/modals/CreateWorktreeModal";
+import { EditWorktreeModal } from "./components/modals/EditWorktreeModal";
 import { LaunchSessionModal } from "./components/modals/LaunchSessionModal";
 import { TeardownModal } from "./components/modals/TeardownModal";
 import { DiffPreviewModal } from "./components/modals/DiffPreviewModal";
@@ -21,15 +25,27 @@ const AttachedTerminalDrawer = lazy(() =>
   }))
 );
 
+const MarkdownViewerModal = lazy(() =>
+  import("./components/modals/MarkdownViewerModal").then((m) => ({
+    default: m.MarkdownViewerModal,
+  }))
+);
+
 export function App() {
   useHerdrSync();
   useGlobalShortcuts();
+  useFileIndexWarmup();
 
   const viewMode = useUiStore((s) => s.viewMode);
+  const terminalDrawerOpen = useUiStore((s) => s.terminalDrawerOpen);
   const attachedAddress = useUiStore((s) => s.attachedAddress);
+  const terminalWidthPx = useUiStore((s) => s.terminalWidthPx);
+  const markdownViewerTarget = useUiStore((s) => s.markdownViewerTarget);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const toast = useUiStore((s) => s.toast);
   const clearToast = useUiStore((s) => s.clearToast);
+
+  const showDrawer = terminalDrawerOpen || Boolean(attachedAddress);
 
   return (
     <div className="jjdr-shell h-screen w-screen flex flex-col overflow-hidden">
@@ -41,11 +57,16 @@ export function App() {
         {sidebarOpen && <SidebarProjects />}
         <main className="jjdr-stage flex-1 rounded-[22px] flex min-w-0 min-h-0 overflow-hidden">
           {viewMode === "radar" ? <RadarBoardView /> : <AttentionBoard />}
-          {attachedAddress && (
+          {showDrawer && (
             <Suspense
               fallback={
                 <div
-                  className="w-[50%] min-w-[440px] p-2.5 pl-0 shrink-0"
+                  style={
+                    terminalWidthPx
+                      ? { width: `${terminalWidthPx}px` }
+                      : { width: "50%" }
+                  }
+                  className="min-w-[360px] max-w-[78%] p-2.5 pl-0 shrink-0"
                 >
                   <div
                     className="h-full rounded-[18px] flex items-center justify-center text-xs"
@@ -66,10 +87,18 @@ export function App() {
         </main>
       </div>
 
-      {/* Modals */}
+      {/* Context Menu & Modals */}
+      <WorktreeContextMenu />
       <CommandPalette />
+      <QuickFileModal />
+      {markdownViewerTarget && (
+        <Suspense fallback={null}>
+          <MarkdownViewerModal />
+        </Suspense>
+      )}
       <ProjectModal />
       <CreateWorktreeModal />
+      <EditWorktreeModal />
       <LaunchSessionModal />
       <TeardownModal />
       <DiffPreviewModal />

@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   Check,
   FileDiff,
+  Home,
+  Pencil,
   Plus,
   Terminal,
   Trash2,
@@ -28,17 +30,32 @@ interface RadarTileProps {
   project: ProjectConfig;
   worktree: WorktreeInfo;
   sessions: EnrichedSession[];
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  onDragPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  shouldSuppressClick?: () => boolean;
 }
 
 export const RadarTile = React.memo(function RadarTile({
   project,
   worktree,
   sessions,
+  isDragging = false,
+  isDropTarget = false,
+  onDragPointerDown,
+  shouldSuppressClick,
 }: RadarTileProps) {
-  const cardKey = `wt::${project.id}::${normalizePath(worktree.path)}`;
-  // Card visual summary always reflects highest-priority session (`sessions[0]`),
-  // while opening/attaching restores the last active tab (or prefers AI) for this worktree.
+  const normWtPath = normalizePath(worktree.path);
+  const cardKey = `wt::${project.id}::${normWtPath}`;
   const session = sessions[0] ?? null;
+
+  // Atomic boolean selectors so moving focus only re-renders the 2 affected cards (#13)
+  const isSelected = useUiStore((s) => s.selectedCardKey === cardKey);
+  const isAttached = useUiStore((s) =>
+    Boolean(
+      s.attachedAddress && sessions.some((item) => item.address === s.attachedAddress)
+    )
+  );
   const rememberedAddr = useUiStore(
     (s) => s.lastSessionByCardKey[cardKey] ?? null
   );
@@ -47,26 +64,30 @@ export const RadarTile = React.memo(function RadarTile({
   const isLive = session?.terminal.state === "live";
 
   const showOverlap = useAppStore((s) => s.settings.show_merge_overlap);
-  const selectedCardKey = useUiStore((s) => s.selectedCardKey);
-  const attachedAddress = useUiStore((s) => s.attachedAddress);
+  const cardMeta = useAppStore((s) => s.worktreeMeta[normWtPath]);
+
   const setSelectedCardKey = useUiStore((s) => s.setSelectedCardKey);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
   const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
+  const detachToEmptyDrawer = useUiStore((s) => s.detachToEmptyDrawer);
   const rememberCardSession = useUiStore((s) => s.rememberCardSession);
   const setLaunchTarget = useUiStore((s) => s.setLaunchTarget);
+  const setEditWorktreeTarget = useUiStore((s) => s.setEditWorktreeTarget);
+  const setContextMenu = useUiStore((s) => s.setContextMenu);
   const setDiffTarget = useUiStore((s) => s.setDiffTarget);
   const setTeardownTarget = useUiStore((s) => s.setTeardownTarget);
   const showToast = useUiStore((s) => s.showToast);
 
-  const isSelected = selectedCardKey === cardKey;
-  const isAttached = Boolean(
-    attachedAddress && sessions.some((s) => s.address === attachedAddress)
-  );
   const bucket = session?.bucket ?? "idle";
   const isStandby = !session || bucket === "idle";
+  const displayName = cardMeta?.display_name?.trim() || "";
+  const customNote = cardMeta?.note?.trim() || "";
+  const branchText = worktree.branch || "(detached)";
 
   const lastLine = (() => {
-    if (!session) return "대기 중 · Ctrl+` 또는 더블클릭으로 시작";
+    if (!session) {
+      return customNote || "대기 중 · Ctrl+` 또는 더블클릭으로 시작";
+    }
     if (session.terminal.status?.msg) return session.terminal.status.msg;
     if (session.previewLines.length > 0) {
       return session.previewLines[session.previewLines.length - 1];
@@ -90,22 +111,21 @@ export const RadarTile = React.memo(function RadarTile({
         cwd: worktree.path,
         branch: worktree.branch,
         argv,
-        name: `${project.name}-${worktree.branch.replace(/[/\\ ]/g, "-")}`,
+        name: `${project.name}-${worktree.branch || "main"}`,
         autonomous: true,
       });
-      useAppStore
-        .getState()
-        .recordLastAgent(normalizePath(worktree.path), argv);
+      useAppStore.getState().recordLastAgent(normWtPath, argv);
       if (addr) {
         setSelectedAddress(addr);
         setAttachedAddress(addr);
+        rememberCardSession(cardKey, addr);
       }
     } catch (err) {
       showToast(`AI 시작 실패: ${String(err)}`, "error");
     }
   };
 
-  // Organic 18px squircle surface driven purely by theme CSS tokens (No rigid vertical bar, Zero-Blur!)
+  // Focus ring is strictly exclusive to `isSelected` (#11) — never highlights two cards at once.
   const tileStyle: React.CSSProperties = (() => {
     let background = "var(--card-bg)";
     let border = "1px solid var(--card-border)";
@@ -120,66 +140,72 @@ export const RadarTile = React.memo(function RadarTile({
       background = "var(--run-bg)";
       border = "1px solid var(--run-border)";
     } else if (isStandby) {
-      background =
-        isSelected || isAttached ? "var(--card-bg)" : "var(--card-idle-bg)";
-      border =
-        isSelected || isAttached
-          ? "1px solid var(--accent-border)"
-          : "1px dashed var(--card-idle-border)";
+      background = isSelected ? "var(--card-bg)" : "var(--card-idle-bg)";
+      border = isSelected
+        ? "1px solid var(--accent-border)"
+        : "1px dashed var(--card-idle-border)";
+    }
+
+    if (isDropTarget && !isDragging) {
+      border = "1.5px solid var(--accent)";
     }
 
     return {
       background,
       border,
-      boxShadow:
-        isSelected || isAttached
-          ? "var(--card-selected-shadow)"
-          : "var(--card-shadow)",
+      opacity: isDragging ? 0.48 : 1,
+      boxShadow: isSelected
+        ? "var(--card-selected-shadow)"
+        : "var(--card-shadow)",
     };
   })();
 
   return (
     <div
       data-jjdr-card={cardKey}
+      data-reorder-id={normWtPath}
       data-jjdr-session-addr={attachTarget?.address ?? session?.address ?? ""}
       data-jjdr-project-id={project.id}
       data-jjdr-worktree-path={worktree.path}
       data-jjdr-branch={worktree.branch}
-      onClick={() => {
+      onPointerDown={onDragPointerDown}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
         setSelectedCardKey(cardKey);
         setSelectedAddress(attachTarget?.address ?? session?.address ?? null);
-        if (attachedAddress) {
+        setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          cardKey,
+          project,
+          worktree,
+          sessions,
+        });
+      }}
+      onClick={() => {
+        if (shouldSuppressClick?.()) return;
+        setSelectedCardKey(cardKey);
+        setSelectedAddress(attachTarget?.address ?? session?.address ?? null);
+        const { terminalDrawerOpen, attachedAddress } = useUiStore.getState();
+        if (terminalDrawerOpen || attachedAddress) {
           if (attachTarget && isTargetLive) {
             setAttachedAddress(attachTarget.address);
             rememberCardSession(cardKey, attachTarget.address);
           } else {
-            void launchSession({
-              project_id: project.id,
-              cwd: worktree.path,
-              branch: worktree.branch,
-              argv: [],
-              name: `${project.name}-${(worktree.branch || "main").replace(
-                /[/\\ ]/g,
-                "-"
-              )}-sh`,
-            })
-              .then((addr) => {
-                if (addr && useUiStore.getState().selectedCardKey === cardKey) {
-                  setSelectedAddress(addr);
-                  setAttachedAddress(addr);
-                }
-              })
-              .catch((err) =>
-                showToast(`PowerShell 실행 실패: ${String(err)}`, "error")
-              );
+            // Instant 0ms switch to empty standby drawer — no unwanted shell spam or double focus!
+            detachToEmptyDrawer();
           }
         }
       }}
-      onDoubleClick={() => void openOrLaunch()}
+      onDoubleClick={() => {
+        if (shouldSuppressClick?.()) return;
+        void openOrLaunch();
+      }}
       style={tileStyle}
       className="jjdr-card-lift group relative rounded-[18px] p-3.5 cursor-pointer select-none flex flex-col justify-between gap-2 min-w-0"
     >
-      {/* Row 1: Organic Status Pill + Branch + Soft Metadata */}
+      {/* Row 1: Status Pill + ROOT Badge + Name/Branch + Hover Actions */}
       <div className="flex items-center justify-between gap-1.5 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
           {session ? (
@@ -193,17 +219,52 @@ export const RadarTile = React.memo(function RadarTile({
             <StatusBadge bucket="idle" />
           )}
 
+          {worktree.is_main && (
+            <span
+              title="프로젝트 Root (메인 저장소)"
+              className="inline-flex items-center gap-0.5 text-[9.5px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide shrink-0"
+              style={{
+                background: "var(--accent-soft)",
+                border: "1px solid var(--accent-border)",
+                color: "var(--accent)",
+              }}
+            >
+              <Home className="w-2.5 h-2.5" />
+              ROOT
+            </span>
+          )}
+
           <span
             className="text-[13px] font-mono-code font-bold truncate"
+            title={
+              displayName
+                ? `${displayName} (${branchText})${customNote ? `\n${customNote}` : ""}`
+                : customNote
+                ? `${branchText}\n${customNote}`
+                : branchText
+            }
             style={{
               color:
-                isStandby && !isSelected && !isAttached
+                isStandby && !isSelected
                   ? "var(--text-secondary)"
                   : "var(--text-primary)",
             }}
           >
-            {worktree.branch || "(detached)"}
+            {displayName || branchText}
           </span>
+
+          {displayName && (
+            <span
+              className="text-[10px] font-mono-code px-1.5 py-0.5 rounded-full truncate max-w-[96px] shrink-0"
+              style={{
+                background: "var(--pill-bg)",
+                color: "var(--text-muted)",
+              }}
+              title={`Git branch: ${branchText}`}
+            >
+              {branchText}
+            </span>
+          )}
 
           {worktree.is_merged && (
             <span
@@ -218,33 +279,12 @@ export const RadarTile = React.memo(function RadarTile({
           )}
         </div>
 
-        {/* Right Aligned Metrics & Hover Pill Actions */}
+        {/* Right Aligned Metrics & Hover Pill Actions (#7: removed glaring +N -M diff counts) */}
         <div
           onClick={(e) => e.stopPropagation()}
-          className="flex items-center gap-2 shrink-0 text-[11px] font-mono-code tabular-nums"
+          data-no-drag="true"
+          className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono-code tabular-nums"
         >
-          {(worktree.added_lines > 0 || worktree.deleted_lines > 0) && (
-            <button
-              type="button"
-              onClick={() =>
-                setDiffTarget({
-                  projectId: project.id,
-                  worktreePath: worktree.path,
-                  branch: worktree.branch,
-                })
-              }
-              title="Inspect Git Diff"
-              className="inline-flex items-center gap-1 font-semibold hover:underline cursor-pointer"
-            >
-              <span style={{ color: "var(--ready-fg)" }}>
-                +{worktree.added_lines}
-              </span>
-              <span style={{ color: "var(--action-fg)" }}>
-                -{worktree.deleted_lines}
-              </span>
-            </button>
-          )}
-
           {showOverlap && worktree.overlap_files.length > 0 && (
             <span
               title={`Potential merge overlap:\n${worktree.overlap_files.join(
@@ -281,13 +321,29 @@ export const RadarTile = React.memo(function RadarTile({
                     branch: worktree.branch,
                   })
                 }
-                title="View Diff"
+                title="Git Diff 보기"
                 className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
                 style={{ color: "var(--text-secondary)" }}
               >
                 <FileDiff className="w-3.5 h-3.5" />
               </button>
             )}
+            <button
+              type="button"
+              onClick={() =>
+                setEditWorktreeTarget({
+                  projectId: project.id,
+                  worktreePath: worktree.path,
+                  branch: worktree.branch,
+                  isMain: worktree.is_main,
+                })
+              }
+              title="카드 이름 / 정보 편집"
+              className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
             <button
               type="button"
               onClick={() =>
@@ -298,7 +354,7 @@ export const RadarTile = React.memo(function RadarTile({
                   defaultAgent: project.default_agent,
                 })
               }
-              title="Launch AI CLI"
+              title="세션 추가 (AI / 터미널)"
               className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
               style={{ color: "var(--text-secondary)" }}
             >
@@ -317,7 +373,7 @@ export const RadarTile = React.memo(function RadarTile({
                     terminalAddresses: sessions.map((s) => s.address),
                   })
                 }
-                title="Teardown worktree"
+                title="Worktree 삭제"
                 className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
                 style={{ color: "var(--action-fg)" }}
               >
@@ -329,9 +385,9 @@ export const RadarTile = React.memo(function RadarTile({
                   type="button"
                   onClick={() => {
                     void killTerminal(session.address, true);
-                    if (isAttached) setAttachedAddress(null);
+                    if (isAttached) detachToEmptyDrawer();
                   }}
-                  title="Close session"
+                  title="세션 종료"
                   className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
                   style={{ color: "var(--action-fg)" }}
                 >
@@ -369,6 +425,7 @@ export const RadarTile = React.memo(function RadarTile({
         {session && isLive && bucket === "needs_you" && (
           <button
             type="button"
+            data-no-drag="true"
             onClick={(e) => {
               e.stopPropagation();
               void sendTerminalKeys(session.address, ["enter"]);
