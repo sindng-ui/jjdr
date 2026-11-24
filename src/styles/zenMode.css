@@ -1,0 +1,161 @@
+/* ==========================================================================
+   Zen (놈팽이) Mode — 60fps GPU-only (transform/opacity) Zero-Blur Animations
+   Styles: 1) Holo Stamp + Arcade Ball Lever   2) Gacha Rotary Dial
+   ========================================================================== */
+
+.zen-holo-stage {
+  perspective: 1050px;
+}
+
+.zen-holo-card {
+  transform-style: preserve-3d;
+  transition: transform 140ms ease-out;
+  will-change: transform;
+}
+
+.zen-holo-sheen {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.zen-holo-card:hover .zen-holo-sheen {
+  opacity: 1;
+}
+
+/* Rising entrance from underneath the Z-axis stack */
+@keyframes zenRiseIn {
+  0% {
+    transform: translateY(34px) scale(0.93);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(-4px) scale(1.01);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.zen-anim-rise {
+  animation: zenRiseIn 360ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Gacha capsule bouncy drop entrance */
+@keyframes zenCapsuleDrop {
+  0% {
+    transform: translateY(-52px) scale(0.88);
+    opacity: 0;
+  }
+  55% {
+    transform: translateY(7px) scale(1.02);
+    opacity: 1;
+  }
+  78% {
+    transform: translateY(-3px) scale(0.995);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.zen-anim-drop {
+  animation: zenCapsuleDrop 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Exit transitions */
+.zen-exit-fly-right {
+  transition: transform 260ms cubic-bezier(0.4, 0, 1, 1), opacity 220ms ease !important;
+  transform: translateX(160px) rotate(10deg) scale(0.92) !important;
+  opacity: 0 !important;
+}
+
+.zen-exit-fly-up {
+  transition: transform 270ms cubic-bezier(0.4, 0, 1, 1), opacity 220ms ease !important;
+  transform: translateY(-130px) scale(0.92) !important;
+  opacity: 0 !important;
+}
+
+.zen-exit-roll {
+  transition: transform 270ms cubic-bezier(0.4, 0, 1, 1), opacity 220ms ease !important;
+  transform: translateX(150px) rotate(14deg) scale(0.9) !important;
+  opacity: 0 !important;
+}
+
+/* Boss Approval Stamp Slam */
+@keyframes zenStampSlam {
+  0% {
+    transform: translate(-50%, -50%) scale(2.8) rotate(-22deg);
+    opacity: 0;
+  }
+  65% {
+    transform: translate(-50%, -50%) scale(0.92) rotate(-11deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1) rotate(-12deg);
+    opacity: 0.96;
+  }
+}
+
+.zen-stamp-mark {
+  animation: zenStampSlam 210ms cubic-bezier(0.2, 0.9, 0.3, 1.15) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes zenCardThump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.968) translateY(3px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+.zen-anim-thump {
+  animation: zenCardThump 220ms ease-out;
+}
+
+@keyframes zenFloatPop {
+  0% {
+    transform: translateY(0) scale(0.75);
+    opacity: 0;
+  }
+  25% {
+    transform: translateY(-10px) scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-40px) scale(1);
+    opacity: 0;
+  }
+}
+
+.zen-float-pop {
+  animation: zenFloatPop 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* All Clear Orbital Ring */
+@keyframes zenOrbitSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.zen-orbit-spin {
+  transform-origin: center;
+  animation: zenOrbitSpin 9s linear infinite;
+}

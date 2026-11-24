@@ -108,6 +108,9 @@ export function useHerdrSync() {
       for (const t of batch.terminals) {
         const st = t.status?.state;
         const prevSt = prevTerminals[t.address]?.status?.state;
+        if (st === "working") {
+          store.clearAckedSnapshot(t.address);
+        }
         if ((st === "done" || t.state === "finished") && prevSt === "working") {
           shouldRefreshWorktrees = true;
         }
@@ -158,7 +161,11 @@ export function useHerdrSync() {
         });
 
         const ui = useUiStore.getState();
-        if (bundle.ui_state.view_mode === "queue" || bundle.ui_state.view_mode === "radar") {
+        if (
+          bundle.ui_state.view_mode === "queue" ||
+          bundle.ui_state.view_mode === "radar" ||
+          bundle.ui_state.view_mode === "zen"
+        ) {
           ui.setViewMode(bundle.ui_state.view_mode);
         } else {
           ui.setViewMode("radar");
@@ -231,6 +238,7 @@ export function useHerdrSync() {
   const projects = useAppStore((s) => s.projects);
   const worktreesByProject = useAppStore((s) => s.worktreesByProject);
   const ackTurns = useAppStore((s) => s.ackTurns);
+  const ackedSnapshots = useAppStore((s) => s.ackedSnapshots);
   const queuedPrompts = useAppStore((s) => s.queuedPrompts);
   const worktreeMeta = useAppStore((s) => s.worktreeMeta);
   const worktreeOrderByProject = useAppStore((s) => s.worktreeOrderByProject);
@@ -249,6 +257,7 @@ export function useHerdrSync() {
         projects,
         worktreesByProject,
         ackTurns,
+        ackedSnapshots,
         queuedPrompts,
         worktreeMeta,
         worktreeOrderByProject,
@@ -271,6 +280,7 @@ export function useHerdrSync() {
     projects,
     worktreesByProject,
     ackTurns,
+    ackedSnapshots,
     queuedPrompts,
     worktreeMeta,
     worktreeOrderByProject,

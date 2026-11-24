@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  AckedSessionSnapshot,
   AppSettings,
   DashboardWorkerResult,
   HerdrHealth,
@@ -58,6 +59,7 @@ interface AppStoreState {
   templates: TemplateInfo[];
   settings: AppSettings;
   ackTurns: Record<string, number>;
+  ackedSnapshots: Record<string, AckedSessionSnapshot>;
   queuedPrompts: Record<string, string[]>;
   lastAgentByWorktree: Record<string, string[]>;
   worktreeMeta: Record<string, WorktreeCardMeta>;
@@ -83,6 +85,8 @@ interface AppStoreState {
     worktreeOrderByProject: Record<string, string[]>;
   }) => void;
   acknowledgeTurn: (address: string, turn: number) => void;
+  acknowledgeSession: (address: string, turn: number, digest: string) => void;
+  clearAckedSnapshot: (address: string) => void;
   enqueuePrompt: (address: string, prompt: string) => void;
   popQueuedPrompt: (address: string) => string | null;
   removeQueuedPrompt: (address: string, index: number) => void;
@@ -108,6 +112,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   templates: [],
   settings: DEFAULT_SETTINGS,
   ackTurns: {},
+  ackedSnapshots: {},
   queuedPrompts: {},
   lastAgentByWorktree: {},
   worktreeMeta: {},
@@ -203,6 +208,26 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     set((state) => ({
       ackTurns: { ...state.ackTurns, [address]: Math.max(state.ackTurns[address] ?? 0, turn) },
     })),
+
+  acknowledgeSession: (address, turn, digest) =>
+    set((state) => ({
+      ackTurns:
+        turn > 0
+          ? { ...state.ackTurns, [address]: Math.max(state.ackTurns[address] ?? 0, turn) }
+          : state.ackTurns,
+      ackedSnapshots: {
+        ...state.ackedSnapshots,
+        [address]: { turn, digest },
+      },
+    })),
+
+  clearAckedSnapshot: (address) =>
+    set((state) => {
+      if (!(address in state.ackedSnapshots)) return state;
+      const next = { ...state.ackedSnapshots };
+      delete next[address];
+      return { ackedSnapshots: next };
+    }),
 
   enqueuePrompt: (address, prompt) =>
     set((state) => {

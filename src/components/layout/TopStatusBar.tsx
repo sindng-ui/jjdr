@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Sparkles,
   Square,
   X,
   Zap,
@@ -161,7 +162,11 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
 
         {/* Floating Pill Status Capsule */}
         <button
-          onClick={() => jumpToNextActionable()}
+          onClick={() =>
+            viewMode === "zen"
+              ? useUiStore.getState().requestZenSkip()
+              : jumpToNextActionable()
+          }
           title="다음 확인 필요한 세션으로 점프 (Ctrl+N)"
           className="jjdr-pill flex items-center gap-2.5 px-3.5 py-1.5 rounded-full text-xs tabular-nums transition-colors cursor-pointer"
         >
@@ -237,7 +242,11 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
 
         {hasActionable && (
           <button
-            onClick={() => jumpToNextActionable()}
+            onClick={() =>
+              viewMode === "zen"
+                ? useUiStore.getState().requestZenSkip()
+                : jumpToNextActionable()
+            }
             className="jjdr-primary-btn hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm transition-colors cursor-pointer"
             title="다음 확인 필요한 세션으로 점프 (Ctrl+N)"
           >
@@ -333,6 +342,19 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
           >
             <Inbox className="w-3.5 h-3.5" />
             Queue
+          </button>
+          <button
+            onClick={() => setViewMode("zen")}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors cursor-pointer ${
+              viewMode === "zen" ? "jjdr-pill-active font-semibold" : ""
+            }`}
+            style={
+              viewMode === "zen" ? undefined : { color: "var(--text-muted)" }
+            }
+            title="Zen 모드 · 최상단 1장만 집중 (Ctrl+3)"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Zen
           </button>
         </div>
 

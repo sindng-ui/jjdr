@@ -8,6 +8,7 @@ import { SidebarProjects } from "./components/layout/SidebarProjects";
 import { HerdrHealthBanner } from "./components/shared/HerdrHealthBanner";
 import { AttentionBoard } from "./components/attention/AttentionBoard";
 import { RadarBoardView } from "./components/board/RadarBoardView";
+import { ZenModeView } from "./components/zen/ZenModeView";
 import { WorktreeContextMenu } from "./components/board/WorktreeContextMenu";
 import { CommandPalette } from "./components/modals/CommandPalette";
 import { QuickFileModal } from "./components/modals/QuickFileModal";
@@ -59,11 +60,17 @@ export function App() {
       <TopStatusBar />
       <HerdrHealthBanner />
 
-      {/* Frameless Shell Body -> Borderless Sidebar + Floating 22px Rounded Stage */}
+      {/* Frameless Shell Body -> Borderless Sidebar (hidden in Zen Mode) + Floating 22px Rounded Stage */}
       <div className="flex-1 flex min-h-0 overflow-hidden px-3 pb-3 gap-3">
-        {sidebarOpen && <SidebarProjects />}
+        {sidebarOpen && viewMode !== "zen" && <SidebarProjects />}
         <main className="jjdr-stage flex-1 rounded-[22px] flex min-w-0 min-h-0 overflow-hidden">
-          {viewMode === "radar" ? <RadarBoardView /> : <AttentionBoard />}
+          {viewMode === "radar" ? (
+            <RadarBoardView />
+          ) : viewMode === "queue" ? (
+            <AttentionBoard />
+          ) : (
+            <ZenModeView />
+          )}
           {showDrawer && (
             <Suspense
               fallback={

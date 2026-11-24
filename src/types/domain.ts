@@ -146,6 +146,11 @@ export interface WorktreeCardMeta {
   note?: string | null;
 }
 
+export interface AckedSessionSnapshot {
+  turn: number;
+  digest: string;
+}
+
 export interface PersistedUiState {
   view_mode: "attention" | "matrix" | string;
   selected_terminal?: string | null;

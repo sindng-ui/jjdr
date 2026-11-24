@@ -5,7 +5,7 @@ import type {
   WorktreeInfo,
 } from "../types/domain";
 
-export type ViewMode = "radar" | "queue";
+export type ViewMode = "radar" | "queue" | "zen";
 
 export interface DiffModalTarget {
   projectId: string;
@@ -79,6 +79,9 @@ interface UiStoreState {
   terminalDrawerOpen: boolean;
   terminalWidthPx: number | null;
   terminalFocusNonce: number;
+  zenSkipNonce: number;
+  zenApproveNonce: number;
+  zenDismissedStamps: Record<string, string>;
   lastSessionByCardKey: Record<string, string>;
   sidebarOpen: boolean;
   collapsedProjects: Record<string, boolean>;
@@ -114,6 +117,9 @@ interface UiStoreState {
   closeTerminalDrawer: () => void;
   setTerminalWidthPx: (widthPx: number | null) => void;
   requestTerminalFocus: () => void;
+  requestZenSkip: () => void;
+  requestZenApprove: () => void;
+  dismissZenCardStamp: (cardKey: string, stamp: string) => void;
   rememberCardSession: (cardKey: string, addr: string) => void;
   toggleSidebar: () => void;
   toggleProjectCollapsed: (projectId: string) => void;
@@ -149,6 +155,9 @@ export const useUiStore = create<UiStoreState>((set) => ({
   terminalDrawerOpen: false,
   terminalWidthPx: null,
   terminalFocusNonce: 0,
+  zenSkipNonce: 0,
+  zenApproveNonce: 0,
+  zenDismissedStamps: {},
   lastSessionByCardKey: {},
   sidebarOpen: true,
   collapsedProjects: {},
@@ -170,7 +179,14 @@ export const useUiStore = create<UiStoreState>((set) => ({
 
   setViewMode: (viewMode) => set({ viewMode }),
   toggleViewMode: () =>
-    set((s) => ({ viewMode: s.viewMode === "radar" ? "queue" : "radar" })),
+    set((s) => ({
+      viewMode:
+        s.viewMode === "radar"
+          ? "queue"
+          : s.viewMode === "queue"
+          ? "zen"
+          : "radar",
+    })),
   setActiveGroup: (activeGroup) => set({ activeGroup }),
   setSelectedProjectId: (selectedProjectId) => set({ selectedProjectId }),
   toggleSelectedProjectId: (id) =>
@@ -204,6 +220,14 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setTerminalWidthPx: (terminalWidthPx) => set({ terminalWidthPx }),
   requestTerminalFocus: () =>
     set((s) => ({ terminalFocusNonce: s.terminalFocusNonce + 1 })),
+  requestZenSkip: () =>
+    set((s) => ({ zenSkipNonce: s.zenSkipNonce + 1 })),
+  requestZenApprove: () =>
+    set((s) => ({ zenApproveNonce: s.zenApproveNonce + 1 })),
+  dismissZenCardStamp: (cardKey, stamp) =>
+    set((s) => ({
+      zenDismissedStamps: { ...s.zenDismissedStamps, [cardKey]: stamp },
+    })),
   rememberCardSession: (cardKey, addr) =>
     set((s) => ({
       lastSessionByCardKey: { ...s.lastSessionByCardKey, [cardKey]: addr },

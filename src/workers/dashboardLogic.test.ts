@@ -62,6 +62,8 @@ describe("dashboardLogic", () => {
     expect(classifyBucket(stuck, 0, 5, now).isStuck).toBe(true);
     expect(classifyBucket(stuck, 0, 5, now).bucket).toBe("needs_you");
     expect(classifyBucket(ready, 1, 5, now).bucket).toBe("ready");
+    // Once acknowledged at turn 2, even persistent status="done" transitions cleanly to idle
+    expect(classifyBucket(ready, 2, 5, now).bucket).toBe("idle");
     expect(classifyBucket(running, 0, 5, now).bucket).toBe("running");
     expect(classifyBucket(idle, 1, 5, now).bucket).toBe("idle");
   });

@@ -76,12 +76,14 @@ export function useGlobalShortcuts() {
           e.stopPropagation();
           if (ui.viewMode === "radar") {
             moveRadarSpatial(ctrlDir, true, true);
-          } else {
+          } else if (ui.viewMode === "queue") {
             moveQueueSelection(
               ctrlDir === "down" || ctrlDir === "right" ? 1 : -1,
               true,
               true
             );
+          } else if (ui.viewMode === "zen" && (ctrlDir === "right" || ctrlDir === "down")) {
+            ui.requestZenSkip();
           }
           return;
         }
@@ -168,7 +170,17 @@ export function useGlobalShortcuts() {
         if (k === "n" || e.code === "KeyN") {
           e.preventDefault();
           e.stopPropagation();
-          jumpToNextActionable();
+          if (ui.viewMode === "zen") {
+            ui.requestZenSkip();
+          } else {
+            jumpToNextActionable();
+          }
+          return;
+        }
+        if (e.key === "Enter" && ui.viewMode === "zen") {
+          e.preventDefault();
+          e.stopPropagation();
+          ui.requestZenApprove();
           return;
         }
         if (k === "f" || e.code === "KeyF") {
@@ -211,6 +223,12 @@ export function useGlobalShortcuts() {
           e.preventDefault();
           e.stopPropagation();
           ui.setViewMode("queue");
+          return;
+        }
+        if (k === "3" || e.code === "Digit3") {
+          e.preventDefault();
+          e.stopPropagation();
+          ui.setViewMode("zen");
           return;
         }
         if (k === "b" || e.code === "KeyB") {
@@ -363,6 +381,10 @@ export function useGlobalShortcuts() {
           void openOrLaunchCard(current, current.addr);
           return;
         }
+        return;
+      }
+
+      if (ui.viewMode === "zen") {
         return;
       }
 

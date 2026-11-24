@@ -1,4 +1,5 @@
 import type {
+  AckedSessionSnapshot,
   AttentionBucket,
   DashboardCounts,
   DashboardWorkerResult,
@@ -17,6 +18,7 @@ export interface DashboardComputeInput {
   projects: ProjectConfig[];
   worktreesByProject: Record<string, WorktreeInfo[]>;
   ackTurns: Record<string, number>;
+  ackedSnapshots?: Record<string, AckedSessionSnapshot>;
   queuedPrompts: Record<string, string[]>;
   worktreeMeta?: Record<string, WorktreeCardMeta>;
   worktreeOrderByProject?: Record<string, string[]>;
@@ -115,11 +117,23 @@ export function isPlainShellTerminal(t: TerminalInfo): boolean {
   return true;
 }
 
+export function computeSessionDigest(
+  t: TerminalInfo,
+  previewLines: string[] = []
+): string {
+  const msg = t.status?.msg?.trim();
+  if (msg) return msg;
+  const last = previewLines[previewLines.length - 1]?.trim();
+  return last || "";
+}
+
 export function classifyBucket(
   t: TerminalInfo,
   ackTurn: number,
   stuckMinutesThreshold: number,
-  nowMs: number
+  nowMs: number,
+  ackedSnapshot?: AckedSessionSnapshot | null,
+  currentDigest = ""
 ): { bucket: AttentionBucket; isStuck: boolean; stuckMinutes: number; unackedDone: boolean; elapsedMs: number } {
   const st = t.status?.state ?? "";
   const sinceMs = t.status_ms ?? t.created_ms ?? nowMs;
@@ -161,8 +175,15 @@ export function classifyBucket(
   // Plain shell prompts (e.g. PS C:\repo>) increment `turn` on startup/commands
   // and must stay in `idle` (Standby) instead of turning Worktree cards green as "Ready".
   if (!isPlainShellTerminal(t)) {
-    const unackedDone = t.turn > 0 && t.turn > ackTurn;
-    if (st === "done" || unackedDone) {
+    const ackedByTurn = t.turn > 0 && ackTurn >= t.turn;
+    const ackedBySnapshot = Boolean(
+      ackedSnapshot &&
+        t.turn <= ackedSnapshot.turn &&
+        (!ackedSnapshot.digest || currentDigest === ackedSnapshot.digest)
+    );
+    const alreadyAcked = ackedByTurn || ackedBySnapshot;
+    const unackedDone = !alreadyAcked && t.turn > 0 && t.turn > ackTurn;
+    if ((!alreadyAcked && st === "done") || unackedDone) {
       return {
         bucket: "ready",
         isStuck: false,
@@ -277,6 +298,7 @@ export function computeDashboard(
     projects,
     worktreesByProject,
     ackTurns,
+    ackedSnapshots = {},
     queuedPrompts,
     worktreeMeta = {},
     worktreeOrderByProject = {},
@@ -332,15 +354,23 @@ export function computeDashboard(
 
     const projectGroup = project?.group || "Unassigned";
     const ackTurn = ackTurns[t.address] ?? 0;
+    const previewLines = previews[t.address]?.lines ?? [];
+    const currentDigest = computeSessionDigest(t, previewLines);
     const { bucket, isStuck, stuckMinutes, unackedDone, elapsedMs } =
-      classifyBucket(t, ackTurn, stuckMinutesThreshold, nowMs);
+      classifyBucket(
+        t,
+        ackTurn,
+        stuckMinutesThreshold,
+        nowMs,
+        ackedSnapshots[t.address],
+        currentDigest
+      );
 
     const agentLabel = detectAgentLabel(t);
     const branch =
       t.labels["jjdr.branch"] || worktree?.branch || "(external)";
     const projectName = project?.name || "External / hc";
     const projectColor = project?.color || "#6c788a";
-    const previewLines = previews[t.address]?.lines ?? [];
 
     // Priority score: blocked/error highest, then stuck, then ready, then running, then idle.
     // Within the same bucket, AI sessions rank ahead of plain PowerShell tabs.
@@ -349,7 +379,8 @@ export function computeDashboard(
     else if (t.status?.state === "error") priorityScore -= 150_000;
     else if (isStuck) priorityScore -= 100_000;
     if (!isPlainShellTerminal(t)) priorityScore -= 10_000;
-    priorityScore -= Math.min(9_999, Math.floor((t.status_ms ?? t.created_ms) / 1000) % 9_999);
+    // Prefer more recently updated sessions within the same bucket without modulo wrap-around
+    priorityScore += Math.min(9_999, Math.floor(elapsedMs / 1000));
 
     const session: EnrichedSession = {
       address: t.address,

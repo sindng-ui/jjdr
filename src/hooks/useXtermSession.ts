@@ -121,6 +121,9 @@ function isReservedGlobalShortcut(ev: KeyboardEvent): boolean {
         ev.code === "Digit1" ||
         k === "2" ||
         ev.code === "Digit2" ||
+        k === "3" ||
+        ev.code === "Digit3" ||
+        (ev.key === "Enter" && useUiStore.getState().viewMode === "zen") ||
         ev.key === "\\" ||
         ev.code === "Backslash")) ||
     (ev.altKey && (ev.key === "Escape" || ev.key === "Enter"))

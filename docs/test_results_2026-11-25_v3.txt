@@ -1,0 +1,29 @@
+====================================================================
+jjdr Zen 모드 9대 복합 우선순위 가상 시뮬레이션 검증 결과
+Date: 2026-11-25
+Workspace: K:\Antigravity_Projects\gitbase\jjdr
+====================================================================
+
+1. Zen Mode Multi-Priority Simulation Suite (`src/utils/zenSimulation.test.ts`)
+--------------------------------------------------------------------
+ ✓ Scenario 1: permission > error > stuck > ready 엄격 정렬 및 All Clear 순차 드레인
+ ✓ Scenario 2: Sticky Lock — 처리 중 백그라운드 긴급 permission/error 난입 차단 → 현재 카드 처리 직후 최우선 카드 상승
+ ✓ Scenario 3: 우측 터미널 프롬프트 입력(working 전환) → 자동 다음 우선순위 카드 전환
+ ✓ Scenario 4: 결재 완료 후 Radar 왕복 시 부활 금지 + 새 턴 완료 시 자동 재등장 (turn=0 경계 포함)
+ ✓ Scenario 5: 수동 넘김(Ctrl+N/레버/다이얼) 중 새로 들어온 긴급 카드 우선 표시 + 전체 순환 래핑
+ ✓ Scenario 6: 일반 PowerShell done/turn, 종료 Failed 세션, C:\Windows\System32 고아 세션 차단
+ ✓ Scenario 7: All Clear 상태 → 백그라운드 Running AI 완료 시 자동 깨어남(Auto-Wakeup)
+ ✓ Scenario 8: 마지막 1장 반복 스킵/레버 당김 안정성
+ ✓ Scenario 9: 단일 Worktree 내 다중 AI 세션 순차 노출(1번 결재 → 2번 AI 세션 누락 없이 노출)
+
+2. 시뮬레이션 중 발굴 & 즉시 수정한 잠재 버그 2건
+--------------------------------------------------------------------
+ - Bug A (`dashboardLogic.ts` & `ZenModeView.tsx`): `turn === 0`인 세션을 결재할 때
+   `ackTurn = Math.max(1, 0)`으로 1을 저장해 이후 첫 실제 턴(`turn === 1`)이 묻힐 수 있던 문제 수정
+ - Bug B (`dashboardLogic.ts`): `priorityScore`의 `(status_ms / 1000) % 9_999` 모듈로
+   랩어라운드(약 2.7시간 주기 역전) 제거 → 단조 `elapsedMs / 1000` 기준으로 안정화
+
+3. 전체 테스트 & 프로덕션 빌드
+--------------------------------------------------------------------
+ - `npm run test`: 11 test files passed, 40 passed, 0 failed (982ms)
+ - `npm run build`: `tsc && vite build` PASSED (3.21s)

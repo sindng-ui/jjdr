@@ -348,6 +348,15 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
           </kbd>
         </div>
         <div className="flex justify-between">
+          <span>Zen 모드</span>
+          <kbd
+            className="font-mono-code text-[10px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Ctrl+3
+          </kbd>
+        </div>
+        <div className="flex justify-between">
           <span>파일 검색 / 해제</span>
           <kbd
             className="font-mono-code text-[10px]"
