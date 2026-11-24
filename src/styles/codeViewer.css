@@ -1,0 +1,83 @@
+/* Lightweight syntax highlighting tokens synced with jjdr dark/light themes */
+.jjdr-code-viewer {
+  --cv-keyword: #c084fc;
+  --cv-string: #86efac;
+  --cv-comment: #64748b;
+  --cv-number: #fbbf24;
+  --cv-type: #38bdf8;
+  --cv-fn: #93c5fd;
+  --cv-prop: #7dd3fc;
+  --cv-preproc: #f472b6;
+  --cv-diff-add: #4ade80;
+  --cv-diff-del: #fb7185;
+  --cv-diff-hunk: #38bdf8;
+  --cv-match-bg: rgba(251, 191, 36, 0.24);
+  --cv-match-active-bg: rgba(251, 191, 36, 0.48);
+}
+
+:root[data-theme="nordic"] .jjdr-code-viewer {
+  --cv-keyword: #7c3aed;
+  --cv-string: #059669;
+  --cv-comment: #94a3b8;
+  --cv-number: #b45309;
+  --cv-type: #0284c7;
+  --cv-fn: #2563eb;
+  --cv-prop: #0369a1;
+  --cv-preproc: #be185d;
+  --cv-diff-add: #059669;
+  --cv-diff-del: #e11d48;
+  --cv-diff-hunk: #2563eb;
+  --cv-match-bg: rgba(245, 158, 11, 0.2);
+  --cv-match-active-bg: rgba(245, 158, 11, 0.42);
+}
+
+.jjdr-code-viewer .cv-keyword {
+  color: var(--cv-keyword);
+  font-weight: 500;
+}
+.jjdr-code-viewer .cv-string {
+  color: var(--cv-string);
+}
+.jjdr-code-viewer .cv-comment {
+  color: var(--cv-comment);
+  font-style: italic;
+}
+.jjdr-code-viewer .cv-number {
+  color: var(--cv-number);
+}
+.jjdr-code-viewer .cv-type {
+  color: var(--cv-type);
+}
+.jjdr-code-viewer .cv-fn {
+  color: var(--cv-fn);
+}
+.jjdr-code-viewer .cv-prop {
+  color: var(--cv-prop);
+}
+.jjdr-code-viewer .cv-preproc {
+  color: var(--cv-preproc);
+}
+.jjdr-code-viewer .cv-diff-add {
+  color: var(--cv-diff-add);
+}
+.jjdr-code-viewer .cv-diff-del {
+  color: var(--cv-diff-del);
+}
+.jjdr-code-viewer .cv-diff-hunk {
+  color: var(--cv-diff-hunk);
+  font-weight: 600;
+}
+
+.jjdr-code-row:hover {
+  background: rgba(148, 163, 245, 0.07);
+}
+:root[data-theme="nordic"] .jjdr-code-row:hover {
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.jjdr-code-row-match {
+  background: var(--cv-match-bg);
+}
+.jjdr-code-row-match-active {
+  background: var(--cv-match-active-bg);
+}

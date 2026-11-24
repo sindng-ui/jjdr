@@ -15,6 +15,7 @@ import {
   type TextFileContent,
 } from "../../services/tauriBridge";
 import { renderMarkdownToHtml } from "../../utils/markdownRenderer";
+import { useResizableModalWidth } from "../../hooks/useResizableModalWidth";
 import "../../styles/githubMarkdown.css";
 
 function formatBytes(bytes: number): string {
@@ -27,6 +28,8 @@ export const MarkdownViewerModal = React.memo(function MarkdownViewerModal() {
   const target = useUiStore((s) => s.markdownViewerTarget);
   const setTarget = useUiStore((s) => s.setMarkdownViewerTarget);
   const showToast = useUiStore((s) => s.showToast);
+
+  const { widthPx, resizing, startResize, resetWidth } = useResizableModalWidth();
 
   const [fileData, setFileData] = useState<TextFileContent | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,13 +85,43 @@ export const MarkdownViewerModal = React.memo(function MarkdownViewerModal() {
   return (
     <div
       onClick={() => setTarget(null)}
-      className="fixed inset-0 z-50 flex items-center justify-center p-5"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "var(--modal-overlay)" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="jjdr-modal w-full max-w-4xl h-[86vh] rounded-[22px] overflow-hidden flex flex-col"
+        style={{ width: `${widthPx}px`, maxWidth: "96vw" }}
+        className="jjdr-modal relative h-[88vh] rounded-[22px] overflow-hidden flex flex-col"
       >
+        {/* Left & Right Drag-to-Resize Handles (stored in localStorage) */}
+        <div
+          onPointerDown={(e) => startResize("left", e)}
+          onDoubleClick={resetWidth}
+          title="드래그하여 뷰어 너비 조절 · 더블클릭으로 기본 너비 복원"
+          className="absolute left-0 top-12 bottom-4 w-2 z-20 cursor-col-resize group flex items-center justify-center"
+        >
+          <div
+            className="w-0.5 h-16 rounded-full transition-all group-hover:w-1 group-hover:h-24"
+            style={{
+              background: resizing ? "var(--accent)" : "var(--pill-border)",
+              opacity: resizing ? 1 : 0.45,
+            }}
+          />
+        </div>
+        <div
+          onPointerDown={(e) => startResize("right", e)}
+          onDoubleClick={resetWidth}
+          title="드래그하여 뷰어 너비 조절 · 더블클릭으로 기본 너비 복원"
+          className="absolute right-0 top-12 bottom-4 w-2 z-20 cursor-col-resize group flex items-center justify-center"
+        >
+          <div
+            className="w-0.5 h-16 rounded-full transition-all group-hover:w-1 group-hover:h-24"
+            style={{
+              background: resizing ? "var(--accent)" : "var(--pill-border)",
+              opacity: resizing ? 1 : 0.45,
+            }}
+          />
+        </div>
         {/* Header */}
         <div
           className="px-5 py-3.5 flex items-center justify-between gap-3 shrink-0"
@@ -194,7 +227,7 @@ export const MarkdownViewerModal = React.memo(function MarkdownViewerModal() {
         </div>
 
         {/* Rendered GitHub-Style Markdown Body */}
-        <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
           {error ? (
             <div
               className="p-4 rounded-2xl text-xs"
@@ -214,7 +247,7 @@ export const MarkdownViewerModal = React.memo(function MarkdownViewerModal() {
               불러오는 중...
             </div>
           ) : (
-            <article className="max-w-3xl mx-auto">
+            <article className="w-full max-w-none">
               {fileData?.truncated && (
                 <div
                   className="mb-4 px-3.5 py-2 rounded-xl text-xs"

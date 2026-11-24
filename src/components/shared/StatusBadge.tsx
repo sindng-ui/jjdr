@@ -20,14 +20,31 @@ export const StatusBadge = React.memo(function StatusBadge({
     const detail = isStuck
       ? `Stuck ${stuckMinutes}m`
       : status?.state === "blocked"
-      ? status.kind || "Needs You"
+      ? status.kind === "permission"
+        ? "Approval"
+        : status.kind === "question"
+        ? "Question"
+        : status.kind === "auth"
+        ? "Auth"
+        : status.kind || "Needs You"
       : status?.state === "error"
       ? "Error"
-      : "Failed";
+      : "Attention";
+
+    const rawDiag = [
+      status?.state ? `state=${status.state}` : null,
+      status?.kind ? `kind=${status.kind}` : null,
+      status?.msg ? `msg=${status.msg}` : null,
+      isStuck ? `stuck=${stuckMinutes}m` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const tooltip = rawDiag ? `${detail} (${rawDiag})` : detail;
+
     if (compact) {
       return (
         <span
-          title={detail}
+          title={tooltip}
           className="w-2 h-2 rounded-full jjdr-dot-pulse shrink-0"
           style={{ background: "var(--action-fg)" }}
         />
@@ -35,6 +52,7 @@ export const StatusBadge = React.memo(function StatusBadge({
     }
     return (
       <span
+        title={tooltip}
         className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0"
         style={{
           background: "var(--action-soft)",

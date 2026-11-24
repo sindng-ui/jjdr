@@ -128,10 +128,12 @@ export interface PromptPreset {
 
 export type ThemeId = "aurora" | "lounge" | "nordic" | "botanical";
 export type RadarDensity = "comfortable" | "balanced" | "compact";
+export type RootCardMode = "header_chip" | "card" | "hidden";
 
 export interface AppSettings {
   theme: ThemeId;
   radar_density: RadarDensity;
+  root_card_mode?: RootCardMode;
   stuck_minutes: number;
   notify_on_blocked: boolean;
   notify_on_done: boolean;
@@ -201,6 +203,8 @@ export interface EnrichedSession {
   queuedCount: number;
   agentLabel: string;
   elapsedMs: number;
+  /** Number of live sessions sharing this worktree card (used by Queue mode) */
+  worktreeSessionCount?: number;
 }
 
 export interface MatrixWorktreeCell {

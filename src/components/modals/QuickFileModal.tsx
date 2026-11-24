@@ -49,6 +49,7 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
   const selectedCardKey = useUiStore((s) => s.selectedCardKey);
   const selectedProjectId = useUiStore((s) => s.selectedProjectId);
   const setMarkdownViewerTarget = useUiStore((s) => s.setMarkdownViewerTarget);
+  const setCodeViewerTarget = useUiStore((s) => s.setCodeViewerTarget);
   const showToast = useUiStore((s) => s.showToast);
 
   const projects = useAppStore((s) => s.projects);
@@ -104,6 +105,9 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
 
   const [scopeKey, setScopeKey] = useState<string>("");
   const [query, setQuery] = useState("");
+  const [useRegex, setUseRegex] = useState(false);
+  const [matchMode, setMatchMode] = useState<string>("fuzzy");
+  const [regexError, setRegexError] = useState<string | null>(null);
   const [matches, setMatches] = useState<FileMatchItem[]>([]);
   const [totalIndexed, setTotalIndexed] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -125,6 +129,8 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
   useEffect(() => {
     if (!open) return;
     setQuery("");
+    setRegexError(null);
+    setMatchMode("fuzzy");
     setActiveIdx(0);
     if (defaultScope) {
       setScopeKey(
@@ -147,17 +153,21 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
         activeScope.projectId,
         activeScope.worktreePath,
         query,
-        80
+        80,
+        useRegex
       )
         .then((res) => {
           if (gen !== reqGenRef.current) return;
           setMatches(res.matches);
           setTotalIndexed(res.total_indexed);
+          setMatchMode(res.match_mode || "fuzzy");
+          setRegexError(res.regex_error ?? null);
           setActiveIdx(0);
         })
         .catch((err) => {
           if (gen !== reqGenRef.current) return;
           setMatches([]);
+          setRegexError(null);
           showToast(`파일 검색 실패: ${String(err)}`, "error");
         })
         .finally(() => {
@@ -166,7 +176,7 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
     }, delayMs);
 
     return () => clearTimeout(timer);
-  }, [open, activeScope, query, showToast]);
+  }, [open, activeScope, query, useRegex, showToast]);
 
   // Keep active row scrolled into view
   useEffect(() => {
@@ -183,41 +193,44 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
       const isMd = isMarkdownFile(relPath);
       setOpen(false);
 
-      if (isMd) {
-        if (isShift) {
-          // Markdown + Shift+Enter -> OS default app
-          try {
-            await openWithDefaultApp(absPath);
-          } catch (err) {
-            showToast(`기본 앱 열기 실패: ${String(err)}`, "error");
-          }
-        } else {
-          // Markdown + Enter -> Built-in fast GitHub-style Markdown viewer
-          setMarkdownViewerTarget({
-            absolutePath: absPath,
-            relativePath: relPath,
-            projectName: `${activeScope.projectName} / ${activeScope.branch}`,
-            rootPath: activeScope.worktreePath,
-          });
+      // Shift+Enter -> OS default app for all files
+      if (isShift) {
+        try {
+          await openWithDefaultApp(absPath);
+        } catch (err) {
+          showToast(`기본 앱 열기 실패: ${String(err)}`, "error");
         }
         return;
       }
 
-      // Non-markdown files: Enter -> default app, Shift+Enter -> VS Code
-      try {
-        if (isShift) {
-          await openInVsCode(absPath);
-        } else {
-          await openWithDefaultApp(absPath);
-        }
-      } catch (err) {
-        showToast(
-          `${isShift ? "VS Code" : "기본 앱"} 열기 실패: ${String(err)}`,
-          "error"
-        );
+      // Enter -> Built-in fast Markdown viewer (.md) or Built-in fast Code viewer (all other files)
+      const viewerTarget = {
+        absolutePath: absPath,
+        relativePath: relPath,
+        projectName: `${activeScope.projectName} / ${activeScope.branch}`,
+        rootPath: activeScope.worktreePath,
+      };
+      if (isMd) {
+        setMarkdownViewerTarget(viewerTarget);
+      } else {
+        setCodeViewerTarget(viewerTarget);
       }
     },
-    [activeScope, setOpen, setMarkdownViewerTarget, showToast]
+    [activeScope, setOpen, setMarkdownViewerTarget, setCodeViewerTarget, showToast]
+  );
+
+  const openVsCodeDirect = useCallback(
+    async (relPath: string) => {
+      if (!activeScope) return;
+      const absPath = joinFsPath(activeScope.worktreePath, relPath);
+      setOpen(false);
+      try {
+        await openInVsCode(absPath);
+      } catch (err) {
+        showToast(`VS Code 열기 실패: ${String(err)}`, "error");
+      }
+    },
+    [activeScope, setOpen, showToast]
   );
 
   if (!open) return null;
@@ -332,6 +345,11 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
+              if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key.toLowerCase() === "r" || e.code === "KeyR")) {
+                e.preventDefault();
+                setUseRegex((v) => !v);
+                return;
+              }
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setActiveIdx((i) =>
@@ -349,10 +367,36 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
                 void executeAction(activeItem.path, e.shiftKey);
               }
             }}
-            placeholder="파일 이름으로 빠르게 찾기 (예: readme, radar tile, app.tsx)..."
+            placeholder="파일 찾기 (예: readme, *.cpp, src/**/*.ts, /radar.*tile/)..."
             className="flex-1 bg-transparent text-sm outline-none"
             style={{ color: "var(--text-primary)" }}
           />
+          {query.trim().length > 0 && matchMode !== "fuzzy" && (
+            <span
+              className="text-[10px] font-mono-code font-semibold px-2 py-0.5 rounded-full uppercase shrink-0"
+              style={{
+                background: regexError ? "var(--action-soft)" : "var(--accent-soft)",
+                color: regexError ? "var(--action-fg)" : "var(--accent)",
+              }}
+            >
+              {matchMode}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setUseRegex((v) => !v)}
+            title="정규식(Regex) 모드 토글 (Alt+R)"
+            className={`px-2 py-1 rounded-lg font-mono-code text-xs font-bold transition-colors cursor-pointer shrink-0 ${
+              useRegex ? "jjdr-pill-active" : "jjdr-pill"
+            }`}
+            style={
+              useRegex
+                ? { border: "1px solid var(--accent-border)" }
+                : { color: "var(--text-muted)" }
+            }
+          >
+            .*
+          </button>
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -362,6 +406,19 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {regexError && (
+          <div
+            className="px-4 py-1.5 text-[11px] font-mono-code"
+            style={{
+              background: "var(--action-soft)",
+              color: "var(--action-fg)",
+              borderBottom: "1px solid var(--divider)",
+            }}
+          >
+            정규식 문법 오류: {regexError}
+          </div>
+        )}
 
         {/* File List */}
         <div
@@ -440,21 +497,25 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
                         e.stopPropagation();
                         void executeAction(item.path, true);
                       }}
-                      title={isMd ? "기본 앱으로 열기 (Shift+Enter)" : "VS Code로 열기 (Shift+Enter)"}
+                      title="기본 앱으로 열기 (Shift+Enter)"
                       className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] hover:bg-black/15 transition-opacity cursor-pointer"
                       style={{ color: "var(--text-secondary)" }}
                     >
-                      {isMd ? (
-                        <>
-                          <ExternalLink className="w-3 h-3" />
-                          <span>기본 앱</span>
-                        </>
-                      ) : (
-                        <>
-                          <Code2 className="w-3 h-3" />
-                          <span>VS Code</span>
-                        </>
-                      )}
+                      <ExternalLink className="w-3 h-3" />
+                      <span>기본 앱</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void openVsCodeDirect(item.path);
+                      }}
+                      title="VS Code에서 열기"
+                      className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] hover:bg-black/15 transition-opacity cursor-pointer"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      <Code2 className="w-3 h-3" />
+                      <span>VS Code</span>
                     </button>
                   </div>
                 </div>
@@ -477,13 +538,19 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
               <kbd className="font-mono-code font-semibold" style={{ color: "var(--text-primary)" }}>
                 Enter
               </kbd>{" "}
-              {activeIsMd ? "내장 MD 뷰어" : "기본 앱으로 열기"}
+              {activeIsMd ? "내장 MD 뷰어" : "내장 코드뷰어"}
             </span>
             <span>
               <kbd className="font-mono-code font-semibold" style={{ color: "var(--text-primary)" }}>
                 Shift+Enter
               </kbd>{" "}
-              {activeIsMd ? "기본 앱으로 열기" : "VS Code에서 열기"}
+              기본 앱으로 열기
+            </span>
+            <span>
+              <kbd className="font-mono-code font-semibold" style={{ color: "var(--text-primary)" }}>
+                Alt+R
+              </kbd>{" "}
+              Regex
             </span>
           </div>
           <span className="font-mono-code text-[10px] opacity-75">

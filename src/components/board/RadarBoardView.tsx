@@ -12,10 +12,11 @@ const MIN_CARD_WIDTH_PX = 215;
 
 export const RadarBoardView = React.memo(function RadarBoardView() {
   const matrixLanes = useAppStore((s) => s.computed.matrixLanes);
-  const allSessions = useAppStore((s) => s.computed.allSessions);
   const unassigned = useAppStore((s) => s.computed.unassignedSessions);
   const projects = useAppStore((s) => s.projects);
+  const worktreeMeta = useAppStore((s) => s.worktreeMeta);
   const radarDensity = useAppStore((s) => s.settings.radar_density);
+  const rootCardMode = useAppStore((s) => s.settings.root_card_mode ?? "header_chip");
 
   const selectedProjectId = useUiStore((s) => s.selectedProjectId);
   const selectedCardKey = useUiStore((s) => s.selectedCardKey);
@@ -27,6 +28,7 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
   const setSelectedCardKey = useUiStore((s) => s.setSelectedCardKey);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
   const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
+  const requestTerminalFocus = useUiStore((s) => s.requestTerminalFocus);
 
   const boardRef = useRef<HTMLDivElement>(null);
   const [boardWidth, setBoardWidth] = useState<number>(1280);
@@ -59,18 +61,73 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
   );
   const activeCols = Math.min(desiredCols, maxFitCols);
 
-  const actionable = useMemo(
-    () =>
-      allSessions.filter(
-        (s) => s.bucket === "needs_you" || s.bucket === "ready"
-      ),
-    [allSessions]
-  );
+  // Derive "지금 확인" strictly from the actual Radar board cards (1:1 card count parity)
+  const actionableCards = useMemo(() => {
+    const items: Array<{
+      cardKey: string;
+      address: string;
+      bucket: "needs_you" | "ready";
+      projectName: string;
+      label: string;
+      isLive: boolean;
+      status: import("../../types/domain").StatusInfo | null | undefined;
+      isStuck: boolean;
+      stuckMinutes: number;
+    }> = [];
+
+    for (const lane of matrixLanes) {
+      for (const cell of lane.cells) {
+        if (cell.topBucket !== "needs_you" && cell.topBucket !== "ready") {
+          continue;
+        }
+        const primary =
+          cell.sessions.find((s) => s.bucket === cell.topBucket) ??
+          cell.sessions[0];
+        if (!primary) continue;
+        const normPath = normalizePath(cell.worktree.path);
+        const customName = worktreeMeta[normPath]?.display_name?.trim();
+        items.push({
+          cardKey: `wt::${lane.project.id}::${normPath}`,
+          address: primary.address,
+          bucket: cell.topBucket,
+          projectName: lane.project.name,
+          label: customName || cell.worktree.branch || "(detached)",
+          isLive: primary.terminal.state === "live",
+          status: primary.terminal.status,
+          isStuck: primary.isStuck,
+          stuckMinutes: primary.stuckMinutes,
+        });
+      }
+    }
+
+    for (const s of unassigned) {
+      if (s.bucket !== "needs_you" && s.bucket !== "ready") continue;
+      items.push({
+        cardKey: `ext::${s.address}`,
+        address: s.address,
+        bucket: s.bucket,
+        projectName: s.projectName,
+        label: s.terminal.name || s.branch,
+        isLive: s.terminal.state === "live",
+        status: s.terminal.status,
+        isStuck: s.isStuck,
+        stuckMinutes: s.stuckMinutes,
+      });
+    }
+
+    items.sort((a, b) => {
+      if (a.bucket !== b.bucket) return a.bucket === "needs_you" ? -1 : 1;
+      return 0;
+    });
+    return items;
+  }, [matrixLanes, unassigned, worktreeMeta]);
 
   const firstCardInfo = useMemo(() => {
     for (const lane of matrixLanes) {
       if (lane.cells.length > 0) {
-        const c = lane.cells[0];
+        const nonRoot = lane.cells.find((item) => !item.worktree.is_main);
+        const c =
+          rootCardMode !== "card" && nonRoot ? nonRoot : lane.cells[0];
         return {
           key: `wt::${lane.project.id}::${normalizePath(c.worktree.path)}`,
           addr: c.sessions[0]?.address ?? null,
@@ -78,7 +135,7 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
       }
     }
     return null;
-  }, [matrixLanes]);
+  }, [matrixLanes, rootCardMode]);
 
   useEffect(() => {
     if (!selectedCardKey && firstCardInfo) {
@@ -130,32 +187,33 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
   return (
     <div
       ref={boardRef}
-      className="flex-1 overflow-y-auto px-5 py-5 space-y-4 min-w-0"
+      className="flex-1 h-full min-h-0 overflow-y-auto px-5 pt-5 pb-10 space-y-4 min-w-0"
     >
-      {/* Floating Soft Attention Ribbon */}
-      {actionable.length > 0 && (
+      {/* Floating Soft Attention Ribbon (1:1 synced with visible Radar cards) */}
+      {actionableCards.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap px-0.5">
           <span
             className="text-[11px] font-semibold mr-1"
             style={{ color: "var(--text-faint)" }}
           >
-            지금 확인
+            지금 확인 ({actionableCards.length})
           </span>
-          {actionable.map((s) => {
-            const isAction = s.bucket === "needs_you";
+          {actionableCards.map((item) => {
+            const isAction = item.bucket === "needs_you";
             return (
               <button
-                key={s.address}
+                key={item.cardKey}
                 onClick={() => {
-                  setSelectedAddress(s.address);
-                  if (s.projectId) {
-                    setSelectedCardKey(
-                      `wt::${s.projectId}::${normalizePath(s.worktreePath)}`
-                    );
+                  setSelectedCardKey(item.cardKey);
+                  setSelectedAddress(item.address);
+                  if (item.isLive) {
+                    setAttachedAddress(item.address);
+                    requestTerminalFocus();
                   }
-                  if (s.terminal.state === "live") {
-                    setAttachedAddress(s.address);
-                  }
+                  const cardEl = document.querySelector<HTMLElement>(
+                    `[data-jjdr-card="${CSS.escape(item.cardKey)}"]`
+                  );
+                  cardEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
                 }}
                 className="jjdr-card-lift inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs cursor-pointer"
                 style={{
@@ -168,11 +226,17 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
                   color: "var(--text-primary)",
                 }}
               >
-                <StatusBadge bucket={s.bucket} compact />
+                <StatusBadge
+                  bucket={item.bucket}
+                  status={item.status}
+                  isStuck={item.isStuck}
+                  stuckMinutes={item.stuckMinutes}
+                  compact
+                />
                 <span style={{ color: "var(--text-secondary)" }}>
-                  {s.projectName}
+                  {item.projectName}
                 </span>
-                <span className="font-mono-code font-semibold">{s.branch}</span>
+                <span className="font-mono-code font-semibold">{item.label}</span>
               </button>
             );
           })}

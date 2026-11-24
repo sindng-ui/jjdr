@@ -25,6 +25,7 @@ applyThemeToDom(INITIAL_THEME);
 const DEFAULT_SETTINGS: AppSettings = {
   theme: INITIAL_THEME,
   radar_density: DEFAULT_RADAR_DENSITY,
+  root_card_mode: "header_chip",
   stuck_minutes: 5,
   notify_on_blocked: true,
   notify_on_done: false,
@@ -154,6 +155,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       ...settings,
       theme: normalizeThemeId(settings.theme),
       radar_density: normalizeRadarDensity(settings.radar_density),
+      root_card_mode:
+        settings.root_card_mode === "card" ||
+        settings.root_card_mode === "hidden" ||
+        settings.root_card_mode === "header_chip"
+          ? settings.root_card_mode
+          : "header_chip",
     };
     applyThemeToDom(normalized.theme);
     set({ settings: normalized });
@@ -172,6 +179,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       ...settings,
       theme: normalizeThemeId(settings?.theme),
       radar_density: normalizeRadarDensity(settings?.radar_density),
+      root_card_mode:
+        settings?.root_card_mode === "card" ||
+        settings?.root_card_mode === "hidden" ||
+        settings?.root_card_mode === "header_chip"
+          ? settings.root_card_mode
+          : "header_chip",
     };
     applyThemeToDom(normalizedSettings.theme);
     set({

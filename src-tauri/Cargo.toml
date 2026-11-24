@@ -1,6 +1,6 @@
 [package]
 name = "jjdr"
-version = "0.3.0"
+version = "0.3.1"
 description = "jjdr — Low-cognitive-load AI worktree mission control on herdr-core"
 authors = ["jjdr"]
 edition = "2021"
@@ -27,3 +27,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 dirs = "6"
 chrono = { version = "0.4", features = ["serde"] }
+regex = "1"

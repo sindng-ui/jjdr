@@ -38,6 +38,83 @@ export function normalizePath(p: string): string {
   return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
+const SYSTEM_PATH_PREFIXES = [
+  "c:/windows",
+  "c:/program files",
+  "c:/program files (x86)",
+  "c:/programdata",
+  "c:/system volume information",
+  "c:/system32",
+  "c:/syswow64",
+  "c:/system",
+  "c:/recovery",
+];
+
+/**
+ * Returns true if the normalized path is an OS/system directory that should never
+ * surface as an unassigned Mission Control card (e.g. failed helper commands in C:\Windows\System32).
+ */
+export function isSystemPath(path: string): boolean {
+  const norm = normalizePath(path);
+  if (!norm) return false;
+  return SYSTEM_PATH_PREFIXES.some(
+    (prefix) => norm === prefix || norm.startsWith(`${prefix}/`)
+  );
+}
+
+/**
+ * True only when herdr-core explicitly reports a live permission-approval prompt.
+ * Prevents showing false "승인" buttons for Stuck (long working), Error, or general Question states.
+ */
+export function isPermissionApprovalPending(t: TerminalInfo | null | undefined): boolean {
+  if (!t || t.state !== "live") return false;
+  return t.status?.state === "blocked" && t.status?.kind === "permission";
+}
+
+const PLAIN_SHELL_NAMES = new Set([
+  "shell",
+  "pwsh",
+  "powershell",
+  "cmd",
+  "bash",
+  "zsh",
+  "sh",
+  "fish",
+]);
+
+function normalizeBinName(raw: string): string {
+  const base = raw.replace(/\\/g, "/").split("/").pop() ?? raw;
+  return base.replace(/\.exe$/i, "").trim().toLowerCase();
+}
+
+/**
+ * True when a terminal is just a plain interactive shell (pwsh/cmd/bash)
+ * with no AI CLI currently active in `status.app` or `foreground.name`.
+ */
+export function isPlainShellTerminal(t: TerminalInfo): boolean {
+  const statusApp = t.status?.app ? normalizeBinName(t.status.app) : "";
+  if (statusApp && !PLAIN_SHELL_NAMES.has(statusApp)) {
+    return false;
+  }
+  const fgName = t.foreground?.name ? normalizeBinName(t.foreground.name) : "";
+  if (fgName && !PLAIN_SHELL_NAMES.has(fgName)) {
+    return false;
+  }
+  const labeledAgent = t.labels["jjdr.agent"]
+    ? normalizeBinName(t.labels["jjdr.agent"])
+    : "";
+  if (labeledAgent) {
+    return PLAIN_SHELL_NAMES.has(labeledAgent);
+  }
+  if (t.template) {
+    return PLAIN_SHELL_NAMES.has(normalizeBinName(t.template));
+  }
+  if (t.argv.length > 0) {
+    return PLAIN_SHELL_NAMES.has(normalizeBinName(t.argv[0]));
+  }
+  return true;
+}
+
 export function classifyBucket(
   t: TerminalInfo,
   ackTurn: number,
@@ -81,15 +158,19 @@ export function classifyBucket(
     };
   }
 
-  const unackedDone = t.turn > 0 && t.turn > ackTurn;
-  if (st === "done" || unackedDone) {
-    return {
-      bucket: "ready",
-      isStuck: false,
-      stuckMinutes: 0,
-      unackedDone,
-      elapsedMs,
-    };
+  // Plain shell prompts (e.g. PS C:\repo>) increment `turn` on startup/commands
+  // and must stay in `idle` (Standby) instead of turning Worktree cards green as "Ready".
+  if (!isPlainShellTerminal(t)) {
+    const unackedDone = t.turn > 0 && t.turn > ackTurn;
+    if (st === "done" || unackedDone) {
+      return {
+        bucket: "ready",
+        isStuck: false,
+        stuckMinutes: 0,
+        unackedDone,
+        elapsedMs,
+      };
+    }
   }
 
   return {
@@ -229,8 +310,9 @@ export function computeDashboard(
   };
 
   for (const t of terminals) {
-    // Hide cleanly finished historical terminals from active Mission Control cards
-    if (t.state === "finished" && (t.exit_code ?? 0) === 0) {
+    // Hide all finished/exited terminals (both clean and failed) so dead processes
+    // never linger as phantom red "Failed" cards or inflate Attention counts.
+    if (t.state !== "live") {
       continue;
     }
 
@@ -239,6 +321,14 @@ export function computeDashboard(
       projects,
       worktreesByProject
     );
+
+    // Filter out unassigned OS/system-directory helper processes (e.g. C:\Windows\System32)
+    if (!project && !t.labels["jjdr.project"]) {
+      const effectiveCwd = t.cwd || t.foreground?.cwd || "";
+      if (isSystemPath(effectiveCwd)) {
+        continue;
+      }
+    }
 
     const projectGroup = project?.group || "Unassigned";
     const ackTurn = ackTurns[t.address] ?? 0;
@@ -252,12 +342,14 @@ export function computeDashboard(
     const projectColor = project?.color || "#6c788a";
     const previewLines = previews[t.address]?.lines ?? [];
 
-    // Priority score: blocked/error highest, then stuck, then ready, then running, then idle
+    // Priority score: blocked/error highest, then stuck, then ready, then running, then idle.
+    // Within the same bucket, AI sessions rank ahead of plain PowerShell tabs.
     let priorityScore = BUCKET_RANK[bucket] * 1_000_000;
     if (t.status?.state === "blocked") priorityScore -= 200_000;
     else if (t.status?.state === "error") priorityScore -= 150_000;
     else if (isStuck) priorityScore -= 100_000;
-    priorityScore -= Math.min(99_999, Math.floor((t.status_ms ?? t.created_ms) / 1000) % 99_999);
+    if (!isPlainShellTerminal(t)) priorityScore -= 10_000;
+    priorityScore -= Math.min(9_999, Math.floor((t.status_ms ?? t.created_ms) / 1000) % 9_999);
 
     const session: EnrichedSession = {
       address: t.address,
@@ -281,11 +373,6 @@ export function computeDashboard(
     };
 
     allSessions.push(session);
-    globalCounts.total += 1;
-    if (bucket === "needs_you") globalCounts.needsYou += 1;
-    else if (bucket === "ready") globalCounts.ready += 1;
-    else if (bucket === "running") globalCounts.running += 1;
-    else globalCounts.idle += 1;
 
     if (activeGroup && activeGroup !== "All" && projectGroup !== activeGroup) {
       continue;
@@ -301,24 +388,54 @@ export function computeDashboard(
     }
 
     enrichedFiltered.push(session);
-    counts.total += 1;
-    if (bucket === "needs_you") counts.needsYou += 1;
-    else if (bucket === "ready") counts.ready += 1;
-    else if (bucket === "running") counts.running += 1;
-    else counts.idle += 1;
   }
 
   allSessions.sort((a, b) => a.priorityScore - b.priorityScore);
   enrichedFiltered.sort((a, b) => a.priorityScore - b.priorityScore);
 
+  // Deduplicate by Worktree card so Queue mode & global counters show strictly 1 card per Worktree
+  // (using its highest-priority representative session), never duplicating a card across Ready & Standby.
+  const dedupeByWorktreeCard = (sortedList: EnrichedSession[]): EnrichedSession[] => {
+    const grouped = new Map<string, { rep: EnrichedSession; count: number }>();
+    for (const s of sortedList) {
+      const cardKey = s.projectId
+        ? `wt::${s.projectId}::${normalizePath(s.worktreePath)}`
+        : `ext::${s.address}`;
+      const existing = grouped.get(cardKey);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        grouped.set(cardKey, { rep: s, count: 1 });
+      }
+    }
+    return Array.from(grouped.values()).map(({ rep, count }) =>
+      count > 1 ? { ...rep, worktreeSessionCount: count } : rep
+    );
+  };
+
+  const globalCards = dedupeByWorktreeCard(allSessions);
+  for (const c of globalCards) {
+    globalCounts.total += 1;
+    if (c.bucket === "needs_you") globalCounts.needsYou += 1;
+    else if (c.bucket === "ready") globalCounts.ready += 1;
+    else if (c.bucket === "running") globalCounts.running += 1;
+    else globalCounts.idle += 1;
+  }
+
+  const queueCards = dedupeByWorktreeCard(enrichedFiltered);
   const byBucket: Record<AttentionBucket, EnrichedSession[]> = {
     needs_you: [],
     ready: [],
     running: [],
     idle: [],
   };
-  for (const s of enrichedFiltered) {
-    byBucket[s.bucket].push(s);
+  for (const c of queueCards) {
+    byBucket[c.bucket].push(c);
+    counts.total += 1;
+    if (c.bucket === "needs_you") counts.needsYou += 1;
+    else if (c.bucket === "ready") counts.ready += 1;
+    else if (c.bucket === "running") counts.running += 1;
+    else counts.idle += 1;
   }
 
   // Build Project x Worktree board lanes (always include at least the main repo cell even without extra worktrees)
@@ -412,7 +529,7 @@ export function computeDashboard(
 
   return {
     allSessions,
-    sessions: enrichedFiltered,
+    sessions: queueCards,
     byBucket,
     matrixLanes,
     unassignedSessions,

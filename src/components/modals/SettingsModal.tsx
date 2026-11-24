@@ -16,6 +16,7 @@ import type {
   AppSettings,
   PromptPreset,
   RadarDensity,
+  RootCardMode,
   ThemeId,
 } from "../../types/domain";
 
@@ -42,6 +43,13 @@ export const SettingsModal = React.memo(function SettingsModal() {
 
   const handleSelectDensity = (density: RadarDensity) => {
     const next: AppSettings = { ...draft, radar_density: density };
+    setDraft(next);
+    useAppStore.getState().setSettings(next);
+    void saveSettings(next).catch(() => {});
+  };
+
+  const handleSelectRootMode = (mode: RootCardMode) => {
+    const next: AppSettings = { ...draft, root_card_mode: mode };
     setDraft(next);
     useAppStore.getState().setSettings(next);
     void saveSettings(next).catch(() => {});
@@ -309,6 +317,92 @@ export const SettingsModal = React.memo(function SettingsModal() {
                       style={{ color: "var(--text-muted)" }}
                     >
                       {opt.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ROOT Card Display Mode */}
+          <div
+            className="pt-4 space-y-2.5"
+            style={{ borderTop: "1px solid var(--divider)" }}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className="font-bold text-xs"
+                style={{ color: "var(--text-primary)" }}
+              >
+                프로젝트 ROOT 카드 표시 방식
+              </span>
+              <span
+                className="text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                원클릭 즉시 적용
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  {
+                    id: "header_chip",
+                    label: "헤더 칩 (추천)",
+                    desc: "Worktree가 있으면 헤더에 컴팩트 칩으로 접기",
+                  },
+                  {
+                    id: "card",
+                    label: "그리드 카드",
+                    desc: "기존처럼 일반 Worktree 카드로 표시",
+                  },
+                  {
+                    id: "hidden",
+                    label: "숨기기",
+                    desc: "Worktree가 있을 때 ROOT 표시 안 함",
+                  },
+                ] as const
+              ).map((opt) => {
+                const active = (draft.root_card_mode ?? "header_chip") === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleSelectRootMode(opt.id)}
+                    className="jjdr-card-lift text-left rounded-2xl p-2.5 cursor-pointer flex flex-col gap-1"
+                    style={{
+                      background: active
+                        ? "var(--accent-soft)"
+                        : "var(--input-bg)",
+                      border: `1.5px solid ${
+                        active ? "var(--accent)" : "var(--input-border)"
+                      }`,
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className="font-bold text-xs"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {opt.label}
+                      </span>
+                      {active && (
+                        <span
+                          className="w-4 h-4 rounded-full inline-flex items-center justify-center shrink-0"
+                          style={{
+                            background: "var(--accent)",
+                            color: "#ffffff",
+                          }}
+                        >
+                          <Check className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className="text-[11px] leading-snug"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {opt.desc}
                     </span>
                   </button>
                 );

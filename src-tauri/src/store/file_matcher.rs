@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use regex::{Regex, RegexBuilder};
 use serde::Serialize;
 
 use crate::git::inspect::run_git;
@@ -19,6 +20,8 @@ pub struct FileSearchResult {
     pub total_indexed: usize,
     pub matches: Vec<FileMatchItem>,
     pub from_cache: bool,
+    pub match_mode: String,
+    pub regex_error: Option<String>,
 }
 
 pub async fn scan_directory_files(root_path: &str) -> Result<Vec<String>, String> {
@@ -91,20 +94,236 @@ fn walk_files_fallback(root: &Path) -> Vec<String> {
     results
 }
 
+pub struct MatchCollection {
+    pub total_indexed: usize,
+    pub matches: Vec<FileMatchItem>,
+    pub match_mode: String,
+    pub regex_error: Option<String>,
+}
+
+enum CompiledToken {
+    Glob { re: Regex, basename_only: bool },
+    Fuzzy(String),
+}
+
+enum QueryPlan {
+    Empty,
+    Regex(Regex),
+    RegexError(String),
+    Glob(Vec<CompiledToken>),
+    Fuzzy(Vec<String>),
+}
+
+/// Detect explicit `/pattern/` or `/pattern/i` regex literals.
+fn extract_slash_regex(trimmed: &str) -> Option<(String, bool)> {
+    if trimmed.len() >= 3 && trimmed.starts_with('/') {
+        if let Some(inner) = trimmed.strip_prefix('/').and_then(|s| s.strip_suffix("/i")) {
+            if !inner.is_empty() {
+                return Some((inner.to_string(), true));
+            }
+        }
+        if let Some(inner) = trimmed.strip_prefix('/').and_then(|s| s.strip_suffix('/')) {
+            if !inner.is_empty() {
+                return Some((inner.to_string(), true));
+            }
+        }
+    }
+    None
+}
+
+/// Heuristic: detect clear regex constructs (anchors, alternation, char classes, escapes, `.*`, `.+`)
+/// while leaving pure glob queries like `*.cpp` or `src/**/*.ts` to the Glob engine.
+fn looks_like_regex(trimmed: &str) -> bool {
+    if trimmed.contains(".*")
+        || trimmed.contains(".+")
+        || trimmed.contains("\\.")
+        || trimmed.contains("\\d")
+        || trimmed.contains("\\w")
+        || trimmed.contains("\\s")
+        || trimmed.contains('|')
+        || trimmed.contains('^')
+        || trimmed.contains('$')
+    {
+        return true;
+    }
+    if (trimmed.contains('[') && trimmed.contains(']'))
+        || (trimmed.contains('(') && trimmed.contains(')'))
+    {
+        return true;
+    }
+    false
+}
+
+fn glob_token_to_regex(token: &str) -> Result<(Regex, bool), String> {
+    let has_slash = token.contains('/');
+    let mut pattern = String::with_capacity(token.len() * 2 + 8);
+    pattern.push('^');
+
+    let chars: Vec<char> = token.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '*' => {
+                if i + 1 < chars.len() && chars[i + 1] == '*' {
+                    // Consume consecutive `*`
+                    while i + 1 < chars.len() && chars[i + 1] == '*' {
+                        i += 1;
+                    }
+                    if i + 1 < chars.len() && chars[i + 1] == '/' {
+                        pattern.push_str("(?:.*/)?");
+                        i += 1;
+                    } else {
+                        pattern.push_str(".*");
+                    }
+                } else if has_slash {
+                    pattern.push_str("[^/]*");
+                } else {
+                    pattern.push_str(".*");
+                }
+            }
+            '?' => {
+                if has_slash {
+                    pattern.push_str("[^/]");
+                } else {
+                    pattern.push('.');
+                }
+            }
+            ch => {
+                pattern.push_str(&regex::escape(&ch.to_string()));
+            }
+        }
+        i += 1;
+    }
+    pattern.push('$');
+
+    let re = RegexBuilder::new(&pattern)
+        .case_insensitive(true)
+        .size_limit(1024 * 1024)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok((re, !has_slash))
+}
+
+fn compile_query_plan(query: &str, force_regex: bool) -> QueryPlan {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return QueryPlan::Empty;
+    }
+
+    if force_regex {
+        return match RegexBuilder::new(trimmed)
+            .case_insensitive(true)
+            .size_limit(2 * 1024 * 1024)
+            .build()
+        {
+            Ok(re) => QueryPlan::Regex(re),
+            Err(e) => QueryPlan::RegexError(e.to_string()),
+        };
+    }
+
+    if let Some((pat, ci)) = extract_slash_regex(trimmed) {
+        return match RegexBuilder::new(&pat)
+            .case_insensitive(ci)
+            .size_limit(2 * 1024 * 1024)
+            .build()
+        {
+            Ok(re) => QueryPlan::Regex(re),
+            Err(e) => QueryPlan::RegexError(e.to_string()),
+        };
+    }
+
+    if looks_like_regex(trimmed) {
+        return match RegexBuilder::new(trimmed)
+            .case_insensitive(true)
+            .size_limit(2 * 1024 * 1024)
+            .build()
+        {
+            Ok(re) => QueryPlan::Regex(re),
+            Err(e) => QueryPlan::RegexError(e.to_string()),
+        };
+    }
+
+    let raw_tokens: Vec<&str> = trimmed.split_whitespace().filter(|t| !t.is_empty()).collect();
+    let has_glob = raw_tokens.iter().any(|t| t.contains('*') || t.contains('?'));
+    if has_glob {
+        let mut compiled = Vec::with_capacity(raw_tokens.len());
+        for tok in raw_tokens {
+            if tok.contains('*') || tok.contains('?') {
+                match glob_token_to_regex(tok) {
+                    Ok((re, basename_only)) => compiled.push(CompiledToken::Glob { re, basename_only }),
+                    Err(e) => return QueryPlan::RegexError(e),
+                }
+            } else {
+                compiled.push(CompiledToken::Fuzzy(tok.to_lowercase()));
+            }
+        }
+        return QueryPlan::Glob(compiled);
+    }
+
+    QueryPlan::Fuzzy(raw_tokens.into_iter().map(|t| t.to_lowercase()).collect())
+}
+
+fn score_regex_path(path: &str, re: &Regex) -> Option<i32> {
+    let basename_start = path.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let basename = &path[basename_start..];
+
+    if let Some(m) = re.find(basename) {
+        let start_bonus = 60 - (m.start().min(50) as i32);
+        let len_penalty = (path.len().min(120) as i32) / 3;
+        return Some(260 + start_bonus - len_penalty);
+    }
+    if let Some(m) = re.find(path) {
+        let start_bonus = 40 - (m.start().min(40) as i32);
+        let len_penalty = (path.len().min(120) as i32) / 3;
+        return Some(140 + start_bonus - len_penalty);
+    }
+    None
+}
+
+fn score_glob_tokens(path: &str, tokens: &[CompiledToken]) -> Option<i32> {
+    let lower_path = path.to_lowercase();
+    let basename_start = lower_path.rfind('/').map(|i| i + 1).unwrap_or(0);
+    let basename = &lower_path[basename_start..];
+
+    let mut total_score: i32 = 0;
+    for tok in tokens {
+        match tok {
+            CompiledToken::Glob { re, basename_only } => {
+                if *basename_only {
+                    if re.is_match(basename) {
+                        total_score += 200;
+                    } else {
+                        return None;
+                    }
+                } else if re.is_match(&lower_path) {
+                    total_score += 180;
+                } else {
+                    return None;
+                }
+            }
+            CompiledToken::Fuzzy(needle) => {
+                if let Some(bn) = match_single_token(basename, needle) {
+                    total_score += bn + 60;
+                } else if let Some(full) = match_single_token(&lower_path, needle) {
+                    total_score += full;
+                } else {
+                    return None;
+                }
+            }
+        }
+    }
+    let depth = lower_path.matches('/').count() as i32;
+    total_score -= depth * 8 + (lower_path.len().min(120) as i32) / 4;
+    Some(total_score)
+}
+
 pub fn score_and_collect(
     base_files: &[String],
     delta: Option<&(Vec<String>, HashSet<String>)>,
     query: &str,
     limit: usize,
-) -> (usize, Vec<FileMatchItem>) {
-    let trimmed = query.trim();
-    let tokens: Vec<String> = trimmed
-        .to_lowercase()
-        .split_whitespace()
-        .filter(|t| !t.is_empty())
-        .map(String::from)
-        .collect();
-
+    use_regex: bool,
+) -> MatchCollection {
     let removed_opt = delta.map(|(_, r)| r);
     let added_slice: &[String] = delta.map(|(a, _)| a.as_slice()).unwrap_or(&[]);
 
@@ -113,21 +332,38 @@ pub fn score_and_collect(
         .saturating_sub(removed_opt.map(|r| r.len()).unwrap_or(0))
         + added_slice.len();
 
+    let plan = compile_query_plan(query, use_regex);
+    let match_mode = match &plan {
+        QueryPlan::Empty | QueryPlan::Fuzzy(_) => "fuzzy",
+        QueryPlan::Glob(_) => "glob",
+        QueryPlan::Regex(_) | QueryPlan::RegexError(_) => "regex",
+    }
+    .to_string();
+
+    if let QueryPlan::RegexError(err) = plan {
+        return MatchCollection {
+            total_indexed,
+            matches: Vec::new(),
+            match_mode,
+            regex_error: Some(err),
+        };
+    }
+
     let mut scored: Vec<FileMatchItem> = Vec::with_capacity(limit.min(128));
 
     let mut consider = |path: &str| {
-        if tokens.is_empty() {
-            let depth = path.matches('/').count() as i32;
-            let md_bonus = if is_markdown_ext(path) { 15 } else { 0 };
-            let score = 100 - depth * 12 + md_bonus - (path.len().min(80) as i32 / 4);
-            scored.push(FileMatchItem {
-                path: path.to_string(),
-                score,
-            });
-            return;
-        }
-
-        if let Some(score) = fuzzy_score_path(path, &tokens) {
+        let opt_score = match &plan {
+            QueryPlan::Empty => {
+                let depth = path.matches('/').count() as i32;
+                let md_bonus = if is_markdown_ext(path) { 15 } else { 0 };
+                Some(100 - depth * 12 + md_bonus - (path.len().min(80) as i32 / 4))
+            }
+            QueryPlan::Regex(re) => score_regex_path(path, re),
+            QueryPlan::Glob(tokens) => score_glob_tokens(path, tokens),
+            QueryPlan::Fuzzy(tokens) => fuzzy_score_path(path, tokens),
+            QueryPlan::RegexError(_) => None,
+        };
+        if let Some(score) = opt_score {
             scored.push(FileMatchItem {
                 path: path.to_string(),
                 score,
@@ -149,7 +385,12 @@ pub fn score_and_collect(
 
     scored.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.path.cmp(&b.path)));
     scored.truncate(limit);
-    (total_indexed, scored)
+    MatchCollection {
+        total_indexed,
+        matches: scored,
+        match_mode,
+        regex_error: None,
+    }
 }
 
 fn is_markdown_ext(path: &str) -> bool {
@@ -251,11 +492,56 @@ mod tests {
         removed.insert("src/old.ts".to_string());
         let delta = (vec!["docs/guide.md".to_string()], removed);
 
-        let (total, matches) = score_and_collect(&base, Some(&delta), "md", 20);
-        assert_eq!(total, 3);
-        let paths: Vec<&str> = matches.iter().map(|m| m.path.as_str()).collect();
+        let res = score_and_collect(&base, Some(&delta), "md", 20, false);
+        assert_eq!(res.total_indexed, 3);
+        assert_eq!(res.match_mode, "fuzzy");
+        let paths: Vec<&str> = res.matches.iter().map(|m| m.path.as_str()).collect();
         assert!(paths.contains(&"README.md"));
         assert!(paths.contains(&"docs/guide.md"));
         assert!(!paths.contains(&"src/old.ts"));
+    }
+
+    #[test]
+    fn supports_glob_patterns_like_star_cpp_and_mixed_tokens() {
+        let base = vec![
+            "src/render/Engine.cpp".to_string(),
+            "src/render/Engine.hpp".to_string(),
+            "src/audio/Mixer.cpp".to_string(),
+            "tests/main.rs".to_string(),
+        ];
+        let cpp_only = score_and_collect(&base, None, "*.cpp", 20, false);
+        assert_eq!(cpp_only.match_mode, "glob");
+        let paths: Vec<&str> = cpp_only.matches.iter().map(|m| m.path.as_str()).collect();
+        assert_eq!(paths.len(), 2);
+        assert!(paths.contains(&"src/render/Engine.cpp"));
+        assert!(paths.contains(&"src/audio/Mixer.cpp"));
+
+        let mixed = score_and_collect(&base, None, "*.cpp render", 20, false);
+        assert_eq!(mixed.match_mode, "glob");
+        assert_eq!(mixed.matches.len(), 1);
+        assert_eq!(mixed.matches[0].path, "src/render/Engine.cpp");
+    }
+
+    #[test]
+    fn supports_explicit_and_slash_regex_with_safe_error_reporting() {
+        let base = vec![
+            "src/components/board/RadarTile.tsx".to_string(),
+            "src/components/board/ProjectTray.tsx".to_string(),
+            "src/main.cpp".to_string(),
+        ];
+        let slash = score_and_collect(&base, None, "/radar.*\\.tsx$/i", 20, false);
+        assert_eq!(slash.match_mode, "regex");
+        assert!(slash.regex_error.is_none());
+        assert_eq!(slash.matches.len(), 1);
+        assert_eq!(slash.matches[0].path, "src/components/board/RadarTile.tsx");
+
+        let forced = score_and_collect(&base, None, "tray|main", 20, true);
+        assert_eq!(forced.match_mode, "regex");
+        assert_eq!(forced.matches.len(), 2);
+
+        let broken = score_and_collect(&base, None, "[unclosed", 20, true);
+        assert_eq!(broken.match_mode, "regex");
+        assert!(broken.regex_error.is_some());
+        assert!(broken.matches.is_empty());
     }
 }

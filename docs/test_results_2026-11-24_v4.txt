@@ -1,0 +1,63 @@
+====================================================================
+jjdr 12대 이슈 통합 수정 테스트 & 빌드 검증 결과 (v4)
+Date: 2026-11-24
+Workspace: K:\Antigravity_Projects\gitbase\jjdr
+====================================================================
+
+1. Frontend Unit Tests (`npm run test` — Vitest v3.2.7)
+--------------------------------------------------------------------
+ ✓ src/utils/themes.test.ts (3 tests)
+ ✓ src/utils/markdownRenderer.test.ts (3 tests)
+ ✓ src/workers/dashboardLogic.test.ts (5 tests)
+   - prioritizes blocked, stuck, ready, running, and idle accurately
+   - rehydrates external sessions without jjdr labels by longest CWD match
+   - applies custom worktree ordering and matches custom display name/note in search
+   - hides finished failed terminals and unassigned OS system-path terminals (#1)
+   - only flags permission approval button for live blocked+permission status (#3)
+ ✓ src/utils/agents.test.ts (2 tests)
+ ✓ src/hooks/usePointerReorder.test.ts (5 tests)
+   - reorderIds (3 tests)
+   - swapIds 1:1 positional swap (#11, 2 tests)
+ ✓ src/utils/worktreeSessions.test.ts (3 tests)
+ ✓ src/utils/codeHighlighter.test.ts (2 tests) (#9)
+ ✓ src/utils/spatialNav.test.ts (2 tests)
+ ✓ src/utils/shortcutActions.test.ts (2 tests) (#10, #12)
+
+Result: 9 test files passed, 27 tests passed, 0 failed (1.12s)
+
+2. Rust Backend Unit Tests (`cargo test --offline --lib`)
+--------------------------------------------------------------------
+ ✓ git::worktree::tests::detects_merge_overlap_across_worktrees
+ ✓ git::worktree::tests::parses_porcelain_worktrees
+ ✓ herdr::naming::tests::sanitizes_leading_dash_and_non_ascii_names
+ ✓ herdr::naming::tests::truncates_long_names_cleanly
+ ✓ herdr::protocol::tests::frame_large_payload_roundtrip
+ ✓ herdr::protocol::tests::frame_roundtrip_all_kinds
+ ✓ herdr::protocol::tests::smart_preview_filters_tui_chrome_and_keeps_answer
+ ✓ herdr::protocol::tests::strip_ansi_removes_csi_and_osc
+ ✓ store::file_index::tests::computes_minimal_delta_for_sibling_worktree
+ ✓ store::file_matcher::tests::fuzzy_ranks_basename_matches_above_deep_path_matches
+ ✓ store::file_matcher::tests::search_merges_base_and_delta_correctly
+ ✓ store::file_matcher::tests::supports_glob_patterns_like_star_cpp_and_mixed_tokens (#6)
+ ✓ store::file_matcher::tests::supports_explicit_and_slash_regex_with_safe_error_reporting (#6)
+ ✓ store::projects::tests::reorders_projects_and_keeps_missing_ones
+
+Result: 14 passed, 0 failed, 0 ignored (0.01s)
+
+3. Production Build & Full Rust Binary Check
+--------------------------------------------------------------------
+- `npm run build` (`tsc && vite build`): PASSED (8.09s)
+  - Lazy chunks:
+    - CodeViewerModal: 55.37 kB (gzip 17.21 kB)
+    - MarkdownViewerModal: 5.61 kB (gzip 2.06 kB)
+    - useResizableModalWidth: 1.64 kB (gzip 0.73 kB)
+- `cargo check --manifest-path src-tauri/Cargo.toml --offline`: PASSED (0 errors, 0 warnings)
+
+4. Performance & Architecture Audit
+--------------------------------------------------------------------
+- Zero-Blur: PASS (no backdrop-filter / blur CSS added)
+- 900-line file cap: PASS (largest file: src/utils/shortcutActions.ts at 568 lines)
+- Virtualization: CodeViewerModal uses @tanstack/react-virtual (constant DOM rows even on 10k+ line files)
+- Atomic Zustand selectors: RadarTile grab/target/selection rings re-render only the 2 affected tiles
+- Web Worker: dashboardLogic filtering/grouping remains off the main UI thread
+- APP_MAP.md: Updated with all new & modified files/interfaces

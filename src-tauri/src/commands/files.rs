@@ -17,6 +17,7 @@ pub struct TextFileContent {
     pub content: String,
     pub size_bytes: u64,
     pub truncated: bool,
+    pub is_binary: bool,
 }
 
 /// Quietly warm the shared project base + optional worktree delta index in background.
@@ -45,6 +46,7 @@ pub async fn search_project_files(
     worktree_path: Option<String>,
     query: String,
     limit: Option<usize>,
+    use_regex: Option<bool>,
 ) -> Result<FileSearchResult, String> {
     let projects = state.store.list_projects().await;
     let proj = projects
@@ -60,8 +62,14 @@ pub async fn search_project_files(
             worktree_path.as_deref(),
             &query,
             limit.unwrap_or(80),
+            use_regex.unwrap_or(false),
         )
         .await
+}
+
+fn looks_binary(bytes: &[u8]) -> bool {
+    let probe = &bytes[..bytes.len().min(8192)];
+    probe.contains(&0u8)
 }
 
 #[tauri::command]
@@ -87,6 +95,17 @@ pub async fn read_text_file(path: String) -> Result<TextFileContent, String> {
     } else {
         &raw[..]
     };
+
+    if looks_binary(slice) {
+        return Ok(TextFileContent {
+            path: trimmed,
+            content: String::new(),
+            size_bytes,
+            truncated,
+            is_binary: true,
+        });
+    }
+
     let content = String::from_utf8_lossy(slice).to_string();
 
     Ok(TextFileContent {
@@ -94,6 +113,7 @@ pub async fn read_text_file(path: String) -> Result<TextFileContent, String> {
         content,
         size_bytes,
         truncated,
+        is_binary: false,
     })
 }
 

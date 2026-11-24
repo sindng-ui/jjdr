@@ -84,6 +84,8 @@ pub struct AppSettings {
     pub theme: String,
     #[serde(default = "default_radar_density")]
     pub radar_density: String,
+    #[serde(default = "default_root_card_mode")]
+    pub root_card_mode: String,
     #[serde(default = "default_stuck_minutes")]
     pub stuck_minutes: u64,
     #[serde(default = "default_true")]
@@ -101,6 +103,9 @@ fn default_theme() -> String {
 }
 fn default_radar_density() -> String {
     "balanced".to_string()
+}
+fn default_root_card_mode() -> String {
+    "header_chip".to_string()
 }
 fn default_stuck_minutes() -> u64 {
     5
@@ -138,6 +143,7 @@ impl Default for AppSettings {
         Self {
             theme: default_theme(),
             radar_density: default_radar_density(),
+            root_card_mode: default_root_card_mode(),
             stuck_minutes: default_stuck_minutes(),
             notify_on_blocked: true,
             notify_on_done: false,

@@ -1942,12 +1942,13 @@ dependencies = [
 
 [[package]]
 name = "jjdr"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64 0.22.1",
  "bytes",
  "chrono",
  "dirs 6.0.0",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

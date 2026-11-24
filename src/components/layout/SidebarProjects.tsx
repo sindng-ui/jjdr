@@ -321,6 +321,15 @@ export const SidebarProjects = React.memo(function SidebarProjects() {
           </kbd>
         </div>
         <div className="flex justify-between">
+          <span>카드 1:1 교환</span>
+          <kbd
+            className="font-mono-code text-[10px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Ctrl+⇧+Alt+↑↓←→
+          </kbd>
+        </div>
+        <div className="flex justify-between">
           <span>터미널 / 탭 전환</span>
           <kbd
             className="font-mono-code text-[10px]"

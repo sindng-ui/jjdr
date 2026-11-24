@@ -101,6 +101,7 @@ impl FileIndexStore {
         worktree_path: Option<&str>,
         query: &str,
         limit: usize,
+        use_regex: bool,
     ) -> Result<FileSearchResult, String> {
         let effective_root = worktree_path
             .filter(|s| !s.trim().is_empty())
@@ -174,14 +175,16 @@ impl FileIndexStore {
         };
 
         let limit = limit.clamp(1, 200);
-        let (total_indexed, matches) =
-            score_and_collect(&base_files, delta_opt.as_ref(), query, limit);
+        let collected =
+            score_and_collect(&base_files, delta_opt.as_ref(), query, limit, use_regex);
 
         Ok(FileSearchResult {
             root_path: effective_root.to_string(),
-            total_indexed,
-            matches,
+            total_indexed: collected.total_indexed,
+            matches: collected.matches,
             from_cache,
+            match_mode: collected.match_mode,
+            regex_error: collected.regex_error,
         })
     }
 

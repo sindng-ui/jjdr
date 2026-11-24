@@ -31,6 +31,12 @@ const MarkdownViewerModal = lazy(() =>
   }))
 );
 
+const CodeViewerModal = lazy(() =>
+  import("./components/modals/CodeViewerModal").then((m) => ({
+    default: m.CodeViewerModal,
+  }))
+);
+
 export function App() {
   useHerdrSync();
   useGlobalShortcuts();
@@ -41,6 +47,7 @@ export function App() {
   const attachedAddress = useUiStore((s) => s.attachedAddress);
   const terminalWidthPx = useUiStore((s) => s.terminalWidthPx);
   const markdownViewerTarget = useUiStore((s) => s.markdownViewerTarget);
+  const codeViewerTarget = useUiStore((s) => s.codeViewerTarget);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const toast = useUiStore((s) => s.toast);
   const clearToast = useUiStore((s) => s.clearToast);
@@ -48,7 +55,7 @@ export function App() {
   const showDrawer = terminalDrawerOpen || Boolean(attachedAddress);
 
   return (
-    <div className="jjdr-shell h-screen w-screen flex flex-col overflow-hidden">
+    <div className="jjdr-shell h-full w-full flex flex-col overflow-hidden">
       <TopStatusBar />
       <HerdrHealthBanner />
 
@@ -94,6 +101,11 @@ export function App() {
       {markdownViewerTarget && (
         <Suspense fallback={null}>
           <MarkdownViewerModal />
+        </Suspense>
+      )}
+      {codeViewerTarget && (
+        <Suspense fallback={null}>
+          <CodeViewerModal />
         </Suspense>
       )}
       <ProjectModal />

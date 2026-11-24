@@ -18,7 +18,10 @@ import { StatusBadge } from "../shared/StatusBadge";
 import { formatElapsed } from "../../utils/format";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
-import { normalizePath } from "../../workers/dashboardLogic";
+import {
+  isPermissionApprovalPending,
+  normalizePath,
+} from "../../workers/dashboardLogic";
 import { pickPreferredWorktreeSession } from "../../utils/worktreeSessions";
 import {
   killTerminal,
@@ -49,8 +52,16 @@ export const RadarTile = React.memo(function RadarTile({
   const cardKey = `wt::${project.id}::${normWtPath}`;
   const session = sessions[0] ?? null;
 
-  // Atomic boolean selectors so moving focus only re-renders the 2 affected cards (#13)
+  // Atomic boolean selectors so moving focus or grabbing cards only re-renders the 2 affected cards (#13)
   const isSelected = useUiStore((s) => s.selectedCardKey === cardKey);
+  const isGrabSource = useUiStore(
+    (s) => s.cardGrabState?.sourceKey === cardKey
+  );
+  const isGrabTarget = useUiStore(
+    (s) =>
+      s.cardGrabState?.targetKey === cardKey &&
+      s.cardGrabState?.sourceKey !== cardKey
+  );
   const isAttached = useUiStore((s) =>
     Boolean(
       s.attachedAddress && sessions.some((item) => item.address === s.attachedAddress)
@@ -125,6 +136,9 @@ export const RadarTile = React.memo(function RadarTile({
     }
   };
 
+  const showSwapTargetHighlight =
+    (isDropTarget && !isDragging) || isGrabTarget;
+
   // Focus ring is strictly exclusive to `isSelected` (#11) — never highlights two cards at once.
   const tileStyle: React.CSSProperties = (() => {
     let background = "var(--card-bg)";
@@ -146,15 +160,19 @@ export const RadarTile = React.memo(function RadarTile({
         : "1px dashed var(--card-idle-border)";
     }
 
-    if (isDropTarget && !isDragging) {
+    if (isGrabSource) {
+      border = "1.5px dashed var(--accent)";
+    } else if (showSwapTargetHighlight) {
       border = "1.5px solid var(--accent)";
     }
 
     return {
       background,
       border,
-      opacity: isDragging ? 0.48 : 1,
-      boxShadow: isSelected
+      opacity: isDragging ? 0.48 : isGrabSource ? 0.72 : 1,
+      boxShadow: showSwapTargetHighlight
+        ? "0 0 0 2px var(--accent), var(--card-shadow)"
+        : isSelected
         ? "var(--card-selected-shadow)"
         : "var(--card-shadow)",
     };
@@ -205,6 +223,17 @@ export const RadarTile = React.memo(function RadarTile({
       style={tileStyle}
       className="jjdr-card-lift group relative rounded-[18px] p-3.5 cursor-pointer select-none flex flex-col justify-between gap-2 min-w-0"
     >
+      {(isGrabSource || showSwapTargetHighlight) && (
+        <span
+          className="pointer-events-none absolute -top-2 right-3 z-10 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm"
+          style={{
+            background: "var(--accent)",
+            color: "#ffffff",
+          }}
+        >
+          {isGrabSource ? "붙잡힘 · 방향키 이동" : "⇄ 1:1 교환"}
+        </span>
+      )}
       {/* Row 1: Status Pill + ROOT Badge + Name/Branch + Hover Actions */}
       <div className="flex items-center justify-between gap-1.5 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -422,7 +451,7 @@ export const RadarTile = React.memo(function RadarTile({
           {lastLine}
         </p>
 
-        {session && isLive && bucket === "needs_you" && (
+        {session && isLive && isPermissionApprovalPending(session.terminal) && (
           <button
             type="button"
             data-no-drag="true"
@@ -430,7 +459,11 @@ export const RadarTile = React.memo(function RadarTile({
               e.stopPropagation();
               void sendTerminalKeys(session.address, ["enter"]);
             }}
-            title="Approve (Enter)"
+            title={
+              session.terminal.status?.msg
+                ? `Approve (Enter) · ${session.terminal.status.msg}`
+                : "Approve (Enter)"
+            }
             className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
             style={{
               background: "var(--action-fg)",

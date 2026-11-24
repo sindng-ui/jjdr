@@ -7,6 +7,7 @@ import {
   type CardRect,
   type NavDirection,
 } from "./spatialNav";
+import { swapIds } from "../hooks/usePointerReorder";
 import {
   cardKeyForSession,
   countWorktreeLiveShells,
@@ -61,6 +62,7 @@ export async function openOrLaunchCard(
     if (term && term.state === "live") {
       ui.setSelectedAddress(addr);
       ui.setAttachedAddress(addr);
+      ui.requestTerminalFocus();
       return;
     }
   }
@@ -129,7 +131,8 @@ export async function toggleSelectedTerminal(fromXterm: boolean) {
 
 export function moveRadarSpatial(
   dir: NavDirection,
-  syncAttachedPane: boolean
+  syncAttachedPane: boolean,
+  focusTerminalPane = false
 ) {
   const cards = readBoardCards();
   if (cards.length === 0) return;
@@ -145,30 +148,132 @@ export function moveRadarSpatial(
   ui.setSelectedAddress(nextCard.addr);
   nextCard.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
 
-  if (syncAttachedPane && (ui.terminalDrawerOpen || ui.attachedAddress)) {
+  const drawerOpen = ui.terminalDrawerOpen || Boolean(ui.attachedAddress);
+  const shouldSync = syncAttachedPane && (drawerOpen || focusTerminalPane);
+
+  if (shouldSync) {
     if (nextCard.addr) {
       const term = useAppStore.getState().terminals[nextCard.addr];
       if (term && term.state === "live") {
         ui.setAttachedAddress(nextCard.addr);
+        if (focusTerminalPane) {
+          ui.requestTerminalFocus();
+        }
         return;
       }
     }
-    // Instant 0ms empty drawer state when passing over empty cards (#11, #13)
-    ui.detachToEmptyDrawer();
+    if (drawerOpen) {
+      // Instant 0ms empty drawer state when passing over empty cards (#11, #13)
+      ui.detachToEmptyDrawer();
+    }
   }
 }
 
+export interface ActionableCardItem {
+  cardKey: string;
+  projectId: string | null;
+  address: string;
+  bucket: "needs_you" | "ready";
+  isLive: boolean;
+}
+
+/**
+ * Collect deduplicated actionable items at Worktree-card granularity in a stable
+ * deterministic order (needs_you -> ready, preserving board lane/cell order).
+ */
+export function buildActionableCardList(): ActionableCardItem[] {
+  const { matrixLanes, unassignedSessions, allSessions } =
+    useAppStore.getState().computed;
+
+  const seenCardKeys = new Set<string>();
+  const items: ActionableCardItem[] = [];
+
+  for (const lane of matrixLanes) {
+    for (const cell of lane.cells) {
+      if (cell.topBucket !== "needs_you" && cell.topBucket !== "ready") {
+        continue;
+      }
+      const primary =
+        cell.sessions.find((s) => s.bucket === cell.topBucket && s.terminal.state === "live") ??
+        cell.sessions.find((s) => s.bucket === cell.topBucket) ??
+        cell.sessions[0];
+      if (!primary) continue;
+      const cardKey = `wt::${lane.project.id}::${normalizePath(cell.worktree.path)}`;
+      if (seenCardKeys.has(cardKey)) continue;
+      seenCardKeys.add(cardKey);
+      items.push({
+        cardKey,
+        projectId: lane.project.id,
+        address: primary.address,
+        bucket: cell.topBucket,
+        isLive: primary.terminal.state === "live",
+      });
+    }
+  }
+
+  for (const s of unassignedSessions) {
+    if (s.bucket !== "needs_you" && s.bucket !== "ready") continue;
+    const cardKey = `ext::${s.address}`;
+    if (seenCardKeys.has(cardKey)) continue;
+    seenCardKeys.add(cardKey);
+    items.push({
+      cardKey,
+      projectId: null,
+      address: s.address,
+      bucket: s.bucket,
+      isLive: s.terminal.state === "live",
+    });
+  }
+
+  // Fallback when current filter hides actionable sessions in other projects
+  if (items.length === 0) {
+    for (const s of allSessions) {
+      if (s.bucket !== "needs_you" && s.bucket !== "ready") continue;
+      const cardKey = s.projectId
+        ? `wt::${s.projectId}::${normalizePath(s.worktreePath)}`
+        : `ext::${s.address}`;
+      if (seenCardKeys.has(cardKey)) continue;
+      seenCardKeys.add(cardKey);
+      items.push({
+        cardKey,
+        projectId: s.projectId,
+        address: s.address,
+        bucket: s.bucket,
+        isLive: s.terminal.state === "live",
+      });
+    }
+  }
+
+  // Stable sort: needs_you first, preserving existing board order within same bucket
+  const needs = items.filter((i) => i.bucket === "needs_you");
+  const ready = items.filter((i) => i.bucket === "ready");
+  return [...needs, ...ready];
+}
+
 export function jumpToNextActionable(delta: 1 | -1 = 1) {
-  const { allSessions } = useAppStore.getState().computed;
-  const actionable = allSessions.filter(
-    (s) => s.bucket === "needs_you" || s.bucket === "ready"
-  );
+  const actionable = buildActionableCardList();
   if (actionable.length === 0) {
     useUiStore.getState().showToast("확인할 작업이 없습니다!", "success");
     return;
   }
+
   const ui = useUiStore.getState();
-  const curIdx = actionable.findIndex((s) => s.address === ui.selectedAddress);
+  const curIdx = actionable.findIndex(
+    (item) =>
+      (ui.selectedCardKey && item.cardKey === ui.selectedCardKey) ||
+      (ui.selectedAddress && item.address === ui.selectedAddress)
+  );
+
+  if (actionable.length === 1 && curIdx === 0) {
+    const only = actionable[0];
+    if (only.isLive && (ui.terminalDrawerOpen || ui.attachedAddress)) {
+      ui.setAttachedAddress(only.address);
+      ui.requestTerminalFocus();
+    }
+    ui.showToast("확인 필요한 카드가 현재 1개뿐입니다.", "info", 1800);
+    return;
+  }
+
   const nextIdx =
     curIdx === -1
       ? delta > 0
@@ -176,14 +281,19 @@ export function jumpToNextActionable(delta: 1 | -1 = 1) {
         : actionable.length - 1
       : (curIdx + delta + actionable.length) % actionable.length;
   const next = actionable[nextIdx];
+
   if (ui.selectedProjectId && next.projectId !== ui.selectedProjectId) {
     ui.setSelectedProjectId(null);
   }
+  ui.setSelectedCardKey(next.cardKey);
   ui.setSelectedAddress(next.address);
-  if (ui.viewMode === "radar" && next.projectId) {
+
+  if (ui.viewMode === "radar") {
     const syncRadarCard = () => {
       const cards = readBoardCards();
-      const match = cards.find((c) => c.addr === next.address);
+      const match =
+        cards.find((c) => c.key === next.cardKey) ??
+        cards.find((c) => c.addr === next.address);
       if (match) {
         useUiStore.getState().setSelectedCardKey(match.key);
         match.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -197,12 +307,17 @@ export function jumpToNextActionable(delta: 1 | -1 = 1) {
       });
     }
   }
-  if ((ui.terminalDrawerOpen || ui.attachedAddress) && next.terminal.state === "live") {
+  if ((ui.terminalDrawerOpen || ui.attachedAddress) && next.isLive) {
     ui.setAttachedAddress(next.address);
+    ui.requestTerminalFocus();
   }
 }
 
-export function moveQueueSelection(delta: number, syncAttachedPane: boolean) {
+export function moveQueueSelection(
+  delta: number,
+  syncAttachedPane: boolean,
+  focusTerminalPane = false
+) {
   const sessions = useAppStore.getState().computed.sessions;
   if (sessions.length === 0) return;
   const ui = useUiStore.getState();
@@ -214,14 +329,19 @@ export function moveQueueSelection(delta: number, syncAttachedPane: boolean) {
         : sessions.length - 1
       : (curIdx + delta + sessions.length) % sessions.length;
   const next = sessions[nextIdx];
+  ui.setSelectedCardKey(cardKeyForSession(next));
   ui.setSelectedAddress(next.address);
 
+  const drawerOpen = ui.terminalDrawerOpen || Boolean(ui.attachedAddress);
   if (
     syncAttachedPane &&
-    (ui.terminalDrawerOpen || ui.attachedAddress) &&
+    (drawerOpen || focusTerminalPane) &&
     next.terminal.state === "live"
   ) {
     ui.setAttachedAddress(next.address);
+    if (focusTerminalPane) {
+      ui.requestTerminalFocus();
+    }
   }
 }
 
@@ -412,4 +532,103 @@ export function openContextMenuForSelectedCard(): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Keyboard card grab-and-swap (Ctrl+Shift+Alt+Arrow):
+ * First press grabs the selected worktree card and previews the neighbor in `dir` within the same project.
+ * Subsequent arrow presses while holding modifiers keep moving the target slot.
+ */
+export function stepKeyboardCardGrab(dir: NavDirection): boolean {
+  const ui = useUiStore.getState();
+  if (ui.viewMode !== "radar") return false;
+
+  const allCards = readBoardCards();
+  if (allCards.length === 0) return false;
+
+  const existing = ui.cardGrabState;
+
+  if (!existing) {
+    const source =
+      allCards.find((c) => c.key === ui.selectedCardKey) ?? allCards[0] ?? null;
+    if (!source || !source.projectId || !source.worktreePath) return false;
+
+    const projectCards = allCards.filter(
+      (c) => c.projectId === source.projectId && Boolean(c.worktreePath)
+    );
+    if (projectCards.length <= 1) return false;
+
+    const nextKey = findNextCardInDirection(projectCards, source.key, dir);
+    const target =
+      (nextKey ? projectCards.find((c) => c.key === nextKey) : null) ?? source;
+
+    ui.setCardGrabState({
+      projectId: source.projectId,
+      sourceKey: source.key,
+      sourceNormPath: normalizePath(source.worktreePath),
+      targetKey: target.key,
+      targetNormPath: normalizePath(target.worktreePath!),
+    });
+    target.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return true;
+  }
+
+  const projectCards = allCards.filter(
+    (c) => c.projectId === existing.projectId && Boolean(c.worktreePath)
+  );
+  if (projectCards.length <= 1) return false;
+
+  const nextKey = findNextCardInDirection(projectCards, existing.targetKey, dir);
+  if (!nextKey) return true;
+
+  const target = projectCards.find((c) => c.key === nextKey);
+  if (!target || !target.worktreePath) return true;
+
+  ui.setCardGrabState({
+    ...existing,
+    targetKey: target.key,
+    targetNormPath: normalizePath(target.worktreePath),
+  });
+  target.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  return true;
+}
+
+/**
+ * Commit the 1:1 card swap when the user releases Ctrl/Shift/Alt after keyboard grabbing.
+ */
+export function commitKeyboardCardGrab(): boolean {
+  const ui = useUiStore.getState();
+  const grab = ui.cardGrabState;
+  if (!grab) return false;
+
+  ui.setCardGrabState(null);
+
+  if (grab.sourceNormPath === grab.targetNormPath) {
+    return false;
+  }
+
+  const app = useAppStore.getState();
+  const lane = app.computed.matrixLanes.find(
+    (l) => l.project.id === grab.projectId
+  );
+  if (!lane) return false;
+
+  const currentNormPaths = lane.cells.map((c) =>
+    normalizePath(c.worktree.path)
+  );
+  const swapped = swapIds(
+    currentNormPaths,
+    grab.sourceNormPath,
+    grab.targetNormPath
+  );
+  app.setProjectWorktreeOrder(grab.projectId, swapped);
+  ui.setSelectedCardKey(grab.sourceKey);
+  ui.showToast("카드 위치 1:1 교환됨", "success", 1300);
+  return true;
+}
+
+export function cancelKeyboardCardGrab() {
+  if (useUiStore.getState().cardGrabState) {
+    useUiStore.getState().setCardGrabState(null);
+  }
 }

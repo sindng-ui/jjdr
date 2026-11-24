@@ -52,6 +52,21 @@ export interface MarkdownViewerTarget {
   rootPath: string;
 }
 
+export interface CodeViewerTarget {
+  absolutePath: string;
+  relativePath: string;
+  projectName: string;
+  rootPath: string;
+}
+
+export interface CardGrabState {
+  projectId: string;
+  sourceKey: string;
+  sourceNormPath: string;
+  targetKey: string;
+  targetNormPath: string;
+}
+
 interface UiStoreState {
   viewMode: ViewMode;
   activeGroup: string;
@@ -63,6 +78,7 @@ interface UiStoreState {
   attachedAddress: string | null;
   terminalDrawerOpen: boolean;
   terminalWidthPx: number | null;
+  terminalFocusNonce: number;
   lastSessionByCardKey: Record<string, string>;
   sidebarOpen: boolean;
   collapsedProjects: Record<string, boolean>;
@@ -70,6 +86,8 @@ interface UiStoreState {
   commandPaletteOpen: boolean;
   quickFileOpen: boolean;
   markdownViewerTarget: MarkdownViewerTarget | null;
+  codeViewerTarget: CodeViewerTarget | null;
+  cardGrabState: CardGrabState | null;
   projectModalProject: ProjectConfig | "new" | null;
   createWorktreeProjectId: string | null;
   editWorktreeTarget: EditWorktreeTarget | null;
@@ -95,6 +113,7 @@ interface UiStoreState {
   detachToEmptyDrawer: () => void;
   closeTerminalDrawer: () => void;
   setTerminalWidthPx: (widthPx: number | null) => void;
+  requestTerminalFocus: () => void;
   rememberCardSession: (cardKey: string, addr: string) => void;
   toggleSidebar: () => void;
   toggleProjectCollapsed: (projectId: string) => void;
@@ -102,6 +121,8 @@ interface UiStoreState {
   setCommandPaletteOpen: (open: boolean) => void;
   setQuickFileOpen: (open: boolean) => void;
   setMarkdownViewerTarget: (t: MarkdownViewerTarget | null) => void;
+  setCodeViewerTarget: (t: CodeViewerTarget | null) => void;
+  setCardGrabState: (state: CardGrabState | null) => void;
   setProjectModalProject: (p: ProjectConfig | "new" | null) => void;
   setCreateWorktreeProjectId: (id: string | null) => void;
   setEditWorktreeTarget: (t: EditWorktreeTarget | null) => void;
@@ -110,7 +131,7 @@ interface UiStoreState {
   setTeardownTarget: (t: TeardownModalTarget | null) => void;
   setLaunchTarget: (t: LaunchModalTarget | null) => void;
   setSettingsOpen: (open: boolean) => void;
-  showToast: (message: string, kind?: "info" | "error" | "success") => void;
+  showToast: (message: string, kind?: "info" | "error" | "success", durationMs?: number) => void;
   clearToast: () => void;
 }
 
@@ -127,6 +148,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   attachedAddress: null,
   terminalDrawerOpen: false,
   terminalWidthPx: null,
+  terminalFocusNonce: 0,
   lastSessionByCardKey: {},
   sidebarOpen: true,
   collapsedProjects: {},
@@ -134,6 +156,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
   commandPaletteOpen: false,
   quickFileOpen: false,
   markdownViewerTarget: null,
+  codeViewerTarget: null,
+  cardGrabState: null,
   projectModalProject: null,
   createWorktreeProjectId: null,
   editWorktreeTarget: null,
@@ -178,6 +202,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
       terminalDrawerOpen: false,
     }),
   setTerminalWidthPx: (terminalWidthPx) => set({ terminalWidthPx }),
+  requestTerminalFocus: () =>
+    set((s) => ({ terminalFocusNonce: s.terminalFocusNonce + 1 })),
   rememberCardSession: (cardKey, addr) =>
     set((s) => ({
       lastSessionByCardKey: { ...s.lastSessionByCardKey, [cardKey]: addr },
@@ -195,6 +221,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setQuickFileOpen: (quickFileOpen) => set({ quickFileOpen }),
   setMarkdownViewerTarget: (markdownViewerTarget) =>
     set({ markdownViewerTarget }),
+  setCodeViewerTarget: (codeViewerTarget) => set({ codeViewerTarget }),
+  setCardGrabState: (cardGrabState) => set({ cardGrabState }),
   setProjectModalProject: (projectModalProject) => set({ projectModalProject }),
   setCreateWorktreeProjectId: (createWorktreeProjectId) =>
     set({ createWorktreeProjectId }),
@@ -204,10 +232,10 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setTeardownTarget: (teardownTarget) => set({ teardownTarget }),
   setLaunchTarget: (launchTarget) => set({ launchTarget }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  showToast: (message, kind = "info") => {
+  showToast: (message, kind = "info", durationMs = 3500) => {
     if (toastTimer) clearTimeout(toastTimer);
     set({ toast: { message, kind } });
-    toastTimer = setTimeout(() => set({ toast: null }), 3500);
+    toastTimer = setTimeout(() => set({ toast: null }), durationMs);
   },
   clearToast: () => set({ toast: null }),
 }));

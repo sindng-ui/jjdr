@@ -3,6 +3,8 @@ import { useAppStore } from "../store/useAppStore";
 import { useUiStore } from "../store/useUiStore";
 import type { NavDirection } from "../utils/spatialNav";
 import {
+  cancelKeyboardCardGrab,
+  commitKeyboardCardGrab,
   cycleCurrentWorktreeTab,
   jumpToNextActionable,
   moveQueueSelection,
@@ -12,6 +14,7 @@ import {
   openOrLaunchCard,
   readBoardCards,
   spawnShellTabInAttachedWorktree,
+  stepKeyboardCardGrab,
   toggleSelectedTerminal,
 } from "../utils/shortcutActions";
 
@@ -42,8 +45,25 @@ export function useGlobalShortcuts() {
         return;
       }
 
-      // 2. Ctrl + Arrow keys: switch card focus & sync right terminal pane even inside xterm
-      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      // 1b. Ctrl + Shift + Alt + Arrow keys: grab selected worktree card and move target slot (commits 1:1 swap on modifier release)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.altKey) {
+        const grabDirMap: Record<string, NavDirection> = {
+          ArrowUp: "up",
+          ArrowDown: "down",
+          ArrowLeft: "left",
+          ArrowRight: "right",
+        };
+        const grabDir = grabDirMap[e.key];
+        if (grabDir) {
+          e.preventDefault();
+          e.stopPropagation();
+          stepKeyboardCardGrab(grabDir);
+          return;
+        }
+      }
+
+      // 2. Ctrl + Arrow keys (without Shift/Alt): switch card focus, sync right terminal pane, and focus prompt
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
         const ctrlDirMap: Record<string, NavDirection> = {
           ArrowUp: "up",
           ArrowDown: "down",
@@ -55,10 +75,11 @@ export function useGlobalShortcuts() {
           e.preventDefault();
           e.stopPropagation();
           if (ui.viewMode === "radar") {
-            moveRadarSpatial(ctrlDir, true);
+            moveRadarSpatial(ctrlDir, true, true);
           } else {
             moveQueueSelection(
               ctrlDir === "down" || ctrlDir === "right" ? 1 : -1,
+              true,
               true
             );
           }
@@ -89,6 +110,7 @@ export function useGlobalShortcuts() {
         !ui.commandPaletteOpen &&
         !ui.quickFileOpen &&
         !ui.markdownViewerTarget &&
+        !ui.codeViewerTarget &&
         !ui.projectModalProject &&
         !ui.createWorktreeProjectId &&
         !ui.editWorktreeTarget &&
@@ -199,8 +221,13 @@ export function useGlobalShortcuts() {
         }
       }
 
-      // 5. Escape: context menu -> modals -> input blur -> close terminal -> clear search -> clear project filter (#9)
+      // 5. Escape: card grab -> context menu -> modals -> input blur -> close terminal -> clear search -> clear project filter (#9)
       if (e.key === "Escape") {
+        if (ui.cardGrabState) {
+          e.preventDefault();
+          cancelKeyboardCardGrab();
+          return;
+        }
         if (ui.contextMenu) {
           ui.setContextMenu(null);
           return;
@@ -211,6 +238,10 @@ export function useGlobalShortcuts() {
         }
         if (ui.markdownViewerTarget) {
           ui.setMarkdownViewerTarget(null);
+          return;
+        }
+        if (ui.codeViewerTarget) {
+          ui.setCodeViewerTarget(null);
           return;
         }
         if (ui.commandPaletteOpen) {
@@ -348,7 +379,29 @@ export function useGlobalShortcuts() {
       }
     };
 
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!useUiStore.getState().cardGrabState) return;
+      if (
+        e.key === "Control" ||
+        e.key === "Shift" ||
+        e.key === "Alt" ||
+        e.key === "Meta"
+      ) {
+        commitKeyboardCardGrab();
+      }
+    };
+
+    const onWindowBlur = () => {
+      cancelKeyboardCardGrab();
+    };
+
     window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", onWindowBlur);
+    };
   }, []);
 }

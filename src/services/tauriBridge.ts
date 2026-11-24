@@ -91,6 +91,7 @@ export interface TextFileContent {
   content: string;
   size_bytes: number;
   truncated: boolean;
+  is_binary?: boolean;
 }
 
 export interface FileMatchItem {
@@ -103,6 +104,8 @@ export interface FileSearchResult {
   total_indexed: number;
   matches: FileMatchItem[];
   from_cache: boolean;
+  match_mode?: "fuzzy" | "glob" | "regex" | string;
+  regex_error?: string | null;
 }
 
 export async function warmProjectFileIndex(
@@ -120,13 +123,15 @@ export async function searchProjectFiles(
   projectId: string,
   worktreePath: string | null,
   query: string,
-  limit = 80
+  limit = 80,
+  useRegex = false
 ): Promise<FileSearchResult> {
   return invoke<FileSearchResult>("search_project_files", {
     projectId,
     worktreePath,
     query,
     limit,
+    useRegex,
   });
 }
 

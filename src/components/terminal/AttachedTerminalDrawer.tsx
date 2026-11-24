@@ -160,6 +160,7 @@ export const AttachedTerminalDrawer = React.memo(
       (addr: string) => {
         setSelectedAddress(addr);
         setAttachedAddress(addr);
+        useUiStore.getState().requestTerminalFocus();
         if (session) {
           rememberCardSession(cardKeyForSession(session), addr);
         }
@@ -336,7 +337,7 @@ export const AttachedTerminalDrawer = React.memo(
       <section
         ref={drawerRef}
         style={widthStyle}
-        className="relative min-w-[360px] max-w-[78%] p-2.5 pl-0 flex shrink-0"
+        className="relative h-full min-h-0 min-w-[360px] max-w-[78%] p-2.5 pl-0 flex shrink-0"
       >
         {/* Left Drag-to-Resize Handle (#12) */}
         <div
@@ -356,7 +357,7 @@ export const AttachedTerminalDrawer = React.memo(
 
         {/* Floating Rounded Terminal Card */}
         <div
-          className="flex-1 h-full rounded-[18px] overflow-hidden flex flex-col text-slate-100 min-w-0"
+          className="flex-1 h-full min-h-0 rounded-[18px] overflow-hidden flex flex-col text-slate-100 min-w-0"
           style={{
             background: "var(--term-bg)",
             border: "1px solid var(--term-border)",
@@ -415,18 +416,20 @@ export const AttachedTerminalDrawer = React.memo(
             />
           )}
 
-          {/* Keep XTerm host mounted while drawer stays open so WebGL context is reused (0ms switch) */}
-          <div className="relative flex-1 w-full h-full overflow-hidden">
+          {/* Keep XTerm host mounted while drawer stays open so WebGL context is reused (0ms switch).
+              Padding lives on the outer flex-1 min-h-0 wrapper so FitAddon measures exact inner viewport height without clipping bottom lines. */}
+          <div className="relative flex-1 min-h-0 w-full overflow-hidden">
             <div
-              ref={containerRef}
               className={`absolute inset-0 p-2.5 overflow-hidden ${
                 attachedAddress
                   ? "visible opacity-100"
                   : "invisible opacity-0 pointer-events-none"
               }`}
-            />
+            >
+              <div ref={containerRef} className="w-full h-full overflow-hidden" />
+            </div>
             {!attachedAddress && (
-              <div className="relative z-10 h-full flex">
+              <div className="relative z-10 h-full min-h-0 flex overflow-y-auto">
                 <TerminalEmptyState
                   projectName={selectedWorktreeInfo?.project.name}
                   branch={selectedWorktreeInfo?.worktree.branch}

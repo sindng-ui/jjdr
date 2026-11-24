@@ -1,0 +1,24 @@
+====================================================================
+jjdr Queue 중복 카드 및 일반 Shell Ready 오분류 수정 검증 결과
+Date: 2026-11-25
+Workspace: K:\Antigravity_Projects\gitbase\jjdr
+====================================================================
+
+1. Frontend Unit Tests (`npm run test` — Vitest v3.2.7)
+--------------------------------------------------------------------
+ ✓ src/utils/themes.test.ts (3 tests)
+ ✓ src/utils/markdownRenderer.test.ts (3 tests)
+ ✓ src/workers/dashboardLogic.test.ts (6 tests)
+   - includes: deduplicates Queue cards per worktree and keeps plain PowerShell out of Ready
+ ✓ src/utils/agents.test.ts (2 tests)
+ ✓ src/hooks/usePointerReorder.test.ts (5 tests)
+ ✓ src/utils/worktreeSessions.test.ts (3 tests)
+ ✓ src/utils/codeHighlighter.test.ts (2 tests)
+ ✓ src/utils/spatialNav.test.ts (2 tests)
+ ✓ src/utils/shortcutActions.test.ts (2 tests)
+
+Result: 9 test files passed, 28 passed, 0 failed (981ms)
+
+2. Production Build (`npm run build` — `tsc && vite build`)
+--------------------------------------------------------------------
+- PASSED (3.90s, 1664 modules transformed)

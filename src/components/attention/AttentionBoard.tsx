@@ -3,16 +3,25 @@ import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import { SessionCard } from "./SessionCard";
+import { cardKeyForSession } from "../../utils/worktreeSessions";
 import type { EnrichedSession } from "../../types/domain";
 
 export const AttentionBoard = React.memo(function AttentionBoard() {
   const byBucket = useAppStore((s) => s.computed.byBucket);
+  const allSessions = useAppStore((s) => s.computed.allSessions);
   const total = useAppStore((s) => s.computed.counts.total);
   const globalTotal = useAppStore((s) => s.computed.globalCounts.total);
   const projects = useAppStore((s) => s.projects);
 
   const selectedAddress = useUiStore((s) => s.selectedAddress);
+  const selectedCardKey = useUiStore((s) => s.selectedCardKey);
   const attachedAddress = useUiStore((s) => s.attachedAddress);
+
+  const attachedCardKey = React.useMemo(() => {
+    if (!attachedAddress) return null;
+    const match = allSessions.find((s) => s.address === attachedAddress);
+    return match ? cardKeyForSession(match) : null;
+  }, [allSessions, attachedAddress]);
   const idleCollapsed = useUiStore((s) => s.idleCollapsed);
   const toggleIdleCollapsed = useUiStore((s) => s.toggleIdleCollapsed);
   const setProjectModalProject = useUiStore((s) => s.setProjectModalProject);
@@ -77,13 +86,15 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6 space-y-7 min-w-0">
+    <div className="flex-1 h-full min-h-0 overflow-y-auto px-6 pt-6 pb-10 space-y-7 min-w-0">
       <Section
         title="Action Required"
         dotColor="var(--action-fg)"
         items={byBucket.needs_you}
         selectedAddress={selectedAddress}
+        selectedCardKey={selectedCardKey}
         attachedAddress={attachedAddress}
+        attachedCardKey={attachedCardKey}
       />
 
       <Section
@@ -91,7 +102,9 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
         dotColor="var(--ready-fg)"
         items={byBucket.ready}
         selectedAddress={selectedAddress}
+        selectedCardKey={selectedCardKey}
         attachedAddress={attachedAddress}
+        attachedCardKey={attachedCardKey}
       />
 
       <Section
@@ -99,7 +112,9 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
         dotColor="var(--run-fg)"
         items={byBucket.running}
         selectedAddress={selectedAddress}
+        selectedCardKey={selectedCardKey}
         attachedAddress={attachedAddress}
+        attachedCardKey={attachedCardKey}
       />
 
       {byBucket.idle.length > 0 && (
@@ -118,14 +133,21 @@ export const AttentionBoard = React.memo(function AttentionBoard() {
           </button>
           {!idleCollapsed && (
             <div className="space-y-3">
-              {byBucket.idle.map((s) => (
-                <SessionCard
-                  key={s.address}
-                  session={s}
-                  selected={selectedAddress === s.address}
-                  attached={attachedAddress === s.address}
-                />
-              ))}
+              {byBucket.idle.map((s) => {
+                const ck = cardKeyForSession(s);
+                return (
+                  <SessionCard
+                    key={ck}
+                    session={s}
+                    selected={
+                      selectedCardKey === ck || selectedAddress === s.address
+                    }
+                    attached={
+                      attachedCardKey === ck || attachedAddress === s.address
+                    }
+                  />
+                );
+              })}
             </div>
           )}
         </section>
@@ -139,7 +161,9 @@ interface SectionProps {
   dotColor: string;
   items: EnrichedSession[];
   selectedAddress: string | null;
+  selectedCardKey: string | null;
   attachedAddress: string | null;
+  attachedCardKey: string | null;
 }
 
 const Section = React.memo(function Section({
@@ -147,7 +171,9 @@ const Section = React.memo(function Section({
   dotColor,
   items,
   selectedAddress,
+  selectedCardKey,
   attachedAddress,
+  attachedCardKey,
 }: SectionProps) {
   if (items.length === 0) return null;
   return (
@@ -171,14 +197,21 @@ const Section = React.memo(function Section({
         </span>
       </div>
       <div className="space-y-3">
-        {items.map((s) => (
-          <SessionCard
-            key={s.address}
-            session={s}
-            selected={selectedAddress === s.address}
-            attached={attachedAddress === s.address}
-          />
-        ))}
+        {items.map((s) => {
+          const ck = cardKeyForSession(s);
+          return (
+            <SessionCard
+              key={ck}
+              session={s}
+              selected={
+                selectedCardKey === ck || selectedAddress === s.address
+              }
+              attached={
+                attachedCardKey === ck || attachedAddress === s.address
+              }
+            />
+          );
+        })}
       </div>
     </section>
   );

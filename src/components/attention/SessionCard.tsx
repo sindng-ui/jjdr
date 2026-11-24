@@ -14,7 +14,14 @@ import { StatusBadge } from "../shared/StatusBadge";
 import { formatElapsed } from "../../utils/format";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
-import { normalizePath } from "../../workers/dashboardLogic";
+import {
+  isPermissionApprovalPending,
+  normalizePath,
+} from "../../workers/dashboardLogic";
+import {
+  cardKeyForSession,
+  getWorktreeLiveSessions,
+} from "../../utils/worktreeSessions";
 import {
   interruptTerminal,
   killTerminal,
@@ -39,9 +46,11 @@ export const SessionCard = React.memo(function SessionCard({
   );
 
   const attachedAddress = useUiStore((s) => s.attachedAddress);
+  const setSelectedCardKey = useUiStore((s) => s.setSelectedCardKey);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
   const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
   const closeTerminalDrawer = useUiStore((s) => s.closeTerminalDrawer);
+  const requestTerminalFocus = useUiStore((s) => s.requestTerminalFocus);
   const setDiffTarget = useUiStore((s) => s.setDiffTarget);
   const setTeardownTarget = useUiStore((s) => s.setTeardownTarget);
   const showToast = useUiStore((s) => s.showToast);
@@ -49,6 +58,8 @@ export const SessionCard = React.memo(function SessionCard({
   const { terminal, worktree, bucket } = session;
   const isLive = terminal.state === "live";
   const displayName = cardMeta?.display_name?.trim() || "";
+  const cardKey = cardKeyForSession(session);
+  const tabCount = session.worktreeSessionCount ?? 1;
 
   const lastSummary =
     terminal.status?.msg ||
@@ -98,12 +109,21 @@ export const SessionCard = React.memo(function SessionCard({
   return (
     <div
       onClick={() => {
+        setSelectedCardKey(cardKey);
         setSelectedAddress(session.address);
         if (attachedAddress && isLive) {
           setAttachedAddress(session.address);
+          requestTerminalFocus();
         }
       }}
-      onDoubleClick={() => isLive && setAttachedAddress(session.address)}
+      onDoubleClick={() => {
+        setSelectedCardKey(cardKey);
+        setSelectedAddress(session.address);
+        if (isLive) {
+          setAttachedAddress(session.address);
+          requestTerminalFocus();
+        }
+      }}
       style={cardStyle}
       className="jjdr-card-lift group relative rounded-[18px] p-4 cursor-pointer select-none flex flex-col gap-2.5"
     >
@@ -159,12 +179,19 @@ export const SessionCard = React.memo(function SessionCard({
           )}
 
           <span style={{ color: "var(--text-muted)" }}>
-            {session.agentLabel} · {formatElapsed(session.elapsedMs)}
+            {session.agentLabel}
+            {tabCount > 1 ? `+${tabCount - 1}` : ""} ·{" "}
+            {formatElapsed(session.elapsedMs)}
           </span>
 
-          {bucket === "needs_you" && isLive && (
+          {isLive && isPermissionApprovalPending(terminal) && (
             <button
               onClick={() => void sendTerminalKeys(session.address, ["enter"])}
+              title={
+                terminal.status?.msg
+                  ? `Approve (Enter) · ${terminal.status.msg}`
+                  : "Approve (Enter)"
+              }
               className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-sans font-semibold cursor-pointer transition-opacity hover:opacity-90"
               style={{
                 background: "var(--action-fg)",
@@ -220,16 +247,23 @@ export const SessionCard = React.memo(function SessionCard({
             )}
             {worktree && !worktree.is_main && session.projectId ? (
               <button
-                onClick={() =>
+                onClick={() => {
+                  const siblings = getWorktreeLiveSessions(
+                    useAppStore.getState().computed.allSessions,
+                    session
+                  );
                   setTeardownTarget({
                     projectId: session.projectId!,
                     worktreePath: worktree.path,
                     branch: worktree.branch,
                     isMerged: worktree.is_merged,
                     dirtyCount: worktree.dirty_count,
-                    terminalAddresses: [session.address],
-                  })
-                }
+                    terminalAddresses:
+                      siblings.length > 0
+                        ? siblings.map((s) => s.address)
+                        : [session.address],
+                  });
+                }}
                 title="Teardown worktree"
                 className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
                 style={{ color: "var(--action-fg)" }}
@@ -250,9 +284,16 @@ export const SessionCard = React.memo(function SessionCard({
 
           {isLive && (
             <button
-              onClick={() =>
-                attached ? closeTerminalDrawer() : setAttachedAddress(session.address)
-              }
+              onClick={() => {
+                if (attached) {
+                  closeTerminalDrawer();
+                } else {
+                  setSelectedCardKey(cardKey);
+                  setSelectedAddress(session.address);
+                  setAttachedAddress(session.address);
+                  requestTerminalFocus();
+                }
+              }}
               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-semibold transition-colors cursor-pointer ${
                 attached ? "jjdr-primary-btn" : "jjdr-pill"
               }`}

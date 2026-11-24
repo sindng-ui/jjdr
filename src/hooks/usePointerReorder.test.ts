@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reorderIds } from "./usePointerReorder";
+import { reorderIds, swapIds } from "./usePointerReorder";
 
 describe("reorderIds", () => {
   it("moves an item forward cleanly", () => {
@@ -25,5 +25,29 @@ describe("reorderIds", () => {
     expect(reorderIds(src, "b", "b")).toBe(src);
     expect(reorderIds(src, "x", "a")).toBe(src);
     expect(reorderIds(src, "a", "z")).toBe(src);
+  });
+});
+
+describe("swapIds", () => {
+  it("swaps two items 1:1 without shifting intermediate items (#11)", () => {
+    expect(swapIds(["a", "b", "c", "d"], "a", "d")).toEqual([
+      "d",
+      "b",
+      "c",
+      "a",
+    ]);
+    expect(swapIds(["a", "b", "c", "d"], "c", "b")).toEqual([
+      "a",
+      "c",
+      "b",
+      "d",
+    ]);
+  });
+
+  it("returns original array when ids match or are missing", () => {
+    const src = ["a", "b", "c"];
+    expect(swapIds(src, "b", "b")).toBe(src);
+    expect(swapIds(src, "x", "a")).toBe(src);
+    expect(swapIds(src, "a", "z")).toBe(src);
   });
 });

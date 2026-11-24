@@ -15,11 +15,31 @@ export function reorderIds(
   return next;
 }
 
+/**
+ * 1:1 positional swap: exchanges only `fromId` and `toId` without shifting other cards.
+ */
+export function swapIds(
+  ids: string[],
+  fromId: string,
+  toId: string
+): string[] {
+  if (fromId === toId) return ids;
+  const fromIdx = ids.indexOf(fromId);
+  const toIdx = ids.indexOf(toId);
+  if (fromIdx === -1 || toIdx === -1) return ids;
+  const next = [...ids];
+  const tmp = next[fromIdx];
+  next[fromIdx] = next[toIdx];
+  next[toIdx] = tmp;
+  return next;
+}
+
 interface UsePointerReorderOptions {
   ids: string[];
   containerRef: React.RefObject<HTMLElement | null>;
   onReorder: (nextIds: string[]) => void;
   disabled?: boolean;
+  mode?: "insert" | "swap";
 }
 
 const DRAG_THRESHOLD_PX = 6;
@@ -33,6 +53,7 @@ export function usePointerReorder({
   containerRef,
   onReorder,
   disabled = false,
+  mode = "insert",
 }: UsePointerReorderOptions) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -41,6 +62,8 @@ export function usePointerReorder({
   idsRef.current = ids;
   const onReorderRef = useRef(onReorder);
   onReorderRef.current = onReorder;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const suppressClickUntilRef = useRef<number>(0);
 
   const shouldSuppressClick = useCallback(
@@ -125,7 +148,10 @@ export function usePointerReorder({
           setDraggingId(null);
           setOverId(null);
           if (finalOver && finalOver !== id) {
-            const next = reorderIds(idsRef.current, id, finalOver);
+            const next =
+              modeRef.current === "swap"
+                ? swapIds(idsRef.current, id, finalOver)
+                : reorderIds(idsRef.current, id, finalOver);
             onReorderRef.current(next);
           }
         }

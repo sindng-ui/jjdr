@@ -42,8 +42,47 @@ function concatBytes(chunks: Uint8Array[]): Uint8Array {
   return out;
 }
 
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fallback below for restricted WebView2 focus states
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    ta.style.pointerEvents = "none";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function isReservedGlobalShortcut(ev: KeyboardEvent): boolean {
   const hasCtrl = ev.ctrlKey || ev.metaKey;
+  // Block Ctrl+Shift+Alt+Arrow (keyboard card grab/swap) across ALL phases
+  if (
+    hasCtrl &&
+    ev.shiftKey &&
+    ev.altKey &&
+    (ev.key === "ArrowUp" ||
+      ev.key === "ArrowDown" ||
+      ev.key === "ArrowLeft" ||
+      ev.key === "ArrowRight")
+  ) {
+    return true;
+  }
   // Block Ctrl+Tab / Ctrl+Shift+Tab and Alt+Enter across ALL key phases so they never leak into xterm
   if (hasCtrl && !ev.altKey && (ev.key === "Tab" || ev.code === "Tab")) {
     return true;
@@ -110,6 +149,7 @@ export function useXtermSession(
   attachedAddress: string | null
 ) {
   const themeId = useAppStore((s) => s.settings.theme);
+  const terminalFocusNonce = useUiStore((s) => s.terminalFocusNonce);
   const detachToEmptyDrawer = useUiStore((s) => s.detachToEmptyDrawer);
   const showToast = useUiStore((s) => s.showToast);
 
@@ -156,7 +196,9 @@ export function useXtermSession(
   const fitNow = useCallback(() => {
     const term = termRef.current;
     const fitAddon = fitAddonRef.current;
-    if (!term || !fitAddon) return;
+    const hostEl = containerRef.current;
+    if (!term || !fitAddon || !hostEl) return;
+    if (hostEl.clientWidth < 40 || hostEl.clientHeight < 40) return;
     try {
       fitAddon.fit();
       if (activeChannelRef.current !== null && term.cols > 0 && term.rows > 0) {
@@ -164,6 +206,15 @@ export function useXtermSession(
       }
     } catch {
       // Ignore transient fit while hidden
+    }
+  }, [containerRef]);
+
+  const focusNow = useCallback(() => {
+    const term = termRef.current;
+    if (!term || !activeAddressRef.current) return;
+    term.focus();
+    if (activeChannelRef.current !== null) {
+      void focusTerminal(activeChannelRef.current, true);
     }
   }, []);
 
@@ -182,6 +233,7 @@ export function useXtermSession(
       lineHeight: 1.25,
       fontFamily: '"JetBrains Mono", "Cascadia Code", Consolas, monospace',
       scrollback: 2000,
+      rightClickSelectsWord: false,
       theme: initialXtermTheme,
     });
     const fitAddon = new FitAddon();
@@ -196,7 +248,69 @@ export function useXtermSession(
       // Graceful fallback to canvas/DOM renderer
     }
 
-    term.attachCustomKeyEventHandler((ev) => !isReservedGlobalShortcut(ev));
+    const copyCurrentSelection = () => {
+      if (!term.hasSelection()) return false;
+      const text = term.getSelection();
+      if (!text) return false;
+      void copyTextToClipboard(text).then((ok) => {
+        if (ok) {
+          term.clearSelection();
+          showToast(`클립보드에 복사됨 (${text.length}자)`, "success", 1400);
+        } else {
+          showToast("클립보드 복사에 실패했습니다.", "error", 2000);
+        }
+        term.focus();
+      });
+      return true;
+    };
+
+    term.attachCustomKeyEventHandler((ev) => {
+      if (isReservedGlobalShortcut(ev)) return false;
+
+      if (ev.type === "keydown") {
+        const hasCtrl = ev.ctrlKey || ev.metaKey;
+        const k = ev.key.toLowerCase();
+
+        // Smart Ctrl+C: copy when text is selected; otherwise forward SIGINT (^C) to PTY
+        if (hasCtrl && !ev.altKey && !ev.shiftKey && (k === "c" || ev.code === "KeyC")) {
+          if (term.hasSelection()) {
+            ev.preventDefault();
+            copyCurrentSelection();
+            return false;
+          }
+        }
+        // Ctrl+Shift+C: explicit copy
+        if (hasCtrl && ev.shiftKey && !ev.altKey && (k === "c" || ev.code === "KeyC")) {
+          if (term.hasSelection()) {
+            ev.preventDefault();
+            copyCurrentSelection();
+            return false;
+          }
+        }
+        // Ctrl+Shift+V: explicit paste into PTY
+        if (hasCtrl && ev.shiftKey && !ev.altKey && (k === "v" || ev.code === "KeyV")) {
+          ev.preventDefault();
+          void navigator.clipboard
+            ?.readText()
+            .then((clip) => {
+              if (clip && activeChannelRef.current !== null) {
+                void writeTerminalInput(activeChannelRef.current, clip);
+              }
+            })
+            .catch(() => {});
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const onContextMenu = (ev: MouseEvent) => {
+      ev.preventDefault();
+      if (term.hasSelection()) {
+        copyCurrentSelection();
+      }
+    };
+    hostEl.addEventListener("contextmenu", onContextMenu);
 
     const dataSub = term.onData((data) => {
       if (activeChannelRef.current !== null) {
@@ -240,6 +354,7 @@ export function useXtermSession(
       writeQueueRef.current = [];
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
+      hostEl.removeEventListener("contextmenu", onContextMenu);
       hostEl.removeEventListener("focusin", onFocusIn);
       hostEl.removeEventListener("focusout", onFocusOut);
       dataSub.dispose();
@@ -252,7 +367,7 @@ export function useXtermSession(
       fitAddonRef.current = null;
       term.dispose();
     };
-  }, [containerRef, fitNow]);
+  }, [containerRef, fitNow, showToast]);
 
   // 2. Live theme sync without recreating XTerm
   useEffect(() => {
@@ -260,6 +375,13 @@ export function useXtermSession(
       termRef.current.options.theme = getThemePreset(themeId).xterm;
     }
   }, [themeId]);
+
+  // 2b. Explicit focus requests (e.g. Ctrl+Arrow card switch or Ctrl+N jump)
+  useEffect(() => {
+    if (terminalFocusNonce === 0 || !attachedAddress) return;
+    const raf = requestAnimationFrame(() => focusNow());
+    return () => cancelAnimationFrame(raf);
+  }, [terminalFocusNonce, attachedAddress, focusNow]);
 
   // 3. Switch attached stream smoothly without blank-screen flashing
   useEffect(() => {
@@ -344,6 +466,13 @@ export function useXtermSession(
 
           if (cancelled || gen !== attachGenRef.current) return;
 
+          // Ensure exact viewport cols/rows right before attaching so PTY never overflows bottom lines
+          try {
+            fitAddonRef.current?.fit();
+          } catch {
+            // ignore transient layout
+          }
+
           const res = await attachTerminal(
             attachedAddress,
             currentTerm.cols || 100,
@@ -358,6 +487,18 @@ export function useXtermSession(
 
           activeChannelRef.current = res.channel;
           setStatusText(`ch ${res.channel}`);
+
+          // Re-sync PTY size after headers/tabs settle and immediately hand keyboard focus to the prompt
+          requestAnimationFrame(() => {
+            if (cancelled || gen !== attachGenRef.current) return;
+            fitNow();
+            focusNow();
+          });
+          setTimeout(() => {
+            if (!cancelled && gen === attachGenRef.current) {
+              fitNow();
+            }
+          }, 140);
 
           if (earlyChunks.length > 0) {
             enqueueBytes(concatBytes(earlyChunks.splice(0)));
@@ -393,7 +534,7 @@ export function useXtermSession(
       if (unlistenData) unlistenData();
       if (unlistenClosed) unlistenClosed();
     };
-  }, [attachedAddress, detachToEmptyDrawer, enqueueBytes, showToast]);
+  }, [attachedAddress, detachToEmptyDrawer, enqueueBytes, fitNow, focusNow, showToast]);
 
-  return { statusText, fitNow };
+  return { statusText, fitNow, focusNow };
 }
