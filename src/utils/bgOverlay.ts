@@ -54,6 +54,8 @@ export function selectTopBgOverlayCandidate(
   const actionable = allSessions.filter(
     (s) =>
       s.terminal.state === "live" &&
+      s.terminal.status?.state !== "working" &&
+      !s.isStuck &&
       (s.bucket === "needs_you" || s.bucket === "ready")
   );
   if (actionable.length === 0) {

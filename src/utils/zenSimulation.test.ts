@@ -186,7 +186,7 @@ class ZenSimulator {
 }
 
 describe("Zen Mode multi-priority simulation suite", () => {
-  it("Scenario 1: strictly orders permission > error > stuck > ready and drains cleanly to All Clear", () => {
+  it("Scenario 1: strictly orders permission > error > ready, keeps long-working cards in running, and drains cleanly to All Clear", () => {
     const sim = new ZenSimulator();
     const terminals = [
       mkTerm({ address: "t-idle", cwd: "K:/repo/jjdr-wt-idle1", status: { state: "idle" }, turn: 0 }),
@@ -199,21 +199,19 @@ describe("Zen Mode multi-priority simulation suite", () => {
 
     const s1 = sim.step(terminals);
     expect(s1.activeCard?.branch).toBe("perm");
-    expect(s1.remainingCount).toBe(3);
+    expect(s1.remainingCount).toBe(2);
 
     const s2 = sim.stampCurrent(terminals);
     expect(s2.activeCard?.branch).toBe("err");
 
     const s3 = sim.stampCurrent(terminals);
-    expect(s3.activeCard?.branch).toBe("stuck");
+    expect(s3.activeCard?.branch).toBe("readyA");
 
     const s4 = sim.stampCurrent(terminals);
-    expect(s4.activeCard?.branch).toBe("readyA");
-
-    const s5 = sim.stampCurrent(terminals);
-    expect(s5.activeCard).toBeNull();
-    expect(s5.dash.byBucket.running.map((r) => r.branch)).toEqual(["run1"]);
-    expect(sim.clearedCount).toBe(4);
+    expect(s4.activeCard).toBeNull();
+    // Both normal working and long-running (>5m) working stay in `running`
+    expect(s4.dash.byBucket.running.map((r) => r.branch).sort()).toEqual(["run1", "stuck"]);
+    expect(sim.clearedCount).toBe(3);
   });
 
   it("Scenario 2: Sticky Lock prevents higher-priority background arrivals from interrupting active card", () => {
@@ -286,26 +284,26 @@ describe("Zen Mode multi-priority simulation suite", () => {
     const sim = new ZenSimulator();
     const a = mkTerm({ address: "t-a", cwd: "K:/repo/jjdr-wt-readyA", status: { state: "done" }, turn: 1, status_ms: NOW - 10_000 });
     const b = mkTerm({ address: "t-b", cwd: "K:/repo/jjdr-wt-readyB", status: { state: "done" }, turn: 1, status_ms: NOW - 20_000 });
-    const stuck = mkTerm({ address: "t-s", cwd: "K:/repo/jjdr-wt-stuck", status: { state: "working" }, status_ms: NOW - 8 * 60_000 });
+    const err = mkTerm({ address: "t-e", cwd: "K:/repo/jjdr-wt-err", status: { state: "error", msg: "API fail" }, status_ms: NOW - 8 * 60_000 });
 
-    // Order: stuck -> readyA -> readyB
-    expect(sim.step([a, b, stuck]).activeCard?.branch).toBe("stuck");
+    // Order: err -> readyA -> readyB
+    expect(sim.step([a, b, err]).activeCard?.branch).toBe("err");
 
-    // Skip 1: stuck -> readyA
-    expect(sim.manualSkip([a, b, stuck]).activeCard?.branch).toBe("readyA");
+    // Skip 1: err -> readyA
+    expect(sim.manualSkip([a, b, err]).activeCard?.branch).toBe("readyA");
 
     // New urgent permission card arrives while on readyA (Sticky Lock keeps readyA)
     const perm = mkTerm({ address: "t-p", cwd: "K:/repo/jjdr-wt-perm", status: { state: "blocked", kind: "permission" } });
-    expect(sim.step([a, b, stuck, perm]).activeCard?.branch).toBe("readyA");
+    expect(sim.step([a, b, err, perm]).activeCard?.branch).toBe("readyA");
 
     // Skip 2: readyA -> newly arrived perm (higher priority than readyB!)
-    expect(sim.manualSkip([a, b, stuck, perm]).activeCard?.branch).toBe("perm");
+    expect(sim.manualSkip([a, b, err, perm]).activeCard?.branch).toBe("perm");
 
     // Skip 3: perm -> readyB
-    expect(sim.manualSkip([a, b, stuck, perm]).activeCard?.branch).toBe("readyB");
+    expect(sim.manualSkip([a, b, err, perm]).activeCard?.branch).toBe("readyB");
 
     // Skip 4: full cycle wraps back cleanly (does not get stuck)
-    const wrapped = sim.manualSkip([a, b, stuck, perm]);
+    const wrapped = sim.manualSkip([a, b, err, perm]);
     expect(wrapped.activeCard?.branch).toBe("perm"); // top priority in fresh cycle
   });
 

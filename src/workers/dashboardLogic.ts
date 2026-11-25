@@ -163,8 +163,10 @@ export function classifyBucket(
   if (st === "working") {
     const mins = Math.floor(elapsedMs / 60_000);
     const isStuck = stuckMinutesThreshold > 0 && mins >= stuckMinutesThreshold;
+    // Keep actively working sessions in `running` so long-running AI tasks never intrude
+    // into Zen Mode or trigger repeated background notifications; `isStuck` acts as a soft warning hint only.
     return {
-      bucket: isStuck ? "needs_you" : "running",
+      bucket: "running",
       isStuck,
       stuckMinutes: mins,
       unackedDone: false,

@@ -60,7 +60,8 @@ describe("dashboardLogic", () => {
 
     expect(classifyBucket(blocked, 0, 5, now).bucket).toBe("needs_you");
     expect(classifyBucket(stuck, 0, 5, now).isStuck).toBe(true);
-    expect(classifyBucket(stuck, 0, 5, now).bucket).toBe("needs_you");
+    // Long-running working sessions stay in `running` so they don't hijack Zen Mode or notifications
+    expect(classifyBucket(stuck, 0, 5, now).bucket).toBe("running");
     expect(classifyBucket(ready, 1, 5, now).bucket).toBe("ready");
     // Once acknowledged at turn 2, even persistent status="done" transitions cleanly to idle
     expect(classifyBucket(ready, 2, 5, now).bucket).toBe("idle");
