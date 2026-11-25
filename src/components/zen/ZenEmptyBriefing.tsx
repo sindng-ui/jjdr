@@ -2,6 +2,8 @@ import React from "react";
 import { Radar, Terminal } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
 import { formatElapsed } from "../../utils/format";
+import { useAppStore } from "../../store/useAppStore";
+import { normalizePath } from "../../workers/dashboardLogic";
 
 interface ZenEmptyBriefingProps {
   runningCards: EnrichedSession[];
@@ -22,6 +24,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   onPeekSession,
   onOpenRadar,
 }: ZenEmptyBriefingProps) {
+  const worktreeMeta = useAppStore((s) => s.worktreeMeta);
   const runningCount = runningCards.length;
   const hasRunning = runningCount > 0;
 
@@ -205,26 +208,65 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                   typeof s.terminal.status?.progress === "number"
                     ? Math.max(4, Math.min(100, s.terminal.status.progress))
                     : null;
+                const cardMeta = worktreeMeta[normalizePath(s.worktreePath)];
+                const cardDisplayName = cardMeta?.display_name?.trim() || "";
+                const branchText = s.branch || "(detached)";
                 return (
                   <button
                     key={`${s.projectId ?? "ext"}::${s.worktreePath}::${s.address}`}
                     type="button"
                     onClick={() => onPeekSession(s)}
-                    className="jjdr-card-lift text-left rounded-2xl p-3 space-y-2 cursor-pointer"
+                    title={
+                      cardDisplayName
+                        ? `${cardDisplayName} — ${s.projectName} / ${branchText}`
+                        : `${s.projectName} / ${branchText}`
+                    }
+                    className="jjdr-card-lift text-left rounded-2xl p-3 space-y-1.5 cursor-pointer"
                     style={{
                       background: "var(--run-bg)",
                       border: "1px solid var(--run-border)",
                     }}
                   >
-                    <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-start justify-between gap-2 text-xs">
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        {cardDisplayName ? (
+                          <>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: s.projectColor }}
+                              />
+                              <span
+                                className="font-bold truncate"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {cardDisplayName}
+                              </span>
+                            </div>
+                            <div
+                              className="font-mono-code text-[11px] truncate pl-3.5"
+                              style={{ color: "var(--text-secondary)" }}
+                            >
+                              {s.projectName} / {branchText}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: s.projectColor }}
+                            />
+                            <span
+                              className="font-mono-code font-bold truncate"
+                              style={{ color: "var(--text-primary)" }}
+                            >
+                              {s.projectName} / {branchText}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                       <span
-                        className="font-mono-code font-bold truncate"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {s.projectName} / {s.branch}
-                      </span>
-                      <span
-                        className="font-mono-code text-[11px] shrink-0"
+                        className="font-mono-code text-[11px] shrink-0 pt-0.5"
                         style={{ color: "var(--run-fg)" }}
                       >
                         {progress !== null ? `${progress}%` : formatElapsed(s.elapsedMs)}

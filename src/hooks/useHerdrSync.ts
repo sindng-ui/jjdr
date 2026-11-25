@@ -432,7 +432,8 @@ export function useHerdrSync() {
       pendingCount,
       bgOverlayPosition,
       theme,
-      false
+      false,
+      worktreeMeta
     );
 
     if (dismissedOverlayStampRef.current === payload.stamp) {
@@ -448,6 +449,7 @@ export function useHerdrSync() {
     void showBgOverlay(payload, false).catch(() => {});
   }, [
     allSessions,
+    worktreeMeta,
     bgOverlayEnabled,
     bgOverlayPosition,
     theme,

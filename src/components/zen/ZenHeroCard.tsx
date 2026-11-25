@@ -251,6 +251,19 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
             >
               {displayName || branchText}
             </h2>
+            {displayName && (
+              <span
+                className="text-[11px] font-mono-code px-2 py-0.5 rounded-full truncate max-w-[180px]"
+                style={{
+                  background: "var(--pill-bg)",
+                  border: "1px solid var(--pill-border)",
+                  color: "var(--text-secondary)",
+                }}
+                title={`worktree branch: ${branchText}`}
+              >
+                {branchText}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-2 flex-wrap text-xs">

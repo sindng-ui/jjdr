@@ -3,7 +3,9 @@ import type {
   BgOverlayPosition,
   EnrichedSession,
   ThemeId,
+  WorktreeCardMeta,
 } from "../types/domain";
+import { normalizePath } from "../workers/dashboardLogic";
 import { cardKeyForSession } from "./worktreeSessions";
 
 export interface BgOverlayPositionPreset {
@@ -136,12 +138,18 @@ export function buildBgOverlayPayload(
   pendingCount: number,
   position: BgOverlayPosition,
   theme: ThemeId,
-  isPreview = false
+  isPreview = false,
+  worktreeMeta?: Record<string, WorktreeCardMeta>
 ): BgOverlayPayload {
   const cardKey = cardKeyForSession(session);
   const message = summarizeSessionMessage(session).slice(0, 180);
   const { badge, isApproval } = resolveBadgeLabel(session);
-  const stamp = `${cardKey}|${session.address}|${session.bucket}|${badge}|${session.terminal.turn}|${message.slice(0, 64)}`;
+  const displayName =
+    worktreeMeta?.[normalizePath(session.worktreePath)]?.display_name?.trim() ||
+    "";
+  const branchText = session.branch || session.terminal.name || session.address;
+  const titleLabel = displayName ? `${displayName} (${branchText})` : branchText;
+  const stamp = `${cardKey}|${session.address}|${session.bucket}|${badge}|${session.terminal.turn}|${titleLabel}|${message.slice(0, 64)}`;
 
   return {
     card_key: cardKey,
@@ -150,7 +158,7 @@ export function buildBgOverlayPayload(
     badge,
     project_name: session.projectName,
     project_color: session.projectColor,
-    branch: session.branch || session.terminal.name || session.address,
+    branch: titleLabel,
     agent_label: session.agentLabel || "AI",
     message,
     pending_count: Math.max(1, pendingCount),
@@ -165,11 +173,19 @@ export function buildBgOverlayPayload(
 export function buildPreviewBgOverlayPayload(
   allSessions: EnrichedSession[],
   position: BgOverlayPosition,
-  theme: ThemeId
+  theme: ThemeId,
+  worktreeMeta?: Record<string, WorktreeCardMeta>
 ): BgOverlayPayload {
   const { top, pendingCount } = selectTopBgOverlayCandidate(allSessions);
   if (top) {
-    return buildBgOverlayPayload(top, pendingCount, position, theme, true);
+    return buildBgOverlayPayload(
+      top,
+      pendingCount,
+      position,
+      theme,
+      true,
+      worktreeMeta
+    );
   }
 
   return {

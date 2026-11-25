@@ -86,7 +86,7 @@
 | `src/components/zen/ZenModeView.tsx` | Zen(놈팽이) 모드 (`Ctrl+3`) 메인 스테이지: Sticky Lock, 자동 완료 감지, 수동 도장/레버/가챠 넘김, 우측 터미널 자동 Attach & 포커스, 스타일 2종 전환 | `ZenModeView` |
 | `src/components/zen/ZenHeroCard.tsx` | Zen 모드 단일 히어로 카드 (3D 홀로그램 틸트/광택 `rAF` 0-rerender, 결재 도장 쾅 오버레이, 덱 실루엣, AI 요약, Diff/프리셋/원클릭 CTA) | `ZenHeroCard` |
 | `src/components/zen/ZenTactileControl.tsx` | Zen 모드 우측 물리 컨트롤: 아케이드 빨간 볼 레버(드래그 당김/스프링 복귀) 및 가챠 로터리 다이얼(180° 회전) | `ZenTactileControl` |
-| `src/components/zen/ZenEmptyBriefing.tsx` | Zen 모드 All Clear 휴식 브리핑 GUI (Zero-Blur SVG 궤도/체크 비주얼, 진행 중 미니 바 엿보기, Idle 현황 및 오늘 클리어 통계) | `ZenEmptyBriefing` |
+| `src/components/zen/ZenEmptyBriefing.tsx` | Zen 모드 All Clear 휴식 브리핑 GUI (Zero-Blur SVG 궤도/체크 비주얼, 진행 중 미니 바 엿보기 — 카드명(`worktreeMeta.display_name`)·프로젝트명·워크트리 브랜치 동시 표기, Idle 현황 및 오늘 클리어 통계) | `ZenEmptyBriefing` |
 | `src/components/attention/SessionCard.tsx` | Queue 뷰 전용 Worktree 단위 상태 카드 (`ROOT` 배지, 커스텀 이름, 다중 탭 `+N` 배지, `permission` 전용 '승인' 버튼, 다중 세션 안전 Teardown) | `SessionCard` |
 | `src/components/attention/AttentionBoard.tsx` | 4-Tier 우선순위 할 일 인박스 (`Ctrl+2`, Worktree 카드 단위 중복 제거·`cardKey` 기반 선택/Attach 연동) | `AttentionBoard` |
 | `src/components/terminal/TerminalSessionTabs.tsx` | 현재 Worktree 다중 세션(AI + Shell) 탭 바 + 원클릭 `+ Shell` / `+ AI` / 개별 종료(`×`) UI | `TerminalSessionTabs` |

@@ -87,8 +87,13 @@ export const SettingsModal = React.memo(function SettingsModal() {
 
   const handlePreviewBgOverlay = () => {
     const pos = normalizeBgOverlayPosition(draft.bg_overlay_position);
-    const allSessions = useAppStore.getState().computed.allSessions;
-    const payload = buildPreviewBgOverlayPayload(allSessions, pos, draft.theme);
+    const { computed, worktreeMeta } = useAppStore.getState();
+    const payload = buildPreviewBgOverlayPayload(
+      computed.allSessions,
+      pos,
+      draft.theme,
+      worktreeMeta
+    );
     void showBgOverlay(payload, true).catch(() => {});
   };
 
