@@ -14,6 +14,7 @@ import {
   listenOverlayDismissed,
   listenOverlayOpenCard,
   listenStateBatch,
+  listenWorktreeTeardownResult,
   loadPersistedBundle,
   saveUiState,
   showBgOverlay,
@@ -22,7 +23,7 @@ import {
 import { useAppStore } from "../store/useAppStore";
 import { useUiStore } from "../store/useUiStore";
 import type { DashboardWorkerResult, StateBatchPayload } from "../types/domain";
-import type { DashboardComputeInput } from "../workers/dashboardLogic";
+import { normalizePath, type DashboardComputeInput } from "../workers/dashboardLogic";
 import { getWorktreeLiveSessions } from "../utils/worktreeSessions";
 import {
   buildBgOverlayPayload,
@@ -355,6 +356,25 @@ export function useHerdrSync() {
           ui.setSelectedAddress(address);
           ui.setAttachedAddress(address);
           ui.requestTerminalFocus();
+        }
+      }),
+      listenWorktreeTeardownResult((ev) => {
+        const normWt = normalizePath(ev.worktree_path);
+        useAppStore
+          .getState()
+          .finishWorktreeRemoving(ev.project_id, normWt, ev.worktrees ?? null);
+        if (ev.ok) {
+          useUiStore
+            .getState()
+            .showToast(`Worktree '${ev.branch_name}' 삭제 완료`, "success");
+        } else {
+          useUiStore
+            .getState()
+            .showToast(
+              `Worktree '${ev.branch_name}' 삭제 실패: ${ev.error ?? "알 수 없는 오류"}`,
+              "error",
+              6000
+            );
         }
       }),
     ])

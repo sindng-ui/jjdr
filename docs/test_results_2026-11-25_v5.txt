@@ -1,0 +1,14 @@
+jjdr Non-Blocking Background Worktree Teardown Verification (2026-11-25)
+========================================================================
+Changes Verified:
+1. Instant 0ms modal dismiss & optimistic card removal (`TeardownModal.tsx`, `useAppStore.ts`)
+2. `removingWorktreePaths` guard prevents 15s periodic Git refresh from resurrecting deleting cards
+3. True background Rust teardown (`tokio::spawn` in `commands/worktrees.rs`) + parallel `terminal.kill`/`terminal.rm`
+4. Windows O(1) Rename-then-Prune fast path (`git/worktree.rs`): renames directory to sibling `.name.jjdr-trash-<nonce>` -> `git worktree prune` + branch delete finishes in <0.5s -> detached background wipe (`tokio::fs::remove_dir_all` + Windows `rd /s /q` fallback)
+5. Completion/error event `jjdr:worktree-teardown-result` handled in `useHerdrSync.ts` with toast & list sync
+
+Results:
+- `npm run test`: PASS (12 test files, 44 tests passed, 0 failed, 993ms)
+- `npm run build` (`tsc && vite build`): PASS (0 errors, 3.09s)
+- `cargo test --manifest-path src-tauri/Cargo.toml --offline --lib`: PASS (19 passed, 0 failed, 0.01s)
+- `cargo check --manifest-path src-tauri/Cargo.toml --offline`: PASS (0 errors, 0 code warnings)

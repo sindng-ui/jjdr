@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use tokio::task::JoinSet;
 
 use crate::commands::terminals::{call_terminal_run_safe, normalize_agent_argv};
@@ -166,8 +166,19 @@ pub async fn create_worktree_and_launch(
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct WorktreeTeardownResultEvent {
+    pub project_id: String,
+    pub worktree_path: String,
+    pub branch_name: String,
+    pub ok: bool,
+    pub error: Option<String>,
+    pub worktrees: Option<Vec<WorktreeInfo>>,
+}
+
 #[tauri::command]
 pub async fn teardown_worktree(
+    app: AppHandle,
     state: State<'_, AppState>,
     input: RemoveWorktreeInput,
 ) -> Result<(), String> {
@@ -177,55 +188,106 @@ pub async fn teardown_worktree(
         .find(|p| p.id == input.project_id)
         .ok_or_else(|| "Project not found".to_string())?;
 
-    // Gather all terminals attached to this worktree path (including ones opened after modal appeared)
-    let norm_wt = normalize_path(&input.worktree_path);
-    let mut all_addrs: HashSet<String> = input.terminal_addresses.iter().cloned().collect();
-    {
-        let term_map = state.hub.terminals.read().await;
-        for t in term_map.values() {
-            let term_cwd = normalize_path(&t.cwd);
-            let label_wt = t
-                .labels
-                .get("jjdr.worktree")
-                .map(|s| normalize_path(s))
-                .unwrap_or_default();
-            if term_cwd == norm_wt
-                || term_cwd.starts_with(&format!("{}/", norm_wt))
-                || label_wt == norm_wt
-            {
-                all_addrs.insert(t.address.clone());
+    let herdr = state.herdr.clone();
+    let hub = state.hub.clone();
+    let project_id = input.project_id.clone();
+    let repo_path = proj.repo_path.clone();
+    let default_branch = proj.default_branch.clone();
+    let worktree_path = input.worktree_path.clone();
+    let branch_name = input.branch_name.clone();
+    let branch_label = branch_name.clone().unwrap_or_else(|| worktree_path.clone());
+    let force = input.force;
+    let delete_branch = input.delete_branch;
+    let initial_addrs = input.terminal_addresses;
+
+    // Run full teardown completely in the background so UI modal closes immediately
+    // and the user can continue working without waiting on OS file locks / large deletes.
+    tokio::spawn(async move {
+        let norm_wt = normalize_path(&worktree_path);
+        let mut all_addrs: HashSet<String> = initial_addrs.into_iter().collect();
+        {
+            let term_map = hub.terminals.read().await;
+            for t in term_map.values() {
+                let term_cwd = normalize_path(&t.cwd);
+                let label_wt = t
+                    .labels
+                    .get("jjdr.worktree")
+                    .map(|s| normalize_path(s))
+                    .unwrap_or_default();
+                if term_cwd == norm_wt
+                    || term_cwd.starts_with(&format!("{}/", norm_wt))
+                    || label_wt == norm_wt
+                {
+                    all_addrs.insert(t.address.clone());
+                }
             }
         }
-    }
 
-    let had_sessions = !all_addrs.is_empty();
-    for addr in &all_addrs {
-        let _ = state
-            .herdr
-            .call("terminal.kill", json!({ "terminal": addr }))
-            .await;
-        let _ = state
-            .herdr
-            .call("terminal.rm", json!({ "terminal": addr }))
-            .await;
-    }
+        let had_sessions = !all_addrs.is_empty();
+        if had_sessions {
+            let mut kill_set = JoinSet::new();
+            for addr in all_addrs {
+                let client = herdr.clone();
+                kill_set.spawn(async move {
+                    let _ = client
+                        .call("terminal.kill", json!({ "terminal": addr }))
+                        .await;
+                    let _ = client
+                        .call("terminal.rm", json!({ "terminal": addr }))
+                        .await;
+                });
+            }
+            while kill_set.join_next().await.is_some() {}
+            hub.sync_terminals_now(&herdr).await;
+            // Give Windows processes (Node.js / Gemini CLI / ConPTY) a brief beat to release CWD handles
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
 
-    // Give Windows processes (e.g. Node.js / Gemini CLI / ConPTY) a moment to release CWD handles
-    if had_sessions {
-        tokio::time::sleep(Duration::from_millis(350)).await;
-    }
+        let res = remove_worktree(
+            &repo_path,
+            &worktree_path,
+            branch_name.as_deref(),
+            force,
+            delete_branch,
+        )
+        .await;
 
-    let res = remove_worktree(
-        &proj.repo_path,
-        &input.worktree_path,
-        input.branch_name.as_deref(),
-        input.force,
-        input.delete_branch,
-    )
-    .await;
+        hub.sync_terminals_now(&herdr).await;
 
-    state.hub.sync_terminals_now(&state.herdr).await;
-    res
+        let latest = list_worktrees_with_status(&repo_path, Some(&default_branch))
+            .await
+            .ok();
+
+        // If a transient Windows error was returned but the worktree is already gone, treat as success
+        let (ok, error) = match res {
+            Ok(()) => (true, None),
+            Err(err) => {
+                let still_present = latest.as_ref().map_or(true, |list| {
+                    list.iter().any(|w| normalize_path(&w.path) == norm_wt)
+                });
+                if !still_present {
+                    (true, None)
+                } else {
+                    (false, Some(err))
+                }
+            }
+        };
+
+        let _ = app.emit_to(
+            "main",
+            "jjdr:worktree-teardown-result",
+            WorktreeTeardownResultEvent {
+                project_id,
+                worktree_path,
+                branch_name: branch_label,
+                ok,
+                error,
+                worktrees: latest,
+            },
+        );
+    });
+
+    Ok(())
 }
 
 #[tauri::command]

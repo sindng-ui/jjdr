@@ -418,8 +418,26 @@ export async function listenOverlayDismissed(
   return listen<string>("jjdr:overlay-dismissed", (e) => cb(e.payload));
 }
 
+export interface WorktreeTeardownResultEvent {
+  project_id: string;
+  worktree_path: string;
+  branch_name: string;
+  ok: boolean;
+  error?: string | null;
+  worktrees?: WorktreeInfo[] | null;
+}
+
 export async function listenMainBgChanged(
   cb: (isBackground: boolean) => void
 ): Promise<UnlistenFn> {
   return listen<boolean>("jjdr:main-bg-changed", (e) => cb(e.payload));
+}
+
+export async function listenWorktreeTeardownResult(
+  cb: (payload: WorktreeTeardownResultEvent) => void
+): Promise<UnlistenFn> {
+  return listen<WorktreeTeardownResultEvent>(
+    "jjdr:worktree-teardown-result",
+    (e) => cb(e.payload)
+  );
 }

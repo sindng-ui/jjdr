@@ -205,8 +205,50 @@ async fn is_worktree_registered(root: &Path, worktree_path: &str) -> bool {
     }
 }
 
-/// Remove a worktree resiliently on Windows (retries with exponential backoff when
-/// antivirus / Node.js / Gemini CLI child processes hold CWD handles briefly after kill).
+/// Build a sibling temporary trash path on the same filesystem so `rename` is O(1) even for 100k+ files.
+pub fn build_trash_dir_path(worktree_path: &Path, nonce: u128) -> PathBuf {
+    let parent = worktree_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let name = worktree_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("worktree");
+    parent.join(format!(".{}.jjdr-trash-{}", name, nonce))
+}
+
+/// Remove a detached trash directory quietly in the background (with retry on transient Windows locks).
+async fn remove_dir_in_background(dir: PathBuf) {
+    let retry_delays_ms = [400u64, 1000, 2000, 4000, 8000];
+    for delay_ms in retry_delays_ms {
+        if !dir.exists() {
+            return;
+        }
+        if tokio::fs::remove_dir_all(&dir).await.is_ok() || !dir.exists() {
+            return;
+        }
+        #[cfg(windows)]
+        {
+            // Fallback to native Windows `rd /s /q` which handles long paths / read-only attributes reliably
+            let mut cmd = tokio::process::Command::new("cmd");
+            cmd.args(["/C", "rd", "/s", "/q"])
+                .arg(&dir)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(0x08000000); // CREATE_NO_WINDOW
+            let _ = cmd.status().await;
+            if !dir.exists() {
+                return;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+}
+
+/// Remove a worktree resiliently and rapidly on Windows:
+/// 1) Fast path: O(1) rename the directory to a sibling trash path -> `git worktree prune` + branch delete
+///    finishes in <0.5s, then physically deletes the renamed folder in a detached background task.
+/// 2) Fallback path: if an active OS handle blocks rename, retry `git worktree remove` with backoff.
 pub async fn remove_worktree(
     repo_path: &str,
     worktree_path: &str,
@@ -225,6 +267,35 @@ pub async fn remove_worktree(
                         .into(),
                 );
             }
+        }
+    }
+
+    // Fast path: O(1) same-volume rename -> immediate git prune -> async physical folder wipe
+    if wt.exists() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let trash_dir = build_trash_dir_path(&wt, nonce);
+
+        // Give Windows handles a tiny retry window (2 quick attempts) for O(1) rename
+        let mut renamed = tokio::fs::rename(&wt, &trash_dir).await.is_ok();
+        if !renamed {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            renamed = tokio::fs::rename(&wt, &trash_dir).await.is_ok();
+        }
+
+        if renamed {
+            let _ = run_git(&root, &["worktree", "prune"]).await;
+            if delete_branch {
+                if let Some(b) = branch_name.filter(|s| !s.trim().is_empty()) {
+                    let flag = if force { "-D" } else { "-d" };
+                    let _ = run_git(&root, &["branch", flag, b]).await;
+                }
+            }
+            // Physically wipe the detached trash folder completely in the background
+            tokio::spawn(remove_dir_in_background(trash_dir));
+            return Ok(());
         }
     }
 
@@ -374,5 +445,12 @@ detached
         compute_merge_overlaps(&mut wts);
         assert_eq!(wts[0].overlap_files, vec!["src/App.tsx"]);
         assert_eq!(wts[1].overlap_files, vec!["src/App.tsx"]);
+    }
+
+    #[test]
+    fn builds_sibling_trash_dir_on_same_parent() {
+        let wt = Path::new("K:/repo/app-wt-auth");
+        let trash = build_trash_dir_path(wt, 12345);
+        assert_eq!(trash, PathBuf::from("K:/repo/.app-wt-auth.jjdr-trash-12345"));
     }
 }

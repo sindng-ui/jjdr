@@ -19,6 +19,7 @@ import {
   normalizeThemeId,
   readStoredTheme,
 } from "../utils/themes";
+import { normalizePath } from "../workers/dashboardLogic";
 
 const INITIAL_THEME = readStoredTheme();
 applyThemeToDom(INITIAL_THEME);
@@ -66,6 +67,7 @@ interface AppStoreState {
   lastAgentByWorktree: Record<string, string[]>;
   worktreeMeta: Record<string, WorktreeCardMeta>;
   worktreeOrderByProject: Record<string, string[]>;
+  removingWorktreePaths: Record<string, true>;
   computed: DashboardWorkerResult;
   hydrated: boolean;
   seq: number;
@@ -75,6 +77,12 @@ interface AppStoreState {
   setProjects: (projects: ProjectConfig[]) => void;
   setWorktreesByProject: (map: Record<string, WorktreeInfo[]>) => void;
   setProjectWorktrees: (projectId: string, list: WorktreeInfo[]) => void;
+  markWorktreeRemoving: (projectId: string, normWorktreePath: string) => void;
+  finishWorktreeRemoving: (
+    projectId: string,
+    normWorktreePath: string,
+    latestWorktrees?: WorktreeInfo[] | null
+  ) => void;
   setTemplates: (templates: TemplateInfo[]) => void;
   setSettings: (settings: AppSettings) => void;
   setHydratedData: (data: {
@@ -119,6 +127,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   lastAgentByWorktree: {},
   worktreeMeta: {},
   worktreeOrderByProject: {},
+  removingWorktreePaths: {},
   computed: EMPTY_COMPUTED,
   hydrated: false,
   seq: 0,
@@ -151,11 +160,64 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   setHealth: (health) => set({ health }),
   setProjects: (projects) => set({ projects }),
-  setWorktreesByProject: (worktreesByProject) => set({ worktreesByProject }),
+  setWorktreesByProject: (worktreesByProject) =>
+    set((state) => {
+      const removing = state.removingWorktreePaths;
+      if (Object.keys(removing).length === 0) {
+        return { worktreesByProject };
+      }
+      const filtered: Record<string, WorktreeInfo[]> = {};
+      for (const [pid, list] of Object.entries(worktreesByProject)) {
+        filtered[pid] = list.filter((w) => !removing[normalizePath(w.path)]);
+      }
+      return { worktreesByProject: filtered };
+    }),
   setProjectWorktrees: (projectId, list) =>
-    set((state) => ({
-      worktreesByProject: { ...state.worktreesByProject, [projectId]: list },
-    })),
+    set((state) => {
+      const removing = state.removingWorktreePaths;
+      const nextList =
+        Object.keys(removing).length === 0
+          ? list
+          : list.filter((w) => !removing[normalizePath(w.path)]);
+      return {
+        worktreesByProject: { ...state.worktreesByProject, [projectId]: nextList },
+      };
+    }),
+  markWorktreeRemoving: (projectId, normWorktreePath) =>
+    set((state) => {
+      const curList = state.worktreesByProject[projectId] ?? [];
+      const nextList = curList.filter(
+        (w) => normalizePath(w.path) !== normWorktreePath
+      );
+      return {
+        removingWorktreePaths: {
+          ...state.removingWorktreePaths,
+          [normWorktreePath]: true,
+        },
+        worktreesByProject: {
+          ...state.worktreesByProject,
+          [projectId]: nextList,
+        },
+      };
+    }),
+  finishWorktreeRemoving: (projectId, normWorktreePath, latestWorktrees) =>
+    set((state) => {
+      const nextRemoving = { ...state.removingWorktreePaths };
+      delete nextRemoving[normWorktreePath];
+      if (!latestWorktrees) {
+        return { removingWorktreePaths: nextRemoving };
+      }
+      const filtered = latestWorktrees.filter(
+        (w) => !nextRemoving[normalizePath(w.path)]
+      );
+      return {
+        removingWorktreePaths: nextRemoving,
+        worktreesByProject: {
+          ...state.worktreesByProject,
+          [projectId]: filtered,
+        },
+      };
+    }),
   setTemplates: (templates) => set({ templates }),
   setSettings: (settings) => {
     const normalized: AppSettings = {

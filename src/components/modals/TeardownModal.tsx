@@ -17,65 +17,54 @@ export const TeardownModal = React.memo(function TeardownModal() {
 
   const [deleteBranch, setDeleteBranch] = useState(true);
   const [force, setForce] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (target) {
       setDeleteBranch(target.isMerged);
       setForce(false);
-      setError(null);
     }
   }, [target]);
 
   if (!target) return null;
 
-  const handleConfirm = async () => {
-    setRunning(true);
-    setError(null);
-    try {
-      if (
-        attachedAddress &&
-        target.terminalAddresses.includes(attachedAddress)
-      ) {
-        setAttachedAddress(null);
-      }
-      await teardownWorktree({
-        project_id: target.projectId,
-        worktree_path: target.worktreePath,
-        branch_name: target.branch,
-        force,
-        delete_branch: deleteBranch,
-        terminal_addresses: target.terminalAddresses,
-      });
-      const updated = await listProjectWorktrees(target.projectId).catch(
-        () => []
-      );
-      useAppStore.getState().setProjectWorktrees(target.projectId, updated);
-      showToast(`Cleaned up worktree ${target.branch}`, "success");
-      setTarget(null);
-    } catch (err) {
-      // On slower Windows PCs (antivirus/Node.js locks), git may report a transient error even after removing the worktree.
-      // Re-query the actual worktree list and treat it as success if the worktree is already gone.
-      const latest = await listProjectWorktrees(target.projectId).catch(
-        () => null
-      );
-      if (latest) {
-        useAppStore.getState().setProjectWorktrees(target.projectId, latest);
-        const normTarget = normalizePath(target.worktreePath);
-        const stillPresent = latest.some(
-          (w) => normalizePath(w.path) === normTarget
-        );
-        if (!stillPresent) {
-          showToast(`Cleaned up worktree ${target.branch}`, "success");
-          setTarget(null);
-          return;
-        }
-      }
-      setError(String(err));
-    } finally {
-      setRunning(false);
+  const handleConfirm = () => {
+    const snap = target;
+    const normWt = normalizePath(snap.worktreePath);
+
+    // 1. Detach right terminal drawer & clear selection if it belonged to the deleted worktree
+    if (
+      attachedAddress &&
+      snap.terminalAddresses.includes(attachedAddress)
+    ) {
+      setAttachedAddress(null);
     }
+    const curSelected = useUiStore.getState().selectedAddress;
+    if (curSelected && snap.terminalAddresses.includes(curSelected)) {
+      useUiStore.getState().setSelectedAddress(null);
+    }
+
+    // 2. Optimistically hide the worktree card & close modal IMMEDIATELY (0ms UI block)
+    useAppStore.getState().markWorktreeRemoving(snap.projectId, normWt);
+    setTarget(null);
+    showToast(`'${snap.branch}' 백그라운드에서 삭제 중...`, "info", 2800);
+
+    // 3. Dispatch background Rust teardown (result arrives via `jjdr:worktree-teardown-result`)
+    void teardownWorktree({
+      project_id: snap.projectId,
+      worktree_path: snap.worktreePath,
+      branch_name: snap.branch,
+      force,
+      delete_branch: deleteBranch,
+      terminal_addresses: snap.terminalAddresses,
+    }).catch(async (err) => {
+      const latest = await listProjectWorktrees(snap.projectId).catch(() => null);
+      useAppStore
+        .getState()
+        .finishWorktreeRemoving(snap.projectId, normWt, latest);
+      useUiStore
+        .getState()
+        .showToast(`Worktree 삭제 시작 실패 (${snap.branch}): ${String(err)}`, "error", 6000);
+    });
   };
 
   return (
@@ -140,19 +129,6 @@ export const TeardownModal = React.memo(function TeardownModal() {
             </div>
           )}
 
-          {error && (
-            <div
-              className="p-3 rounded-2xl"
-              style={{
-                background: "var(--action-soft)",
-                border: "1px solid var(--action-border)",
-                color: "var(--action-fg)",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
           <label
             className="flex items-center gap-2 cursor-pointer"
             style={{ color: "var(--text-secondary)" }}
@@ -196,12 +172,12 @@ export const TeardownModal = React.memo(function TeardownModal() {
             Cancel
           </button>
           <button
-            onClick={() => void handleConfirm()}
-            disabled={running || (target.dirtyCount > 0 && !force)}
+            onClick={handleConfirm}
+            disabled={target.dirtyCount > 0 && !force}
             className="px-4 py-1.5 rounded-full text-xs font-semibold disabled:opacity-40 text-white cursor-pointer"
             style={{ background: "var(--action-fg)" }}
           >
-            {running ? "Removing..." : "Teardown Now"}
+            Teardown Now
           </button>
         </div>
       </div>
