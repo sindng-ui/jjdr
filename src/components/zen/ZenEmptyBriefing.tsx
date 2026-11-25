@@ -32,6 +32,7 @@ interface ZenEmptyBriefingProps {
   projectSummaries: ZenDispatchProjectSummary[];
   onPeekSession: (session: EnrichedSession) => void;
   onStartDispatch: (projectId?: string | null) => void;
+  onOpenRecap: () => void;
   onOpenRadar: () => void;
 }
 
@@ -47,6 +48,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   projectSummaries,
   onPeekSession,
   onStartDispatch,
+  onOpenRecap,
   onOpenRadar,
 }: ZenEmptyBriefingProps) {
   const worktreeMeta = useAppStore((s) => s.worktreeMeta);
@@ -240,15 +242,18 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
             </div>
           </div>
 
-          <div
-            className="rounded-2xl py-3 px-4"
+          <button
+            type="button"
+            onClick={onOpenRecap}
+            title="View Daily Work Recap & copy Standup Markdown"
+            className="jjdr-card-lift rounded-2xl py-3 px-4 cursor-pointer text-center"
             style={{
               background: "var(--input-bg)",
               border: "1px solid var(--divider)",
             }}
           >
             <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              Cleared Today
+              Cleared Today · Recap
             </div>
             <div
               className="mt-1 text-lg font-black font-mono-code tabular-nums"
@@ -256,7 +261,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
             >
               {clearedToday}
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Live Running Mini Briefing Cards (click to peek right terminal) */}

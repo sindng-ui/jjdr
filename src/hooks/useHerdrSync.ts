@@ -36,6 +36,8 @@ export function useHerdrSync() {
   const reqIdRef = useRef(0);
   const notifiedBlockedRef = useRef<Set<string>>(new Set());
   const rehydratedAttachRef = useRef(false);
+  const worktreesLoadedRef = useRef(false);
+  const startupZenRoutedRef = useRef(false);
   const dismissedOverlayStampRef = useRef<string | null>(null);
   const lastOverlaySignatureRef = useRef<string | null>(null);
   const isMainInBackgroundRef = useRef<boolean>(false);
@@ -52,7 +54,25 @@ export function useHerdrSync() {
     );
     worker.onmessage = (e: MessageEvent<{ id: number; result: DashboardWorkerResult }>) => {
       if (e.data.id !== reqIdRef.current) return;
-      useAppStore.getState().setComputed(e.data.result);
+      const app = useAppStore.getState();
+      app.setComputed(e.data.result);
+
+      // One-time startup Zen routing after initial hydration + worktrees + herdr-core snapshot:
+      // All Clear (0 actionable) -> Zen Dispatch; otherwise -> Zen Inbox.
+      if (
+        !startupZenRoutedRef.current &&
+        app.hydrated &&
+        app.health.connected &&
+        worktreesLoadedRef.current
+      ) {
+        startupZenRoutedRef.current = true;
+        const actionable =
+          e.data.result.byBucket.needs_you.length +
+          e.data.result.byBucket.ready.length;
+        useUiStore
+          .getState()
+          .completeStartupRouting(actionable === 0 ? "dispatch" : "inbox");
+      }
     };
     workerRef.current = worker;
     return () => {
@@ -63,9 +83,25 @@ export function useHerdrSync() {
 
   // 2. Initial hydration & live Tauri event subscription
   useEffect(() => {
-    if (!isTauriRuntime()) return;
+    if (!isTauriRuntime()) {
+      startupZenRoutedRef.current = true;
+      useUiStore.getState().completeStartupRouting("dispatch");
+      return;
+    }
     let active = true;
     let unlisten: (() => void) | null = null;
+
+    // Safety fallback: never stay on splash > 1.8s even if herdr-core daemon is offline
+    const splashFallbackTimer = setTimeout(() => {
+      if (!active || startupZenRoutedRef.current) return;
+      startupZenRoutedRef.current = true;
+      const computed = useAppStore.getState().computed;
+      const actionable =
+        computed.byBucket.needs_you.length + computed.byBucket.ready.length;
+      useUiStore
+        .getState()
+        .completeStartupRouting(actionable === 0 ? "dispatch" : "inbox");
+    }, 1800);
 
     const pendingAttachedRef = { current: null as string | null };
 
@@ -75,10 +111,15 @@ export function useHerdrSync() {
       const match = terminalsList.find((t) => t.address === target);
       if (match) {
         rehydratedAttachRef.current = true;
+        const ui = useUiStore.getState();
+        // In Zen Mode, let Zen Inbox / Dispatch own terminal attach so Dispatch starts clean
+        if (ui.viewMode === "zen") {
+          return;
+        }
         if (match.state === "live") {
-          useUiStore.getState().setAttachedAddress(target);
+          ui.setAttachedAddress(target);
         } else {
-          useUiStore.getState().setAttachedAddress(null);
+          ui.setAttachedAddress(null);
         }
       }
     };
@@ -184,15 +225,7 @@ export function useHerdrSync() {
         });
 
         const ui = useUiStore.getState();
-        if (
-          bundle.ui_state.view_mode === "queue" ||
-          bundle.ui_state.view_mode === "radar" ||
-          bundle.ui_state.view_mode === "zen"
-        ) {
-          ui.setViewMode(bundle.ui_state.view_mode);
-        } else {
-          ui.setViewMode("radar");
-        }
+        // Keep Splash visible until the first connected snapshot computes and routes to Dispatch or Inbox.
         if (bundle.ui_state.active_group) {
           ui.setActiveGroup(bundle.ui_state.active_group);
         }
@@ -229,6 +262,7 @@ export function useHerdrSync() {
           listTemplates().catch(() => []),
         ]);
         if (!active) return;
+        worktreesLoadedRef.current = true;
         useAppStore.getState().setWorktreesByProject(wts);
         useAppStore.getState().setTemplates(templates);
       } catch (err) {
@@ -255,6 +289,7 @@ export function useHerdrSync() {
 
     return () => {
       active = false;
+      clearTimeout(splashFallbackTimer);
       clearInterval(gitTimer);
       if (unlisten) unlisten();
     };

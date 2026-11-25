@@ -6,6 +6,7 @@ import { useUiStore } from "./store/useUiStore";
 import { TopStatusBar } from "./components/layout/TopStatusBar";
 import { SidebarProjects } from "./components/layout/SidebarProjects";
 import { HerdrHealthBanner } from "./components/shared/HerdrHealthBanner";
+import { StartupSplash } from "./components/shared/StartupSplash";
 import { AttentionBoard } from "./components/attention/AttentionBoard";
 import { RadarBoardView } from "./components/board/RadarBoardView";
 import { ZenModeView } from "./components/zen/ZenModeView";
@@ -43,6 +44,7 @@ export function App() {
   useGlobalShortcuts();
   useFileIndexWarmup();
 
+  const startupReady = useUiStore((s) => s.startupReady);
   const viewMode = useUiStore((s) => s.viewMode);
   const terminalDrawerOpen = useUiStore((s) => s.terminalDrawerOpen);
   const attachedAddress = useUiStore((s) => s.attachedAddress);
@@ -64,14 +66,16 @@ export function App() {
       <div className="flex-1 flex min-h-0 overflow-hidden px-3 pb-3 gap-3">
         {sidebarOpen && viewMode !== "zen" && <SidebarProjects />}
         <main className="jjdr-stage flex-1 rounded-[22px] flex min-w-0 min-h-0 overflow-hidden">
-          {viewMode === "radar" ? (
+          {!startupReady ? (
+            <StartupSplash />
+          ) : viewMode === "radar" ? (
             <RadarBoardView />
           ) : viewMode === "queue" ? (
             <AttentionBoard />
           ) : (
             <ZenModeView />
           )}
-          {showDrawer && (
+          {startupReady && showDrawer && (
             <Suspense
               fallback={
                 <div

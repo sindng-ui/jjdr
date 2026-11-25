@@ -9,6 +9,7 @@ import {
 import {
   computeSessionDigest,
   isPermissionApprovalPending,
+  normalizePath,
 } from "../../workers/dashboardLogic";
 import { sendTerminalKeys } from "../../services/tauriBridge";
 import {
@@ -29,10 +30,12 @@ import {
   writeStoredZenSfxEnabled,
 } from "../../utils/zenSound";
 import { buildDispatchProjectSummaries } from "../../utils/zenDispatch";
+import { recordZenRecapEvent } from "../../utils/zenRecap";
 import { ZenHeroCard } from "./ZenHeroCard";
 import { ZenTactileControl } from "./ZenTactileControl";
 import { ZenEmptyBriefing } from "./ZenEmptyBriefing";
 import { ZenDispatchView } from "./ZenDispatchView";
+import { ZenRecapModal } from "./ZenRecapModal";
 import type { EnrichedSession } from "../../types/domain";
 import "../../styles/zenMode.css";
 
@@ -78,6 +81,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
     readTodayClearedCount()
   );
   const [celebrateNonce, setCelebrateNonce] = useState(0);
+  const [recapOpen, setRecapOpen] = useState(false);
   const [lockedCardKey, setLockedCardKey] = useState<string | null>(null);
   const [skippedKeys, setSkippedKeys] = useState<string[]>([]);
 
@@ -102,10 +106,34 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const prevSkipNonceRef = useRef(zenSkipNonce);
   const prevApproveNonceRef = useRef(zenApproveNonce);
   const lastAttachedKeyRef = useRef<string | null>(null);
+  const lastLockedSessionRef = useRef<EnrichedSession | null>(null);
   const comboRef = useRef<{ count: number; lastMs: number }>({
     count: 0,
     lastMs: 0,
   });
+
+  const logClearedSession = useCallback(
+    (s: EnrichedSession | null) => {
+      if (!s) return;
+      const meta = worktreeMeta[normalizePath(s.worktreePath)];
+      recordZenRecapEvent({
+        kind: "cleared",
+        cardKey: cardKeyForSession(s),
+        worktreePath: s.worktreePath,
+        projectId: s.projectId,
+        projectName: s.projectName,
+        projectColor: s.projectColor,
+        branch: s.branch,
+        displayName: meta?.display_name ?? undefined,
+        note: meta?.note ?? undefined,
+        addedLines: s.worktree?.added_lines,
+        deletedLines: s.worktree?.deleted_lines,
+        isMerged: s.worktree?.is_merged,
+        summary: s.terminal.status?.msg || s.previewLines.slice(-1)[0] || "",
+      });
+    },
+    [worktreeMeta]
+  );
 
   const nextComboStep = useCallback((isApproval: boolean): string => {
     const now = Date.now();
@@ -192,6 +220,8 @@ export const ZenModeView = React.memo(function ZenModeView() {
       if (lockedCardKey) {
         recordZenAcked(lockedCardKey);
       }
+      logClearedSession(lastLockedSessionRef.current);
+      lastLockedSessionRef.current = activeCard;
       const nextCount = incrementTodayClearedCount();
       setClearedToday(nextCount);
       const comboText = nextComboStep(false);
@@ -211,6 +241,10 @@ export const ZenModeView = React.memo(function ZenModeView() {
       return;
     }
 
+    if (activeCard) {
+      lastLockedSessionRef.current = activeCard;
+    }
+
     if (!lockedCardKey && activeKey) {
       setLockedCardKey(activeKey);
       setEnterKind(styleMode === "gacha_dial" ? "drop" : "rise");
@@ -220,10 +254,12 @@ export const ZenModeView = React.memo(function ZenModeView() {
     isDispatchTab,
     selection.lockedCardResolved,
     lockedCardKey,
+    activeCard,
     activeKey,
     styleMode,
     sfxEnabled,
     nextComboStep,
+    logClearedSession,
     recordZenAcked,
     triggerFloat,
   ]);
@@ -395,6 +431,8 @@ export const ZenModeView = React.memo(function ZenModeView() {
     }
     dismissZenCardStamp(activeKey, stampKey);
     recordZenAcked(activeKey);
+    logClearedSession(cardSnapshot);
+    lastLockedSessionRef.current = null;
 
     setTimeout(() => {
       setThumpActive(false);
@@ -437,6 +475,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
     styleMode,
     sfxEnabled,
     nextComboStep,
+    logClearedSession,
     dismissZenCardStamp,
     recordZenAcked,
     showToast,
@@ -593,17 +632,16 @@ export const ZenModeView = React.memo(function ZenModeView() {
             )}
           </button>
 
-          <span
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono-code font-semibold tabular-nums"
-            style={{
-              background: "var(--pill-bg)",
-              border: "1px solid var(--pill-border)",
-              color: "var(--warn-fg)",
-            }}
+          <button
+            type="button"
+            onClick={() => setRecapOpen(true)}
+            title="View Daily Work Recap & copy Standup Markdown"
+            className="jjdr-pill inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono-code font-semibold tabular-nums cursor-pointer transition-transform active:scale-[0.98]"
+            style={{ color: "var(--warn-fg)" }}
           >
             <Sparkles className="w-3 h-3" />
             {clearedToday} Cleared Today
-          </span>
+          </button>
         </div>
       </div>
 
@@ -619,6 +657,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
           projectSummaries={projectSummaries}
           onPeekSession={handlePeekRunning}
           onStartDispatch={(pid) => openZenDispatch(pid ?? null)}
+          onOpenRecap={() => setRecapOpen(true)}
           onOpenRadar={() => setViewMode("radar")}
         />
       ) : (
@@ -687,6 +726,10 @@ export const ZenModeView = React.memo(function ZenModeView() {
             />
           </div>
         </div>
+      )}
+
+      {recapOpen && (
+        <ZenRecapModal open={recapOpen} onClose={() => setRecapOpen(false)} />
       )}
     </div>
   );

@@ -87,6 +87,7 @@ export interface CardGrabState {
 }
 
 interface UiStoreState {
+  startupReady: boolean;
   viewMode: ViewMode;
   activeGroup: string;
   selectedProjectId: string | null;
@@ -128,6 +129,7 @@ interface UiStoreState {
   toast: { message: string; kind: "info" | "error" | "success" } | null;
 
   setViewMode: (mode: ViewMode) => void;
+  completeStartupRouting: (tab: ZenModeTab) => void;
   toggleViewMode: () => void;
   setActiveGroup: (group: string) => void;
   setSelectedProjectId: (id: string | null) => void;
@@ -181,7 +183,8 @@ interface UiStoreState {
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useUiStore = create<UiStoreState>((set) => ({
-  viewMode: "radar",
+  startupReady: false,
+  viewMode: "zen",
   activeGroup: "All",
   selectedProjectId: null,
   searchQuery: "",
@@ -221,7 +224,34 @@ export const useUiStore = create<UiStoreState>((set) => ({
   settingsOpen: false,
   toast: null,
 
-  setViewMode: (viewMode) => set({ viewMode }),
+  setViewMode: (viewMode) => set({ viewMode, startupReady: true }),
+  completeStartupRouting: (tab) =>
+    set((s) => {
+      // Respect user's manual view switch if they already navigated away during boot
+      if (s.startupReady && s.viewMode !== "zen") {
+        return { startupReady: true };
+      }
+      if (tab === "dispatch") {
+        return {
+          startupReady: true,
+          viewMode: "zen",
+          zenModeTab: "dispatch",
+          zenDispatchStep: "pick_project",
+          zenDispatchProjectId: null,
+          zenHiredSolo: null,
+          attachedAddress: null,
+          terminalDrawerOpen: false,
+        };
+      }
+      return {
+        startupReady: true,
+        viewMode: "zen",
+        zenModeTab: "inbox",
+        zenDispatchStep: "pick_project",
+        zenDispatchProjectId: null,
+        zenHiredSolo: null,
+      };
+    }),
   toggleViewMode: () =>
     set((s) => ({
       viewMode:
@@ -283,6 +313,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
       zenDispatchProjectId: projectId,
       zenDispatchStep: projectId ? "pick_action" : "pick_project",
       zenHiredSolo: null,
+      attachedAddress: null,
+      terminalDrawerOpen: false,
     }),
   setZenDispatchStep: (zenDispatchStep) =>
     set((s) => ({

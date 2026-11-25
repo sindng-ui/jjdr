@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
+import { BrandMascotIcon } from "../shared/StartupSplash";
 import { jumpToNextActionable } from "../../hooks/useGlobalShortcuts";
 import {
   listAllWorktrees,
@@ -122,13 +123,12 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
 
         <div className="flex items-center gap-2 pr-1.5">
           <div
-            className="w-7 h-7 rounded-[10px] flex items-center justify-center font-bold text-xs tracking-tight shadow-sm shrink-0"
+            className="w-7 h-7 rounded-[10px] flex items-center justify-center shadow-sm shrink-0"
             style={{
               background: "var(--brand-bg)",
-              color: "var(--brand-fg)",
             }}
           >
-            jj
+            <BrandMascotIcon size={21} />
           </div>
           <div className="flex flex-col leading-none">
             <span

@@ -11,6 +11,7 @@ import {
   type ZenDispatchWorker,
 } from "../../utils/zenDispatch";
 import { getWorkerPersona } from "../../utils/workerPersona";
+import { recordZenRecapEvent } from "../../utils/zenRecap";
 import {
   playZenDeploySfx,
   playZenLeverSfx,
@@ -243,6 +244,25 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
       setThumpActive(true);
       playZenDeploySfx(sfxEnabled);
       triggerFloat(`${persona.name} deployed!`, "var(--ready-fg)");
+      const meta = worktreeMeta[worker.normWtPath];
+      recordZenRecapEvent({
+        kind: "dispatched",
+        cardKey: worker.cardKey,
+        worktreePath: worker.worktree.path,
+        projectId: worker.project.id,
+        projectName: worker.project.name,
+        projectColor: worker.project.color,
+        branch: worker.worktree.branch,
+        displayName: meta?.display_name ?? undefined,
+        note: meta?.note ?? undefined,
+        addedLines: worker.worktree.added_lines,
+        deletedLines: worker.worktree.deleted_lines,
+        isMerged: worker.worktree.is_merged,
+        summary:
+          worker.aiSession?.terminal.status?.msg ||
+          worker.aiSession?.previewLines.slice(-1)[0] ||
+          "",
+      });
 
       setTimeout(() => {
         setThumpActive(false);
@@ -258,7 +278,7 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
         }, 250);
       }, 320);
     },
-    [styleMode, sfxEnabled, triggerFloat, returnToZenInbox, resetTracking]
+    [styleMode, sfxEnabled, worktreeMeta, triggerFloat, returnToZenInbox, resetTracking]
   );
 
   // Trigger DISPATCHED! when monitor confirms a real task deployment
