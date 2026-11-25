@@ -1,3 +1,6 @@
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl,
     WebviewWindowBuilder,
@@ -8,6 +11,8 @@ use crate::store::overlay::{
     OVERLAY_MARGIN_LOGICAL, OVERLAY_WIDTH_LOGICAL, OVERLAY_WINDOW_LABEL,
 };
 use crate::AppState;
+
+const OVERLAY_AUTO_HIDE_MS: u64 = 7_000;
 
 fn is_main_in_foreground(app: &AppHandle) -> bool {
     let Some(main) = app.get_webview_window("main") else {
@@ -77,7 +82,7 @@ pub async fn show_bg_overlay(
     let _op_guard = state.bg_overlay_op_lock.lock().await;
     let preview = force_preview.unwrap_or(false) || payload.is_preview;
 
-    // Enforce background-only visibility unless explicitly requested as a settings preview
+    // Never show notifications while main app is active in foreground (unless explicit settings preview)
     if !preview && is_main_in_foreground(&app) {
         hide_overlay_window(&app);
         return Ok(false);
@@ -123,17 +128,54 @@ pub async fn show_bg_overlay(
     // Show without focusing so user typing in another app is NEVER interrupted
     let _ = overlay.show();
 
+    // Guaranteed 7s Rust-side auto-hide timer (immune to background WebView JS timer throttling)
+    let my_gen = state.bg_overlay_gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let gen_ref = state.bg_overlay_gen.clone();
+    let app_clone = app.clone();
+    let stamp = payload.stamp.clone();
+    // Ensure preview flag is cleared once the 7s timer expires so future focus events hide normally
+    let payload_ref = app.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(OVERLAY_AUTO_HIDE_MS)).await;
+        if gen_ref.load(Ordering::SeqCst) == my_gen {
+            hide_overlay_window(&app_clone);
+            if preview {
+                if let Ok(mut g) = payload_ref.state::<AppState>().bg_overlay_payload.lock() {
+                    if g.as_ref().map(|p| p.is_preview).unwrap_or(false) {
+                        *g = None;
+                    }
+                }
+            } else {
+                let _ = app_clone.emit_to("main", "jjdr:overlay-dismissed", stamp);
+            }
+        }
+    });
+
     Ok(true)
 }
 
 #[tauri::command]
-pub async fn hide_bg_overlay(app: AppHandle) -> Result<(), String> {
+pub async fn hide_bg_overlay(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.bg_overlay_gen.fetch_add(1, Ordering::SeqCst);
+    if let Ok(mut g) = state.bg_overlay_payload.lock() {
+        if g.as_ref().map(|p| p.is_preview).unwrap_or(false) {
+            *g = None;
+        }
+    }
     hide_overlay_window(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn dismiss_bg_overlay(app: AppHandle, stamp: String) -> Result<(), String> {
+pub async fn dismiss_bg_overlay(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    stamp: String,
+) -> Result<(), String> {
+    state.bg_overlay_gen.fetch_add(1, Ordering::SeqCst);
     hide_overlay_window(&app);
     let _ = app.emit_to("main", "jjdr:overlay-dismissed", stamp);
     Ok(())
@@ -153,9 +195,11 @@ pub async fn get_bg_overlay_payload(
 #[tauri::command]
 pub async fn focus_main_from_overlay(
     app: AppHandle,
+    state: State<'_, AppState>,
     card_key: String,
     address: String,
 ) -> Result<(), String> {
+    state.bg_overlay_gen.fetch_add(1, Ordering::SeqCst);
     hide_overlay_window(&app);
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();

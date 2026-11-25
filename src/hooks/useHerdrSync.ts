@@ -38,9 +38,8 @@ export function useHerdrSync() {
   const rehydratedAttachRef = useRef(false);
   const dismissedOverlayStampRef = useRef<string | null>(null);
   const lastOverlaySignatureRef = useRef<string | null>(null);
-  const [isMainInBackground, setIsMainInBackground] = useState<boolean>(() =>
-    typeof document !== "undefined" ? !document.hasFocus() : false
-  );
+  const isMainInBackgroundRef = useRef<boolean>(false);
+  const [isMainInBackground, setIsMainInBackground] = useState<boolean>(false);
 
   // 1. Initialize Web Worker once
   useEffect(() => {
@@ -132,7 +131,12 @@ export function useHerdrSync() {
         }
         if (st === "blocked" || st === "error") {
           const key = `${t.address}:${t.status_ms ?? t.turn}`;
-          if (!notifiedBlockedRef.current.has(key) && settings.notify_on_blocked) {
+          // Only send OS notification when app is in background (never interrupt active foreground use)
+          if (
+            isMainInBackgroundRef.current &&
+            !notifiedBlockedRef.current.has(key) &&
+            settings.notify_on_blocked
+          ) {
             notifiedBlockedRef.current.add(key);
             void triggerCalmNotification(
               `jjdr: ${t.name || t.address} needs attention`,
@@ -322,13 +326,28 @@ export function useHerdrSync() {
     let active = true;
     const unlisteners: Array<() => void> = [];
 
+    let bgDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const markBg = (inBg: boolean) => {
       if (!active) return;
+      if (bgDebounceTimer) {
+        clearTimeout(bgDebounceTimer);
+        bgDebounceTimer = null;
+      }
       if (!inBg) {
+        isMainInBackgroundRef.current = false;
         dismissedOverlayStampRef.current = null;
         lastOverlaySignatureRef.current = null;
+        setIsMainInBackground(false);
+        return;
       }
-      setIsMainInBackground(inBg);
+      // Small debounce prevents false notifications during brief internal focus flickers
+      bgDebounceTimer = setTimeout(() => {
+        bgDebounceTimer = null;
+        if (!active) return;
+        isMainInBackgroundRef.current = true;
+        setIsMainInBackground(true);
+      }, 300);
     };
 
     const onWindowBlur = () => markBg(true);
@@ -389,6 +408,7 @@ export function useHerdrSync() {
 
     return () => {
       active = false;
+      if (bgDebounceTimer) clearTimeout(bgDebounceTimer);
       window.removeEventListener("blur", onWindowBlur);
       window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);

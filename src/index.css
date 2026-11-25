@@ -463,6 +463,20 @@ html.jjdr-overlay-root #root {
   animation: jjdr-overlay-beacon-pulse 1.5s ease-in-out infinite;
 }
 
+@keyframes jjdr-overlay-countdown-bar {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+
+.jjdr-overlay-countdown {
+  transform-origin: left center;
+  animation: jjdr-overlay-countdown-bar 7s linear forwards;
+}
+
 /* Slim organic scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

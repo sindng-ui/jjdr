@@ -5,6 +5,8 @@ pub mod herdr;
 pub mod store;
 
 #[cfg(not(test))]
+use std::sync::atomic::AtomicU64;
+#[cfg(not(test))]
 use std::sync::{Arc, Mutex};
 
 #[cfg(not(test))]
@@ -36,6 +38,7 @@ pub struct AppState {
     pub file_index: Arc<FileIndexStore>,
     pub bg_overlay_payload: Mutex<Option<BgOverlayPayload>>,
     pub bg_overlay_op_lock: tokio::sync::Mutex<()>,
+    pub bg_overlay_gen: Arc<AtomicU64>,
 }
 
 #[cfg(not(test))]
@@ -61,6 +64,7 @@ pub fn run() {
         file_index,
         bg_overlay_payload: Mutex::new(None),
         bg_overlay_op_lock: tokio::sync::Mutex::new(()),
+        bg_overlay_gen: Arc::new(AtomicU64::new(0)),
     };
 
     let app = tauri::Builder::default()
@@ -71,10 +75,22 @@ pub fn run() {
             setup_tray(app)?;
             if let Some(main_win) = app.get_webview_window("main") {
                 let handle = app.handle().clone();
+                let overlay_gen = app.state::<AppState>().bg_overlay_gen.clone();
                 main_win.on_window_event(move |event| match event {
                     WindowEvent::Focused(focused) => {
                         if *focused {
-                            commands::overlay::hide_overlay_window(&handle);
+                            // Keep explicit settings preview visible for its full 7s timer even when main regains focus
+                            let is_preview = handle
+                                .state::<AppState>()
+                                .bg_overlay_payload
+                                .lock()
+                                .ok()
+                                .and_then(|g| g.as_ref().map(|p| p.is_preview))
+                                .unwrap_or(false);
+                            if !is_preview {
+                                overlay_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                commands::overlay::hide_overlay_window(&handle);
+                            }
                         }
                         let _ = handle.emit_to("main", "jjdr:main-bg-changed", !*focused);
                     }

@@ -1,0 +1,18 @@
+jjdr v0.3.5 Verification Results (2026-11-25)
+=============================================
+Changes Verified:
+1. Foreground notification suppression:
+   - OS calm notification (`triggerCalmNotification`) suppressed while main app is in foreground (`isMainInBackgroundRef.current`)
+   - Background HUD starts `false` (no startup flash) with 300ms blur debounce + Rust foreground guard
+2. Guaranteed 7-second auto-dismiss for all HUD notifications:
+   - Frontend 7000ms timer (`BgOverlayToast.tsx`) + pure-GPU 7s bottom countdown bar (Zero-Blur)
+   - Rust-side generation-guarded 7000ms timer (`bg_overlay_gen`) immune to WebView2 background timer throttling
+3. Fixed Settings preview 0.1s flash-hide bug:
+   - `WindowEvent::Focused(true)` in `lib.rs` preserves explicit settings previews (`is_preview == true`) so preview remains visible for full 7s even when main window regains focus
+4. Version bump: 0.3.4 -> 0.3.5 (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`)
+
+Results:
+- `npm run test`: PASS (12 test files, 44 tests passed, 0 failed, 1.06s)
+- `npm run build` (`tsc && vite build`): PASS (0 errors, 3.15s)
+- `cargo check --manifest-path src-tauri/Cargo.toml --offline`: PASS (0 errors, 0 warnings)
+- `cargo test --manifest-path src-tauri/Cargo.toml --offline --lib`: PASS (19 passed, 0 failed, 0.01s)

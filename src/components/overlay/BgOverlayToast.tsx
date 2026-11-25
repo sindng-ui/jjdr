@@ -42,14 +42,20 @@ export const BgOverlayToast: React.FC = () => {
     };
   }, []);
 
-  // Auto-dismiss settings preview after 5.5s so it never lingers unexpectedly
+  // Auto-hide every notification (both real background alerts and settings preview) after 7s
   useEffect(() => {
-    if (!payload?.is_preview) return;
+    if (!payload) return;
+    const isPreview = Boolean(payload.is_preview);
+    const stamp = payload.stamp;
     const timer = setTimeout(() => {
-      void hideBgOverlay().catch(() => {});
-    }, 5500);
+      if (isPreview) {
+        void hideBgOverlay().catch(() => {});
+      } else {
+        void dismissBgOverlay(stamp).catch(() => {});
+      }
+    }, 7000);
     return () => clearTimeout(timer);
-  }, [payload?.is_preview, pulseKey]);
+  }, [payload, pulseKey]);
 
   if (!payload) {
     return null;
@@ -226,6 +232,12 @@ export const BgOverlayToast: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* 7s Auto-Dismiss Progress Bar (GPU transform only, Zero-Blur) */}
+        <div
+          className="jjdr-overlay-countdown pointer-events-none absolute bottom-0 left-2 right-0 h-[3px]"
+          style={{ background: accentColor, opacity: 0.7 }}
+        />
       </div>
     </div>
   );
