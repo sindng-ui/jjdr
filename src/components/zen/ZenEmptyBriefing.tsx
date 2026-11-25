@@ -1,32 +1,65 @@
-import React from "react";
-import { Radar, Terminal } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Radar, Send, Terminal } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
+import type { ZenDispatchProjectSummary } from "../../utils/zenDispatch";
+import { getWorkerPersona } from "../../utils/workerPersona";
+import { WorkerMonsterAvatar } from "./WorkerMonsterAvatar";
 import { formatElapsed } from "../../utils/format";
 import { useAppStore } from "../../store/useAppStore";
 import { normalizePath } from "../../workers/dashboardLogic";
+
+const BURST_PARTICLES: ReadonlyArray<{
+  bx: string;
+  by: string;
+  color: string;
+  r: number;
+}> = [
+  { bx: "-46px", by: "-34px", color: "#34d399", r: 4 },
+  { bx: "48px", by: "-32px", color: "#60a5fa", r: 4 },
+  { bx: "-54px", by: "10px", color: "#facc15", r: 3.5 },
+  { bx: "54px", by: "12px", color: "#f472b6", r: 3.5 },
+  { bx: "-30px", by: "42px", color: "#a78bfa", r: 3.5 },
+  { bx: "32px", by: "40px", color: "#2dd4bf", r: 4 },
+  { bx: "0px", by: "-50px", color: "#fb923c", r: 4 },
+  { bx: "0px", by: "48px", color: "#34d399", r: 3 },
+];
 
 interface ZenEmptyBriefingProps {
   runningCards: EnrichedSession[];
   idleCount: number;
   clearedToday: number;
+  celebrateNonce: number;
+  projectSummaries: ZenDispatchProjectSummary[];
   onPeekSession: (session: EnrichedSession) => void;
+  onStartDispatch: (projectId?: string | null) => void;
   onOpenRadar: () => void;
 }
 
 /**
  * Calm, joyful GUI briefing shown in Zen Mode when 0 actionable cards remain.
- * Zero-Blur SVG visuals + live briefing of Running vs All-Idle status.
+ * Zero-Blur SVG visuals + live briefing of Running vs All-Idle status + one-click Worker Dispatch.
  */
 export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   runningCards,
   idleCount,
   clearedToday,
+  celebrateNonce,
+  projectSummaries,
   onPeekSession,
+  onStartDispatch,
   onOpenRadar,
 }: ZenEmptyBriefingProps) {
   const worktreeMeta = useAppStore((s) => s.worktreeMeta);
   const runningCount = runningCards.length;
   const hasRunning = runningCount > 0;
+  const [celebrating, setCelebrating] = useState(false);
+
+  useEffect(() => {
+    if (celebrateNonce <= 0) return;
+    setCelebrating(true);
+    const id = setTimeout(() => setCelebrating(false), 680);
+    return () => clearTimeout(id);
+  }, [celebrateNonce]);
 
   return (
     <div className="flex-1 h-full min-h-0 overflow-y-auto flex items-center justify-center p-8">
@@ -58,9 +91,37 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
           </span>
         </div>
 
-        {/* Hero SVG Visual (Zero-Blur) */}
+        {/* Hero SVG Visual (Zero-Blur) + Ephemeral 650ms Celebration Burst */}
         <div className="flex flex-col items-center gap-3">
-          {hasRunning ? (
+          <div className="relative flex items-center justify-center">
+            {celebrating && (
+              <svg
+                key={celebrateNonce}
+                width="140"
+                height="140"
+                viewBox="-70 -70 140 140"
+                aria-hidden="true"
+                className="pointer-events-none absolute overflow-visible"
+              >
+                {BURST_PARTICLES.map((p, idx) => (
+                  <circle
+                    key={idx}
+                    cx="0"
+                    cy="0"
+                    r={p.r}
+                    fill={p.color}
+                    className="zen-burst-dot"
+                    style={
+                      {
+                        "--bx": p.bx,
+                        "--by": p.by,
+                      } as React.CSSProperties
+                    }
+                  />
+                ))}
+              </svg>
+            )}
+            {hasRunning ? (
             <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
               <circle
                 cx="36"
@@ -112,6 +173,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
               />
             </svg>
           )}
+          </div>
 
           <div className="space-y-1.5">
             <h2
@@ -119,17 +181,21 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
               style={{ color: "var(--text-primary)" }}
             >
               {hasRunning
-                ? `지금은 쉴 시간 · AI ${runningCount}개가 열심히 작업 중입니다`
+                ? `Time to chill · ${runningCount} AI ${
+                    runningCount === 1 ? "worker" : "workers"
+                  } on duty`
                 : idleCount > 0
-                ? `모든 세션(${idleCount}개)이 Idle 상태입니다`
-                : "지금은 완전히 비어있어요"}
+                ? `All ${idleCount} ${
+                    idleCount === 1 ? "worker is" : "workers are"
+                  } standing by`
+                : "All clear · No active workers yet"}
             </h2>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               {hasRunning
-                ? "작업이 완료되거나 승인이 필요해지면 자동으로 다음 카드가 올라옵니다."
+                ? "New review cards will rise automatically when a worker finishes or asks for approval."
                 : idleCount > 0
-                ? "쌓인 확인 요청 0건 · 편하게 쉬거나 Radar에서 새 작업을 지시해보세요."
-                : "Radar 뷰에서 Worktree를 선택해 첫 AI 세션을 시작해보세요."}
+                ? "0 pending approvals · Pick a project below to dispatch a standby worker."
+                : "Hire a worker below or switch to Radar to start your first AI session."}
             </p>
           </div>
         </div>
@@ -144,7 +210,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
             }}
           >
             <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              진행 중 (Running)
+              Running
             </div>
             <div
               className="mt-1 text-lg font-black font-mono-code tabular-nums"
@@ -164,7 +230,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
             }}
           >
             <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              대기 중 (Idle)
+              Standby (Idle)
             </div>
             <div
               className="mt-1 text-lg font-black font-mono-code tabular-nums"
@@ -182,7 +248,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
             }}
           >
             <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              오늘 클리어 ✨
+              Cleared Today
             </div>
             <div
               className="mt-1 text-lg font-black font-mono-code tabular-nums"
@@ -200,7 +266,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
               className="text-[11px] font-semibold px-1"
               style={{ color: "var(--text-faint)" }}
             >
-              현재 진행 중인 작업 (클릭해서 터미널 엿보기)
+              Active Missions (Click to peek terminal)
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {runningCards.slice(0, 6).map((s) => {
@@ -208,7 +274,9 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                   typeof s.terminal.status?.progress === "number"
                     ? Math.max(4, Math.min(100, s.terminal.status.progress))
                     : null;
-                const cardMeta = worktreeMeta[normalizePath(s.worktreePath)];
+                const normPath = normalizePath(s.worktreePath);
+                const cardMeta = worktreeMeta[normPath];
+                const persona = getWorkerPersona(normPath);
                 const cardDisplayName = cardMeta?.display_name?.trim() || "";
                 const branchText = s.branch || "(detached)";
                 return (
@@ -218,8 +286,8 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                     onClick={() => onPeekSession(s)}
                     title={
                       cardDisplayName
-                        ? `${cardDisplayName} — ${s.projectName} / ${branchText}`
-                        : `${s.projectName} / ${branchText}`
+                        ? `${persona.name} · ${cardDisplayName} — ${s.projectName} / ${branchText}`
+                        : `${persona.name} · ${s.projectName} / ${branchText}`
                     }
                     className="jjdr-card-lift text-left rounded-2xl p-3 space-y-1.5 cursor-pointer"
                     style={{
@@ -227,46 +295,43 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                       border: "1px solid var(--run-border)",
                     }}
                   >
-                    <div className="flex items-start justify-between gap-2 text-xs">
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        {cardDisplayName ? (
-                          <>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span
-                                className="w-2 h-2 rounded-full shrink-0"
-                                style={{ backgroundColor: s.projectColor }}
-                              />
-                              <span
-                                className="font-bold truncate"
-                                style={{ color: "var(--text-primary)" }}
-                              >
-                                {cardDisplayName}
-                              </span>
-                            </div>
-                            <div
-                              className="font-mono-code text-[11px] truncate pl-3.5"
-                              style={{ color: "var(--text-secondary)" }}
-                            >
-                              {s.projectName} / {branchText}
-                            </div>
-                          </>
-                        ) : (
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <WorkerMonsterAvatar
+                          persona={persona}
+                          mood="working"
+                          size={30}
+                          className="shrink-0"
+                        />
+                        <div className="min-w-0 flex-1 space-y-0.5">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span
-                              className="w-2 h-2 rounded-full shrink-0"
+                              className="font-extrabold truncate"
+                              style={{ color: persona.palette.body }}
+                            >
+                              {persona.name}
+                            </span>
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
                               style={{ backgroundColor: s.projectColor }}
                             />
                             <span
-                              className="font-mono-code font-bold truncate"
+                              className="font-mono-code font-semibold truncate"
                               style={{ color: "var(--text-primary)" }}
                             >
-                              {s.projectName} / {branchText}
+                              {cardDisplayName || branchText}
                             </span>
                           </div>
-                        )}
+                          <div
+                            className="font-mono-code text-[10px] truncate"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            {s.projectName} / {branchText}
+                          </div>
+                        </div>
                       </div>
                       <span
-                        className="font-mono-code text-[11px] shrink-0 pt-0.5"
+                        className="font-mono-code text-[11px] shrink-0"
                         style={{ color: "var(--run-fg)" }}
                       >
                         {progress !== null ? `${progress}%` : formatElapsed(s.elapsedMs)}
@@ -289,7 +354,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                       style={{ color: "var(--text-muted)" }}
                     >
                       <span className="truncate">
-                        {s.agentLabel} · {s.terminal.status?.msg || "작업 진행 중..."}
+                        {s.agentLabel} · {s.terminal.status?.msg || "Working..."}
                       </span>
                       <Terminal className="w-3 h-3 shrink-0 ml-1 opacity-75" />
                     </div>
@@ -300,15 +365,77 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
           </div>
         )}
 
-        <div className="pt-1 flex items-center justify-center">
+        {/* Quick Project Dispatch Strip (Zero Radar switching!) */}
+        {projectSummaries.length > 0 && (
+          <div className="space-y-2.5 text-left">
+            <div
+              className="text-[11px] font-semibold px-1"
+              style={{ color: "var(--text-faint)" }}
+            >
+              Quick Dispatch · Pick a Project
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {projectSummaries.map((sum) => (
+                <button
+                  key={sum.project.id}
+                  type="button"
+                  onClick={() => onStartDispatch(sum.project.id)}
+                  className="jjdr-pill jjdr-card-lift inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold cursor-pointer"
+                  style={{ color: "var(--text-primary)" }}
+                  title={`${sum.project.name}: ${sum.idleAiCount} AI standby · ${sum.emptyWorktreeCount} empty`}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: sum.project.color }}
+                  />
+                  <span className="truncate max-w-[140px]">
+                    {sum.project.name}
+                  </span>
+                  <span
+                    className="text-[10px] font-mono-code px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background:
+                        sum.idleAiCount > 0
+                          ? "var(--ready-soft)"
+                          : "var(--input-bg)",
+                      color:
+                        sum.idleAiCount > 0
+                          ? "var(--ready-fg)"
+                          : "var(--text-muted)",
+                    }}
+                  >
+                    {sum.idleAiCount > 0
+                      ? `${sum.idleAiCount} idle`
+                      : sum.emptyWorktreeCount > 0
+                      ? `${sum.emptyWorktreeCount} empty`
+                      : "+ Hire"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="pt-1 flex items-center justify-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => onStartDispatch(null)}
+            className="jjdr-primary-btn inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold cursor-pointer shadow-sm"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Dispatch Worker</span>
+            <kbd className="text-[10px] font-mono-code opacity-80">
+              Ctrl+Shift+D
+            </kbd>
+          </button>
           <button
             type="button"
             onClick={onOpenRadar}
-            className="jjdr-pill inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold cursor-pointer"
+            className="jjdr-pill inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold cursor-pointer"
             style={{ color: "var(--text-secondary)" }}
           >
             <Radar className="w-3.5 h-3.5" />
-            <span>Radar 전체 보드로 이동</span>
+            <span>Radar Board</span>
             <kbd className="text-[10px] font-mono-code opacity-70">Ctrl+1</kbd>
           </button>
         </div>

@@ -86,9 +86,25 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
     const snapPrompt = initialPrompt.trim() || undefined;
     const snapAutonomous = autonomous;
 
+    const uiBefore = useUiStore.getState();
+    const launchedFromZenDispatch =
+      uiBefore.viewMode === "zen" && uiBefore.zenModeTab === "dispatch";
+
     // Close modal IMMEDIATELY (0ms) so worktree creation + bootstrap + AI launch run in background
     setProjectId(null);
-    showToast(`'${trimmedBranch}' Worktree 백그라운드 생성 중...`, "info", 3000);
+    if (launchedFromZenDispatch && snapPrompt) {
+      // First Task provided -> worker will launch straight into Running -> return to Zen Inbox
+      uiBefore.returnToZenInbox();
+    } else if (launchedFromZenDispatch) {
+      uiBefore.setZenHiringState({
+        projectId: snapProjectId,
+        projectName: project.name,
+        projectColor: project.color,
+        branchName: trimmedBranch,
+        startedAt: Date.now(),
+      });
+    }
+    showToast(`Recruiting worker '${trimmedBranch}'...`, "info", 3000);
 
     void createWorktreeAndLaunch({
       project_id: snapProjectId,
@@ -115,22 +131,39 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
         const ui = useUiStore.getState();
         ui.showToast(
           res.terminal_address
-            ? `'${res.branch_name}' 생성 및 세션 시작됨 (${res.terminal_address})`
-            : `'${res.branch_name}' Worktree 생성 완료`,
+            ? `Worker '${res.branch_name}' hired & ready!`
+            : `Worktree '${res.branch_name}' created`,
           "success"
         );
-        if (res.terminal_address && !ui.attachedAddress) {
-          ui.setSelectedAddress(res.terminal_address);
+        if (
+          launchedFromZenDispatch &&
+          !snapPrompt &&
+          ui.viewMode === "zen" &&
+          ui.zenModeTab === "dispatch"
+        ) {
+          const normWt = normalizePath(res.worktree_path);
+          ui.landZenHiredWorker({
+            cardKey: `wt::${snapProjectId}::${normWt}`,
+            projectId: snapProjectId,
+            worktreePath: res.worktree_path,
+            branchName: res.branch_name || trimmedBranch,
+            address: res.terminal_address ?? null,
+          });
+        } else {
+          ui.setZenHiringState(null);
+          if (res.terminal_address && !ui.attachedAddress) {
+            ui.setSelectedAddress(res.terminal_address);
+          }
         }
       })
       .catch((err) => {
-        useUiStore
-          .getState()
-          .showToast(
-            `Worktree 생성 실패 (${trimmedBranch}): ${String(err)}`,
-            "error",
-            6000
-          );
+        const ui = useUiStore.getState();
+        ui.setZenHiringState(null);
+        ui.showToast(
+          `Failed to hire worker (${trimmedBranch}): ${String(err)}`,
+          "error",
+          6000
+        );
       });
   };
 

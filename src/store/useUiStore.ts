@@ -6,6 +6,25 @@ import type {
 } from "../types/domain";
 
 export type ViewMode = "radar" | "queue" | "zen";
+export type ZenModeTab = "inbox" | "dispatch";
+export type ZenDispatchStep = "pick_project" | "pick_action" | "browse_worker";
+
+export interface ZenHiredSoloState {
+  cardKey: string;
+  projectId: string;
+  worktreePath: string;
+  branchName: string;
+  address: string | null;
+  confirmed: boolean;
+}
+
+export interface ZenHiringState {
+  projectId: string;
+  projectName: string;
+  projectColor: string;
+  branchName: string;
+  startedAt: number;
+}
 
 export interface DiffModalTarget {
   projectId: string;
@@ -80,7 +99,14 @@ interface UiStoreState {
   terminalWidthPx: number | null;
   terminalFocusNonce: number;
   zenSkipNonce: number;
+  zenPrevNonce: number;
   zenApproveNonce: number;
+  zenModeTab: ZenModeTab;
+  zenDispatchStep: ZenDispatchStep;
+  zenDispatchProjectId: string | null;
+  zenRecentAckedAt: Record<string, number>;
+  zenHiredSolo: ZenHiredSoloState | null;
+  zenHiringState: ZenHiringState | null;
   zenDismissedStamps: Record<string, string>;
   lastSessionByCardKey: Record<string, string>;
   sidebarOpen: boolean;
@@ -118,7 +144,18 @@ interface UiStoreState {
   setTerminalWidthPx: (widthPx: number | null) => void;
   requestTerminalFocus: () => void;
   requestZenSkip: () => void;
+  requestZenPrev: () => void;
   requestZenApprove: () => void;
+  setZenModeTab: (tab: ZenModeTab) => void;
+  openZenDispatch: (projectId?: string | null) => void;
+  setZenDispatchStep: (step: ZenDispatchStep) => void;
+  setZenDispatchProjectId: (projectId: string | null) => void;
+  returnToZenInbox: () => void;
+  recordZenAcked: (cardKey: string, nowMs?: number) => void;
+  landZenHiredWorker: (target: Omit<ZenHiredSoloState, "confirmed">) => void;
+  confirmZenHiredSolo: () => void;
+  clearZenHiredSolo: () => void;
+  setZenHiringState: (state: ZenHiringState | null) => void;
   dismissZenCardStamp: (cardKey: string, stamp: string) => void;
   rememberCardSession: (cardKey: string, addr: string) => void;
   toggleSidebar: () => void;
@@ -156,7 +193,14 @@ export const useUiStore = create<UiStoreState>((set) => ({
   terminalWidthPx: null,
   terminalFocusNonce: 0,
   zenSkipNonce: 0,
+  zenPrevNonce: 0,
   zenApproveNonce: 0,
+  zenModeTab: "inbox",
+  zenDispatchStep: "pick_project",
+  zenDispatchProjectId: null,
+  zenRecentAckedAt: {},
+  zenHiredSolo: null,
+  zenHiringState: null,
   zenDismissedStamps: {},
   lastSessionByCardKey: {},
   sidebarOpen: true,
@@ -222,8 +266,62 @@ export const useUiStore = create<UiStoreState>((set) => ({
     set((s) => ({ terminalFocusNonce: s.terminalFocusNonce + 1 })),
   requestZenSkip: () =>
     set((s) => ({ zenSkipNonce: s.zenSkipNonce + 1 })),
+  requestZenPrev: () =>
+    set((s) => ({ zenPrevNonce: s.zenPrevNonce + 1 })),
   requestZenApprove: () =>
     set((s) => ({ zenApproveNonce: s.zenApproveNonce + 1 })),
+  setZenModeTab: (zenModeTab) =>
+    set((s) => ({
+      zenModeTab,
+      zenDispatchStep:
+        zenModeTab === "dispatch" ? s.zenDispatchStep : "pick_project",
+    })),
+  openZenDispatch: (projectId = null) =>
+    set({
+      viewMode: "zen",
+      zenModeTab: "dispatch",
+      zenDispatchProjectId: projectId,
+      zenDispatchStep: projectId ? "pick_action" : "pick_project",
+      zenHiredSolo: null,
+    }),
+  setZenDispatchStep: (zenDispatchStep) =>
+    set((s) => ({
+      zenDispatchStep,
+      zenHiredSolo: zenDispatchStep === "browse_worker" ? s.zenHiredSolo : null,
+    })),
+  setZenDispatchProjectId: (zenDispatchProjectId) =>
+    set({ zenDispatchProjectId }),
+  returnToZenInbox: () =>
+    set({
+      zenModeTab: "inbox",
+      zenDispatchStep: "pick_project",
+      zenDispatchProjectId: null,
+      zenHiredSolo: null,
+      zenHiringState: null,
+    }),
+  recordZenAcked: (cardKey, nowMs = Date.now()) =>
+    set((s) => ({
+      zenRecentAckedAt: { ...s.zenRecentAckedAt, [cardKey]: nowMs },
+    })),
+  landZenHiredWorker: (target) =>
+    set({
+      viewMode: "zen",
+      zenModeTab: "dispatch",
+      zenHiringState: null,
+      zenDispatchProjectId: target.projectId,
+      zenDispatchStep: "browse_worker",
+      zenHiredSolo: { ...target, confirmed: false },
+      attachedAddress: null,
+      terminalDrawerOpen: false,
+    }),
+  confirmZenHiredSolo: () =>
+    set((s) => ({
+      zenHiredSolo: s.zenHiredSolo
+        ? { ...s.zenHiredSolo, confirmed: true }
+        : null,
+    })),
+  clearZenHiredSolo: () => set({ zenHiredSolo: null }),
+  setZenHiringState: (zenHiringState) => set({ zenHiringState }),
   dismissZenCardStamp: (cardKey, stamp) =>
     set((s) => ({
       zenDismissedStamps: { ...s.zenDismissedStamps, [cardKey]: stamp },

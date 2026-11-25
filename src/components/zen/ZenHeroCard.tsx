@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useRef } from "react";
-import { Check, FileDiff, Home, Sparkles } from "lucide-react";
-import type { EnrichedSession, PromptPreset } from "../../types/domain";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { Check, FileDiff, GitMerge, Home, Trash2 } from "lucide-react";
+import type { EnrichedSession } from "../../types/domain";
 import type { ZenCardStyle } from "../../utils/zenQueue";
+import { getWorkerPersona } from "../../utils/workerPersona";
 import { StatusBadge } from "../shared/StatusBadge";
+import { WorkerMonsterAvatar } from "./WorkerMonsterAvatar";
 import { formatElapsed } from "../../utils/format";
 import {
   isPermissionApprovalPending,
@@ -19,10 +21,9 @@ interface ZenHeroCardProps {
   stampLabel: string | null;
   thumpActive: boolean;
   pullRatio: number;
-  presets: PromptPreset[];
   onPrimaryAction: () => void;
   onOpenDiff?: () => void;
-  onSendPreset: (prompt: string) => void;
+  onDismissMerged?: () => void;
 }
 
 export const ZenHeroCard = React.memo(function ZenHeroCard({
@@ -34,13 +35,13 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
   stampLabel,
   thumpActive,
   pullRatio,
-  presets,
   onPrimaryAction,
   onOpenDiff,
-  onSendPreset,
+  onDismissMerged,
 }: ZenHeroCardProps) {
   const normWtPath = normalizePath(session.worktreePath);
   const cardMeta = useAppStore((s) => s.worktreeMeta[normWtPath]);
+  const persona = useMemo(() => getWorkerPersona(normWtPath), [normWtPath]);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const sheenRef = useRef<HTMLDivElement>(null);
@@ -113,8 +114,8 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
       return session.previewLines.slice(-4).join("\n");
     }
     return isAction
-      ? "우측 터미널에서 확인이 필요합니다."
-      : "AI가 작업을 마치고 다음 지시를 기다리고 있습니다.";
+      ? `${persona.name} needs your input in the right terminal.`
+      : `${persona.name} finished the task and is awaiting your review.`;
   })();
 
   const hasDiff =
@@ -122,12 +123,15 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
     (worktree.added_lines > 0 ||
       worktree.deleted_lines > 0 ||
       worktree.dirty_count > 0);
+  const canDismissMerged = Boolean(
+    worktree && !worktree.is_main && worktree.is_merged && onDismissMerged
+  );
 
   const primaryCtaText = isApproval
-    ? "도장 쾅! 승인하고 다음으로"
+    ? `Approve ${persona.name} & Next`
     : isAction
-    ? "도장 쾅! 확인 완료 · 다음으로"
-    : "도장 쾅! 결재 완료 · 다음으로";
+    ? `Confirm ${persona.name} & Next`
+    : `Clear ${persona.name} & Next`;
 
   const accentColor = isAction ? "var(--action-fg)" : "var(--ready-fg)";
   const accentBorder = isAction ? "var(--action-border)" : "var(--ready-border)";
@@ -149,7 +153,7 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
       )}
       {remainingCount >= 1 && (
         <div
-          title={`아래에 ${remainingCount}건 대기 중`}
+          title={`${remainingCount} more queued underneath`}
           className="pointer-events-none absolute inset-x-3.5 top-4 bottom-0 rounded-[26px]"
           style={{
             transform: "translateY(9px) scale(0.96)",
@@ -201,18 +205,32 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
           style={{ borderBottom: "1px dashed var(--divider)" }}
         >
           <div className="flex items-center gap-2 min-w-0">
-            <StatusBadge
-              bucket={bucket}
-              status={terminal.status}
-              isStuck={session.isStuck}
-              stuckMinutes={session.stuckMinutes}
-            />
-            <span
-              className="text-xs font-semibold truncate"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              {session.projectName}
-            </span>
+              <StatusBadge
+                bucket={bucket}
+                status={terminal.status}
+                isStuck={session.isStuck}
+                stuckMinutes={session.stuckMinutes}
+              />
+              {canDismissMerged && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0"
+                  style={{
+                    background: "var(--accent-soft)",
+                    border: "1px solid var(--accent-border)",
+                    color: "var(--accent)",
+                  }}
+                  title="This worktree branch is merged and ready to dismiss"
+                >
+                  <GitMerge className="w-2.5 h-2.5" />
+                  MERGED
+                </span>
+              )}
+              <span
+                className="text-xs font-semibold truncate"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                {session.projectName}
+              </span>
           </div>
           <span
             className="text-xs font-mono-code tabular-nums shrink-0"
@@ -224,74 +242,96 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
           </span>
         </div>
 
-        {/* Row 2: Large Project/Branch Hero Title */}
-        <div className="relative z-10 space-y-1.5 min-w-0">
-          <div className="flex items-center gap-2 min-w-0 flex-wrap">
-            <span
-              className="w-3 h-3 rounded-full shrink-0"
-              style={{ backgroundColor: session.projectColor }}
+        {/* Row 2: Monster Worker Portrait + Project/Branch Hero Title */}
+        <div className="relative z-10 flex items-center gap-3.5 min-w-0">
+          <div
+            className="shrink-0 rounded-[18px] p-1 flex items-center justify-center"
+            style={{
+              background: "var(--input-bg)",
+              border: `1.5px solid ${accentBorder}`,
+            }}
+          >
+            <WorkerMonsterAvatar
+              persona={persona}
+              mood={isAction ? "alert" : "ready"}
+              size={58}
             />
-            {worktree?.is_main && (
-              <span
-                className="inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0"
-                style={{
-                  background: "var(--accent-soft)",
-                  border: "1px solid var(--accent-border)",
-                  color: "var(--accent)",
-                }}
-              >
-                <Home className="w-2.5 h-2.5" />
-                ROOT
-              </span>
-            )}
-            <h2
-              className="text-2xl font-black font-mono-code tracking-tight truncate"
-              style={{ color: "var(--text-primary)" }}
-              title={displayName ? `${displayName} (${branchText})` : branchText}
-            >
-              {displayName || branchText}
-            </h2>
-            {displayName && (
-              <span
-                className="text-[11px] font-mono-code px-2 py-0.5 rounded-full truncate max-w-[180px]"
-                style={{
-                  background: "var(--pill-bg)",
-                  border: "1px solid var(--pill-border)",
-                  color: "var(--text-secondary)",
-                }}
-                title={`worktree branch: ${branchText}`}
-              >
-                {branchText}
-              </span>
-            )}
           </div>
 
-          <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-            <span
-              className="truncate"
-              style={{ color: "var(--text-muted)" }}
-            >
-              {customNote ||
-                (displayName ? `branch: ${branchText}` : session.worktreePath)}
-            </span>
-
-            {hasDiff && worktree && onOpenDiff && (
-              <button
-                type="button"
-                onClick={onOpenDiff}
-                className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono-code cursor-pointer shrink-0"
-                style={{ color: "var(--text-secondary)" }}
-                title="Git Diff 미리보기"
+          <div className="flex-1 space-y-1 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <span
+                className="text-sm font-black tracking-tight"
+                style={{ color: persona.palette.body }}
               >
-                <FileDiff className="w-3 h-3" />
-                <span style={{ color: "var(--ready-fg)" }}>
-                  +{worktree.added_lines}
+                {persona.name}
+              </span>
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: session.projectColor }}
+              />
+              {worktree?.is_main && (
+                <span
+                  className="inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0"
+                  style={{
+                    background: "var(--accent-soft)",
+                    border: "1px solid var(--accent-border)",
+                    color: "var(--accent)",
+                  }}
+                >
+                  <Home className="w-2.5 h-2.5" />
+                  ROOT
                 </span>
-                <span style={{ color: "var(--action-fg)" }}>
-                  -{worktree.deleted_lines}
+              )}
+              <h2
+                className="text-xl font-black font-mono-code tracking-tight truncate"
+                style={{ color: "var(--text-primary)" }}
+                title={displayName ? `${displayName} (${branchText})` : branchText}
+              >
+                {displayName || branchText}
+              </h2>
+              {displayName && (
+                <span
+                  className="text-[11px] font-mono-code px-2 py-0.5 rounded-full truncate max-w-[160px]"
+                  style={{
+                    background: "var(--pill-bg)",
+                    border: "1px solid var(--pill-border)",
+                    color: "var(--text-secondary)",
+                  }}
+                  title={`worktree branch: ${branchText}`}
+                >
+                  {branchText}
                 </span>
-              </button>
-            )}
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+              <span
+                className="truncate"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {customNote ||
+                  (displayName ? `branch: ${branchText}` : session.worktreePath)}
+              </span>
+
+              {hasDiff && worktree && onOpenDiff && (
+                <button
+                  type="button"
+                  onClick={onOpenDiff}
+                  className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono-code cursor-pointer shrink-0"
+                  style={{ color: "var(--text-secondary)" }}
+                  title="Preview Git Diff"
+                >
+                  <FileDiff className="w-3 h-3" />
+                  <span style={{ color: "var(--ready-fg)" }}>
+                    +{worktree.added_lines}
+                  </span>
+                  <span style={{ color: "var(--action-fg)" }}>
+                    -{worktree.deleted_lines}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -307,34 +347,12 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
           {previewText}
         </div>
 
-        {/* Row 4: Quick One-Click Prompt Presets */}
-        {presets.length > 0 && (
-          <div className="relative z-10 flex items-center gap-1.5 flex-wrap">
-            <Sparkles
-              className="w-3.5 h-3.5 shrink-0"
-              style={{ color: "var(--text-faint)" }}
-            />
-            {presets.slice(0, 4).map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onSendPreset(p.prompt)}
-                title={p.prompt}
-                className="jjdr-pill px-2.5 py-1 rounded-full text-[11px] font-medium cursor-pointer transition-colors"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Row 5: Primary Boss Stamp CTA */}
+        {/* Row 4: Primary Boss Stamp CTA (+ optional one-click Dismiss ONLY when MERGED) */}
         <div className="relative z-10 pt-1 flex items-center gap-2">
           <button
             type="button"
             onClick={onPrimaryAction}
-            title="처리 완료하고 다음 우선순위 카드로 넘기기 (Ctrl+Enter)"
+            title="Clear card and load next priority (Ctrl+Enter)"
             className="flex-1 py-3 px-5 rounded-2xl text-xs font-extrabold cursor-pointer flex items-center justify-center gap-2 transition-transform active:scale-[0.98] hover:opacity-95 shadow-md"
             style={{
               background: isAction
@@ -356,6 +374,22 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
               Ctrl+Enter
             </kbd>
           </button>
+
+          {canDismissMerged && onDismissMerged && (
+            <button
+              type="button"
+              onClick={onDismissMerged}
+              title="Merged branch — dismiss worker and clean up worktree"
+              className="jjdr-pill py-3 px-3.5 rounded-2xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shrink-0 transition-transform active:scale-[0.98]"
+              style={{
+                color: "var(--accent)",
+                borderColor: "var(--accent-border)",
+              }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Dismiss</span>
+            </button>
+          )}
         </div>
 
         {/* Bottom Subtle Hint */}
@@ -363,9 +397,9 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
           className="relative z-10 flex items-center justify-between text-[11px]"
           style={{ color: "var(--text-faint)" }}
         >
-          <span>우측 터미널에 바로 입력하면 자동으로 다음 카드로 넘어갑니다</span>
+          <span>Reply in the right terminal to auto-advance</span>
           <span style={{ color: accentColor }} className="font-mono-code font-semibold">
-            Ctrl+N 다음 장
+            Ctrl+N Skip
           </span>
         </div>
       </div>

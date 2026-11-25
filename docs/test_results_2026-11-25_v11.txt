@@ -1,0 +1,18 @@
+# Test & Verification Results — Solo Hire Reveal, HIRED! Stamp & Terminal Reveal (2026-11-25 v11)
+
+## 1. Vitest Unit Tests (`npm run test`)
+- Result: PASS (14 test files, 53 tests passed, 0 failed)
+- Duration: 1.28s
+- Added Test: `src/utils/zenDispatch.test.ts` — `buildFallbackHiredWorker` (live AI & dormant fallback)
+
+## 2. TypeScript & Production Build (`npm run build`)
+- Command: `tsc && vite build`
+- Result: PASS (1679 modules transformed, built in 3.53s, 0 errors)
+
+## 3. Performance, Zero-Blur & File Size Audit
+- Zero-Blur (`backdrop-blur` / `filter: blur()`): 0 CSS matches across `src/components/zen/*.tsx` and `src/styles/zenMode.css`
+- 900-line limit: PASS (Refactored `ZenDispatchView.tsx` from 936 lines to 845 lines by extracting `src/hooks/useZenDispatchShortcuts.ts`)
+- UX Flow Verified:
+  - Hiring Loading (`ZenHiringStage`) -> Solo New Recruit Card centered (right pane hidden, no Prev/Next, no lever/dots)
+  - Click `Hire & Assign {Name}` (or `Enter` / `Ctrl+Enter`) -> `HIRED!` stamp slam -> Right terminal pane appears & auto-focuses
+  - Send task in right terminal -> `DISPATCHED!` stamp -> Auto-returns to Inbox (or All Clear)

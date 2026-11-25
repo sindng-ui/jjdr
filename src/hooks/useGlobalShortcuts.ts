@@ -82,8 +82,12 @@ export function useGlobalShortcuts() {
               true,
               true
             );
-          } else if (ui.viewMode === "zen" && (ctrlDir === "right" || ctrlDir === "down")) {
-            ui.requestZenSkip();
+          } else if (ui.viewMode === "zen") {
+            if (ctrlDir === "right" || ctrlDir === "down") {
+              ui.requestZenSkip();
+            } else if (ctrlDir === "left" || ctrlDir === "up") {
+              ui.requestZenPrev();
+            }
           }
           return;
         }
@@ -160,6 +164,21 @@ export function useGlobalShortcuts() {
           e.preventDefault();
           e.stopPropagation();
           openAiLauncherForAttachedWorktree();
+          return;
+        }
+      }
+
+      // 3d. Ctrl+Shift+D: Toggle Zen Worker Dispatch (safe inside xterm; never intercepts Ctrl+D EOF)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === "d" || e.code === "KeyD") {
+          e.preventDefault();
+          e.stopPropagation();
+          if (ui.viewMode === "zen" && ui.zenModeTab === "dispatch") {
+            ui.returnToZenInbox();
+          } else {
+            ui.openZenDispatch();
+          }
           return;
         }
       }
@@ -329,6 +348,19 @@ export function useGlobalShortcuts() {
             return;
           }
           target.blur();
+          return;
+        }
+        if (!inXterm && ui.viewMode === "zen" && ui.zenModeTab === "dispatch") {
+          e.preventDefault();
+          if (ui.zenDispatchStep === "browse_worker") {
+            ui.closeTerminalDrawer();
+            ui.setZenDispatchStep("pick_action");
+          } else if (ui.zenDispatchStep === "pick_action") {
+            ui.setZenDispatchStep("pick_project");
+            ui.setZenDispatchProjectId(null);
+          } else {
+            ui.returnToZenInbox();
+          }
           return;
         }
         if (!inXterm && (ui.terminalDrawerOpen || ui.attachedAddress)) {

@@ -1,13 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Inbox, Send, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
-import { cardKeyForSession } from "../../utils/worktreeSessions";
+import {
+  cardKeyForSession,
+  getWorktreeLiveSessions,
+} from "../../utils/worktreeSessions";
 import {
   computeSessionDigest,
   isPermissionApprovalPending,
 } from "../../workers/dashboardLogic";
-import { sendTerminalKeys, sendTerminalText } from "../../services/tauriBridge";
+import { sendTerminalKeys } from "../../services/tauriBridge";
 import {
   computeNextSkippedOrder,
   incrementTodayClearedCount,
@@ -17,9 +20,19 @@ import {
   writeStoredZenStyle,
   type ZenCardStyle,
 } from "../../utils/zenQueue";
+import {
+  formatZenComboLabel,
+  playZenAllClearSfx,
+  playZenLeverSfx,
+  playZenStampSfx,
+  readStoredZenSfxEnabled,
+  writeStoredZenSfxEnabled,
+} from "../../utils/zenSound";
+import { buildDispatchProjectSummaries } from "../../utils/zenDispatch";
 import { ZenHeroCard } from "./ZenHeroCard";
 import { ZenTactileControl } from "./ZenTactileControl";
 import { ZenEmptyBriefing } from "./ZenEmptyBriefing";
+import { ZenDispatchView } from "./ZenDispatchView";
 import type { EnrichedSession } from "../../types/domain";
 import "../../styles/zenMode.css";
 
@@ -30,8 +43,15 @@ function sessionReadyStamp(s: EnrichedSession): string {
 
 export const ZenModeView = React.memo(function ZenModeView() {
   const byBucket = useAppStore((s) => s.computed.byBucket);
-  const presets = useAppStore((s) => s.settings.prompt_presets);
+  const matrixLanes = useAppStore((s) => s.computed.matrixLanes);
+  const worktreeMeta = useAppStore((s) => s.worktreeMeta);
+  const removingWorktreePaths = useAppStore((s) => s.removingWorktreePaths);
+  const rootCardMode = useAppStore((s) => s.settings.root_card_mode);
 
+  const zenModeTab = useUiStore((s) => s.zenModeTab);
+  const openZenDispatch = useUiStore((s) => s.openZenDispatch);
+  const returnToZenInbox = useUiStore((s) => s.returnToZenInbox);
+  const recordZenAcked = useUiStore((s) => s.recordZenAcked);
   const zenSkipNonce = useUiStore((s) => s.zenSkipNonce);
   const zenApproveNonce = useUiStore((s) => s.zenApproveNonce);
   const dismissedStamps = useUiStore((s) => s.zenDismissedStamps);
@@ -44,15 +64,20 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const closeTerminalDrawer = useUiStore((s) => s.closeTerminalDrawer);
   const requestTerminalFocus = useUiStore((s) => s.requestTerminalFocus);
   const setDiffTarget = useUiStore((s) => s.setDiffTarget);
+  const setTeardownTarget = useUiStore((s) => s.setTeardownTarget);
   const setViewMode = useUiStore((s) => s.setViewMode);
   const showToast = useUiStore((s) => s.showToast);
 
   const [styleMode, setStyleMode] = useState<ZenCardStyle>(() =>
     readStoredZenStyle()
   );
+  const [sfxEnabled, setSfxEnabled] = useState<boolean>(() =>
+    readStoredZenSfxEnabled()
+  );
   const [clearedToday, setClearedToday] = useState<number>(() =>
     readTodayClearedCount()
   );
+  const [celebrateNonce, setCelebrateNonce] = useState(0);
   const [lockedCardKey, setLockedCardKey] = useState<string | null>(null);
   const [skippedKeys, setSkippedKeys] = useState<string[]>([]);
 
@@ -77,6 +102,27 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const prevSkipNonceRef = useRef(zenSkipNonce);
   const prevApproveNonceRef = useRef(zenApproveNonce);
   const lastAttachedKeyRef = useRef<string | null>(null);
+  const comboRef = useRef<{ count: number; lastMs: number }>({
+    count: 0,
+    lastMs: 0,
+  });
+
+  const nextComboStep = useCallback((isApproval: boolean): string => {
+    const now = Date.now();
+    const withinWindow = now - comboRef.current.lastMs <= 25_000;
+    const nextCount = withinWindow ? comboRef.current.count + 1 : 1;
+    comboRef.current = { count: nextCount, lastMs: now };
+    return formatZenComboLabel(nextCount, isApproval);
+  }, []);
+
+  const handleToggleSfx = useCallback(() => {
+    setSfxEnabled((prev) => {
+      const next = !prev;
+      writeStoredZenSfxEnabled(next);
+      if (next) playZenLeverSfx(true);
+      return next;
+    });
+  }, []);
 
   // Filter out cards the user explicitly stamped "결재 완료" at the exact same turn/status_ms
   const visibleNeedsYou = useMemo(
@@ -120,14 +166,45 @@ export const ZenModeView = React.memo(function ZenModeView() {
     setFloatNotice({ id: Date.now(), text, color });
   }, []);
 
+  const projectSummaries = useMemo(
+    () =>
+      buildDispatchProjectSummaries(matrixLanes, {
+        worktreeMeta,
+        rootCardMode,
+        removingWorktreePaths,
+      }),
+    [matrixLanes, worktreeMeta, rootCardMode, removingWorktreePaths]
+  );
+
+  const totalDispatchAvailable = useMemo(
+    () =>
+      projectSummaries.reduce((acc, item) => acc + item.totalAvailableCount, 0),
+    [projectSummaries]
+  );
+
+  const isDispatchTab = zenModeTab === "dispatch";
+
   // Maintain Sticky Lock & handle automatic advance when the locked card resolves via right terminal
   useEffect(() => {
-    if (animatingRef.current) return;
+    if (isDispatchTab || animatingRef.current) return;
 
     if (selection.lockedCardResolved) {
+      if (lockedCardKey) {
+        recordZenAcked(lockedCardKey);
+      }
       const nextCount = incrementTodayClearedCount();
       setClearedToday(nextCount);
-      triggerFloat("+1 처리 완료!", "var(--ready-fg)");
+      const comboText = nextComboStep(false);
+      triggerFloat(
+        comboText,
+        comboRef.current.count >= 3 ? "var(--warn-fg)" : "var(--ready-fg)"
+      );
+      if (!activeKey) {
+        playZenAllClearSfx(sfxEnabled);
+        setCelebrateNonce((n) => n + 1);
+      } else {
+        playZenStampSfx(sfxEnabled);
+      }
       setEnterKind(styleMode === "gacha_dial" ? "drop" : "rise");
       setEnterNonce((n) => n + 1);
       setLockedCardKey(activeKey);
@@ -139,11 +216,25 @@ export const ZenModeView = React.memo(function ZenModeView() {
       setEnterKind(styleMode === "gacha_dial" ? "drop" : "rise");
       setEnterNonce((n) => n + 1);
     }
-  }, [selection.lockedCardResolved, lockedCardKey, activeKey, styleMode, triggerFloat]);
+  }, [
+    isDispatchTab,
+    selection.lockedCardResolved,
+    lockedCardKey,
+    activeKey,
+    styleMode,
+    sfxEnabled,
+    nextComboStep,
+    recordZenAcked,
+    triggerFloat,
+  ]);
 
   // Auto-attach right terminal pane to the active Zen Hero Card;
   // automatically close right pane whenever All Clear briefing is shown (unless user explicitly clicked to peek a running card).
   useEffect(() => {
+    if (isDispatchTab) {
+      lastAttachedKeyRef.current = null;
+      return;
+    }
     if (activeCard && activeKey) {
       setPeekingAddr(null);
       const syncKey = `${activeKey}::${activeCard.address}`;
@@ -163,6 +254,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
       }
     }
   }, [
+    isDispatchTab,
     activeCard,
     activeKey,
     exitingCard,
@@ -183,7 +275,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const isActiveLive = activeCard?.terminal.state === "live";
 
   useEffect(() => {
-    if (hasExitingCard || !activeKey || !activeAddr || !isActiveLive) {
+    if (isDispatchTab || hasExitingCard || !activeKey || !activeAddr || !isActiveLive) {
       return;
     }
     const token = `${enterNonce}::${activeKey}::${activeAddr}`;
@@ -191,6 +283,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
     lastFocusedCardEnterRef.current = token;
     requestTerminalFocus();
   }, [
+    isDispatchTab,
     enterNonce,
     hasExitingCard,
     activeKey,
@@ -215,18 +308,19 @@ export const ZenModeView = React.memo(function ZenModeView() {
       }
       setThumpActive(true);
       setTimeout(() => setThumpActive(false), 240);
-      triggerFloat("마지막 1장입니다!", "var(--text-secondary)");
+      triggerFloat("Last card in queue!", "var(--text-secondary)");
       return;
     }
 
     animatingRef.current = true;
+    playZenLeverSfx(sfxEnabled);
     const isGacha = styleMode === "gacha_dial";
     if (isGacha) {
       setDialAngle((a) => a + 180);
-      triggerFloat("철컥! 다음 캡슐", "var(--warn-fg)");
+      triggerFloat("Next capsule!", "var(--warn-fg)");
       setExitAnimClass("zen-exit-roll");
     } else {
-      triggerFloat("다음 우선순위!", "var(--accent)");
+      triggerFloat("Next priority!", "var(--accent)");
       setExitAnimClass("zen-exit-fly-up");
     }
 
@@ -250,6 +344,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
     actionablePool,
     skippedKeys,
     styleMode,
+    sfxEnabled,
     showToast,
     triggerFloat,
   ]);
@@ -262,7 +357,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
 
     const cardSnapshot = activeCard;
     const isApproval = isPermissionApprovalPending(cardSnapshot.terminal);
-    const stamp = isApproval ? "승인 완료" : "결재 완료";
+    const stamp = isApproval ? "APPROVED" : "CLEARED";
     const isGacha = styleMode === "gacha_dial";
     const digest = computeSessionDigest(
       cardSnapshot.terminal,
@@ -275,17 +370,19 @@ export const ZenModeView = React.memo(function ZenModeView() {
     setExitingCard(cardSnapshot);
     setStampLabel(stamp);
     setThumpActive(true);
+    playZenStampSfx(sfxEnabled);
     if (isGacha) {
       setDialAngle((a) => a + 180);
     }
+    const comboText = nextComboStep(isApproval);
     triggerFloat(
-      isApproval ? "+1 승인 완료!" : "+1 결재 완료!",
-      "var(--ready-fg)"
+      comboText,
+      comboRef.current.count >= 3 ? "var(--warn-fg)" : "var(--ready-fg)"
     );
 
     if (isApproval) {
       void sendTerminalKeys(cardSnapshot.address, ["enter"]).catch((err) =>
-        showToast(`승인 전송 실패: ${String(err)}`, "error")
+        showToast(`Approval send failed: ${String(err)}`, "error")
       );
     } else {
       useAppStore
@@ -297,6 +394,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
         );
     }
     dismissZenCardStamp(activeKey, stampKey);
+    recordZenAcked(activeKey);
 
     setTimeout(() => {
       setThumpActive(false);
@@ -318,9 +416,14 @@ export const ZenModeView = React.memo(function ZenModeView() {
           null,
           skippedKeys
         );
-        setLockedCardKey(
-          nextSel.activeCard ? cardKeyForSession(nextSel.activeCard) : null
-        );
+        const nextCardKey = nextSel.activeCard
+          ? cardKeyForSession(nextSel.activeCard)
+          : null;
+        setLockedCardKey(nextCardKey);
+        if (!nextCardKey) {
+          playZenAllClearSfx(sfxEnabled);
+          setCelebrateNonce((n) => n + 1);
+        }
         setEnterKind(isGacha ? "drop" : "rise");
         setEnterNonce((n) => n + 1);
         animatingRef.current = false;
@@ -332,44 +435,32 @@ export const ZenModeView = React.memo(function ZenModeView() {
     actionablePool,
     skippedKeys,
     styleMode,
+    sfxEnabled,
+    nextComboStep,
     dismissZenCardStamp,
+    recordZenAcked,
     showToast,
     triggerFloat,
   ]);
 
-  const handleSendPreset = useCallback(
-    async (prompt: string) => {
-      if (!activeCard || !prompt.trim()) return;
-      try {
-        await sendTerminalText(activeCard.address, prompt, false);
-        useAppStore
-          .getState()
-          .acknowledgeTurn(
-            activeCard.address,
-            Math.max(1, activeCard.terminal.turn)
-          );
-        requestTerminalFocus();
-      } catch (err) {
-        showToast(`프리셋 전송 실패: ${String(err)}`, "error");
-      }
-    },
-    [activeCard, requestTerminalFocus, showToast]
-  );
-
-  // React to global Ctrl+N (skip) & Ctrl+Enter (stamp approve/done) triggers
+  // React to global Ctrl+N (skip) & Ctrl+Enter (stamp approve/done) triggers in Inbox tab only
   useEffect(() => {
     if (zenSkipNonce !== prevSkipNonceRef.current) {
       prevSkipNonceRef.current = zenSkipNonce;
-      handleManualNext();
+      if (!isDispatchTab) {
+        handleManualNext();
+      }
     }
-  }, [zenSkipNonce, handleManualNext]);
+  }, [zenSkipNonce, isDispatchTab, handleManualNext]);
 
   useEffect(() => {
     if (zenApproveNonce !== prevApproveNonceRef.current) {
       prevApproveNonceRef.current = zenApproveNonce;
-      handlePrimaryAction();
+      if (!isDispatchTab) {
+        handlePrimaryAction();
+      }
     }
-  }, [zenApproveNonce, handlePrimaryAction]);
+  }, [zenApproveNonce, isDispatchTab, handlePrimaryAction]);
 
   const handlePeekRunning = useCallback(
     (session: EnrichedSession) => {
@@ -387,18 +478,6 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const displayCard = exitingCard ?? activeCard;
   const displayKey = displayCard ? cardKeyForSession(displayCard) : null;
 
-  if (!displayCard) {
-    return (
-      <ZenEmptyBriefing
-        runningCards={byBucket.running}
-        idleCount={byBucket.idle.length}
-        clearedToday={clearedToday}
-        onPeekSession={handlePeekRunning}
-        onOpenRadar={() => setViewMode("radar")}
-      />
-    );
-  }
-
   const enterAnimClass = exitingCard
     ? ""
     : enterKind === "drop"
@@ -407,15 +486,60 @@ export const ZenModeView = React.memo(function ZenModeView() {
 
   return (
     <div className="flex-1 h-full min-h-0 overflow-hidden flex flex-col px-6 py-4 min-w-0 relative">
-      {/* Calm Minimal Top Bar: Style Switcher (Holo+Lever vs Gacha Dial) + Today Cleared */}
-      <div className="flex items-center justify-between gap-2 shrink-0 select-none">
-        <div className="flex items-center gap-2">
-          <span
-            className="text-xs font-bold tracking-tight"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            ZEN
-          </span>
+      {/* Calm Minimal Top Bar: Inbox <-> Dispatch Switcher + Style Switcher + Today Cleared */}
+      <div className="flex items-center justify-between gap-2 flex-wrap shrink-0 select-none">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="jjdr-pill inline-flex items-center rounded-full p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={returnToZenInbox}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full cursor-pointer transition-colors ${
+                !isDispatchTab ? "jjdr-pill-active font-bold" : ""
+              }`}
+              style={
+                !isDispatchTab ? undefined : { color: "var(--text-muted)" }
+              }
+              title="Focus on actionable review cards"
+            >
+              <Inbox className="w-3.5 h-3.5" />
+              <span>Inbox</span>
+              {actionablePool.length > 0 && (
+                <span
+                  className="text-[10px] font-mono-code px-1.5 py-0.2 rounded-full"
+                  style={{
+                    background: "var(--action-soft)",
+                    color: "var(--action-fg)",
+                  }}
+                >
+                  {actionablePool.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => openZenDispatch(null)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full cursor-pointer transition-colors ${
+                isDispatchTab ? "jjdr-pill-active font-bold" : ""
+              }`}
+              style={isDispatchTab ? undefined : { color: "var(--text-muted)" }}
+              title="Hire or assign a standby worker (Ctrl+Shift+D)"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Dispatch</span>
+              {totalDispatchAvailable > 0 && (
+                <span
+                  className="text-[10px] font-mono-code px-1.5 py-0.2 rounded-full"
+                  style={{
+                    background: "var(--ready-soft)",
+                    color: "var(--ready-fg)",
+                  }}
+                >
+                  {totalDispatchAvailable}
+                </span>
+              )}
+            </button>
+          </div>
+
           <div className="jjdr-pill inline-flex items-center rounded-full p-0.5 text-[11px]">
             <button
               type="button"
@@ -429,7 +553,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
                   : { color: "var(--text-muted)" }
               }
             >
-              홀로그램 + 레버
+              Holo + Lever
             </button>
             <button
               type="button"
@@ -443,71 +567,127 @@ export const ZenModeView = React.memo(function ZenModeView() {
                   : { color: "var(--text-muted)" }
               }
             >
-              가챠 다이얼
+              Gacha Dial
             </button>
           </div>
         </div>
 
-        <span
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono-code font-semibold tabular-nums"
-          style={{
-            background: "var(--pill-bg)",
-            border: "1px solid var(--pill-border)",
-            color: "var(--warn-fg)",
-          }}
-        >
-          <Sparkles className="w-3 h-3" />
-          오늘 {clearedToday}건 클리어
-        </span>
-      </div>
-
-      {/* Center Single Hero Card + Right Physical Tactile Control */}
-      <div className="flex-1 min-h-0 flex items-center justify-center relative">
-        {floatNotice && (
-          <div
-            key={floatNotice.id}
-            className="zen-float-pop pointer-events-none absolute top-6 right-12 z-30 font-mono-code text-sm font-black"
-            style={{ color: floatNotice.color }}
-          >
-            {floatNotice.text}
-          </div>
-        )}
-
-        <div className="w-full max-w-xl flex items-center justify-center gap-5">
-          <ZenHeroCard
-            key={`${displayKey}-${enterNonce}`}
-            session={displayCard}
-            styleMode={styleMode}
-            remainingCount={selection.remainingCount}
-            enterAnimClass={enterAnimClass}
-            exitAnimClass={exitAnimClass}
-            stampLabel={stampLabel}
-            thumpActive={thumpActive}
-            pullRatio={pullRatio}
-            presets={presets}
-            onPrimaryAction={handlePrimaryAction}
-            onOpenDiff={
-              displayCard.projectId && displayCard.worktree
-                ? () =>
-                    setDiffTarget({
-                      projectId: displayCard.projectId!,
-                      worktreePath: displayCard.worktree!.path,
-                      branch: displayCard.worktree!.branch,
-                    })
-                : undefined
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleToggleSfx}
+            title={
+              sfxEnabled
+                ? "Zen tactile SFX ON (click to mute)"
+                : "Zen tactile SFX muted (click to enable)"
             }
-            onSendPreset={(prompt) => void handleSendPreset(prompt)}
-          />
+            className="jjdr-pill h-7 w-7 rounded-full inline-flex items-center justify-center cursor-pointer transition-colors"
+            style={{
+              color: sfxEnabled ? "var(--text-primary)" : "var(--text-faint)",
+            }}
+          >
+            {sfxEnabled ? (
+              <Volume2 className="w-3.5 h-3.5" />
+            ) : (
+              <VolumeX className="w-3.5 h-3.5" />
+            )}
+          </button>
 
-          <ZenTactileControl
-            styleMode={styleMode}
-            remainingCount={selection.remainingCount}
-            dialAngle={dialAngle}
-            onPullProgress={setPullRatio}
-            onTriggerNext={handlePrimaryAction}
-          />
+          <span
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono-code font-semibold tabular-nums"
+            style={{
+              background: "var(--pill-bg)",
+              border: "1px solid var(--pill-border)",
+              color: "var(--warn-fg)",
+            }}
+          >
+            <Sparkles className="w-3 h-3" />
+            {clearedToday} Cleared Today
+          </span>
         </div>
       </div>
+
+      {/* Main Zen Stage: Dispatch View OR Inbox Hero Card OR All Clear Briefing */}
+      {isDispatchTab ? (
+        <ZenDispatchView styleMode={styleMode} sfxEnabled={sfxEnabled} />
+      ) : !displayCard ? (
+        <ZenEmptyBriefing
+          runningCards={byBucket.running}
+          idleCount={byBucket.idle.length}
+          clearedToday={clearedToday}
+          celebrateNonce={celebrateNonce}
+          projectSummaries={projectSummaries}
+          onPeekSession={handlePeekRunning}
+          onStartDispatch={(pid) => openZenDispatch(pid ?? null)}
+          onOpenRadar={() => setViewMode("radar")}
+        />
+      ) : (
+        <div className="flex-1 min-h-0 flex items-center justify-center relative">
+          {floatNotice && (
+            <div
+              key={floatNotice.id}
+              className="zen-float-pop pointer-events-none absolute top-6 right-12 z-30 font-mono-code text-sm font-black"
+              style={{ color: floatNotice.color }}
+            >
+              {floatNotice.text}
+            </div>
+          )}
+
+          <div className="w-full max-w-xl flex items-center justify-center gap-5">
+            <ZenHeroCard
+              key={`${displayKey}-${enterNonce}`}
+              session={displayCard}
+              styleMode={styleMode}
+              remainingCount={selection.remainingCount}
+              enterAnimClass={enterAnimClass}
+              exitAnimClass={exitAnimClass}
+              stampLabel={stampLabel}
+              thumpActive={thumpActive}
+              pullRatio={pullRatio}
+              onPrimaryAction={handlePrimaryAction}
+              onOpenDiff={
+                displayCard.projectId && displayCard.worktree
+                  ? () =>
+                      setDiffTarget({
+                        projectId: displayCard.projectId!,
+                        worktreePath: displayCard.worktree!.path,
+                        branch: displayCard.worktree!.branch,
+                      })
+                  : undefined
+              }
+              onDismissMerged={
+                displayCard.projectId &&
+                displayCard.worktree &&
+                !displayCard.worktree.is_main &&
+                displayCard.worktree.is_merged
+                  ? () => {
+                      const liveTabs = getWorktreeLiveSessions(
+                        useAppStore.getState().computed.allSessions,
+                        displayCard
+                      );
+                      setTeardownTarget({
+                        projectId: displayCard.projectId!,
+                        worktreePath: displayCard.worktree!.path,
+                        branch: displayCard.worktree!.branch,
+                        isMerged: true,
+                        dirtyCount: displayCard.worktree!.dirty_count,
+                        terminalAddresses: liveTabs.map((s) => s.address),
+                      });
+                    }
+                  : undefined
+              }
+            />
+
+            <ZenTactileControl
+              styleMode={styleMode}
+              remainingCount={selection.remainingCount}
+              dialAngle={dialAngle}
+              onPullProgress={setPullRatio}
+              onTriggerNext={handlePrimaryAction}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 });

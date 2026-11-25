@@ -1,0 +1,18 @@
+# Test & Verification Results — Zen Monster Persona, Hiring Stage, Dispatch Fix & English UI (2026-11-25 v10)
+
+## 1. Vitest Unit Tests (`npm run test`)
+- Result: PASS (14 test files, 52 tests passed, 0 failed)
+- Duration: 1.32s
+- Added Suite: `src/utils/workerPersona.test.ts` (2 tests passed)
+  - Deterministic monster persona per worktree seed
+  - Distinct personas across different worktrees
+
+## 2. TypeScript & Production Build (`npm run build`)
+- Command: `tsc && vite build`
+- Result: PASS (1678 modules transformed, built in 3.62s, 0 errors)
+
+## 3. Performance, Zero-Blur, English UI & File Size Audit
+- Zero-Blur (`backdrop-blur` / `filter: blur()`): 0 CSS matches across `src/components/zen/*.tsx` and `src/styles/zenMode.css`
+- Korean UI strings in `src/components/zen/*.tsx`: 0 UI strings (1 code comment only)
+- 900-line limit: PASS (Max file in `src/`: `ZenDispatchView.tsx` 788 lines, `ZenWorkerCard.tsx` 616 lines, `ZenDispatchPicker.tsx` 548 lines)
+- Dispatch Completion Bug Fix: Dual-layer detection (real-time `terminals` working/turn bump across all worktree tabs + `matrixLanes` running/ready/needs_you transition) with render-phase `dispatchedWorkerPending` guard preventing Auto-Attach race conditions.

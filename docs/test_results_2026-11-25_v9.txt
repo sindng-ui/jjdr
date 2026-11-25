@@ -1,0 +1,21 @@
+# Test & Verification Results — Zen Mode Worker Dispatch (2026-11-25 v9)
+
+## 1. Vitest Unit Tests (`npm run test`)
+- Result: PASS (13 test files, 50 tests passed, 0 failed)
+- Duration: 1.13s
+- New Suite: `src/utils/zenDispatch.test.ts` (6 tests passed)
+  - Live Idle AI MRU sorting ahead of dormant/shell-only worktrees
+  - Recently Zen-acknowledged worker prioritized as #1 MRU
+  - `rootCardMode="hidden"` and `removingWorktreePaths` filtering
+  - Worker readiness classification (`fresh` / `continuing` / `dormant`)
+  - Project availability summary counts
+  - Circular forward/backward index stepping
+
+## 2. TypeScript & Production Build (`npm run build`)
+- Command: `tsc && vite build`
+- Result: PASS (1676 modules transformed, built in 3.37s, 0 errors)
+
+## 3. Performance, Zero-Blur & File Size Audit
+- Zero-Blur (`backdrop-blur` / `filter: blur()`): 0 matches across `src/components/zen/*.tsx` and `src/styles/zenMode.css`
+- 900-line limit: PASS (Max file in `src/`: `SettingsModal.tsx` 714 lines; `ZenDispatchView.tsx` refactored to 668 lines by extracting `ZenDispatchPicker.tsx`)
+- Memoization & Single XTerm Reuse: Verified (`React.memo`, `useMemo`, `rAF` zero-rerender 3D tilt, single WebGL `xterm.js` drawer reuse via `setAttachedAddress`)

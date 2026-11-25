@@ -7,6 +7,8 @@ interface ZenTactileControlProps {
   dialAngle: number;
   onPullProgress?: (ratio: number) => void;
   onTriggerNext: () => void;
+  label?: string;
+  titleOverride?: string;
 }
 
 const MAX_PULL_PX = 128;
@@ -23,6 +25,8 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
   dialAngle,
   onPullProgress,
   onTriggerNext,
+  label,
+  titleOverride,
 }: ZenTactileControlProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
@@ -43,9 +47,10 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
           type="button"
           onClick={onTriggerNext}
           title={
-            remainingCount > 0
-              ? `가챠 다이얼을 돌려 결재 완료 & 다음 카드로! (뒤에 ${remainingCount}장 대기 · 보류는 Ctrl+N)`
-              : "가챠 다이얼을 돌려 마지막 카드 결재 완료! (All Clear)"
+            titleOverride ??
+            (remainingCount > 0
+              ? `Turn dial to clear & load next card (${remainingCount} queued · Ctrl+N to skip)`
+              : "Turn dial to clear the last card (All Clear)")
           }
           className="relative w-16 h-16 rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
           style={{
@@ -71,7 +76,7 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
           className="text-[10px] font-mono-code font-bold tracking-wider"
           style={{ color: "var(--text-faint)" }}
         >
-          TURN ↻
+          {label ?? "TURN ↻"}
         </span>
       </div>
     );
@@ -181,9 +186,10 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
         ref={trackRef}
         onPointerDown={handlePointerDown}
         title={
-          remainingCount > 0
-            ? `레버를 아래로 당기거나 클릭해 결재 완료 & 다음 카드로! (뒤에 ${remainingCount}장 대기 · 보류는 Ctrl+N)`
-            : "레버를 당겨 마지막 카드 결재 완료! (All Clear)"
+          titleOverride ??
+          (remainingCount > 0
+            ? `Pull lever down or click to clear & load next card (${remainingCount} queued · Ctrl+N to skip)`
+            : "Pull lever to clear the last card (All Clear)")
         }
         className={`relative w-11 rounded-full flex flex-col items-center py-2 ${
           pulling ? "cursor-grabbing" : "cursor-grab"
@@ -216,7 +222,7 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
         className="text-[10px] font-mono-code font-bold tracking-wider"
         style={{ color: "var(--text-faint)" }}
       >
-        PULL!
+        {label ?? "PULL!"}
       </span>
     </div>
   );

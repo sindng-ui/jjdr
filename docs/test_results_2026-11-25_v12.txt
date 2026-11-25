@@ -1,0 +1,21 @@
+# Test & Verification Results — Zen Tactile SFX, Combo Streak, All Clear Burst & MERGED Dismiss (2026-11-25 v12)
+
+## 1. Vitest Unit Tests (`npm run test`)
+- Result: PASS (15 test files, 56 tests passed, 0 failed)
+- Duration: 1.41s
+- Added Suite: `src/utils/zenSound.test.ts` (2 tests passed)
+  - Consecutive clear combo label formatting (`+1 Cleared!`, `2x COMBO!`, `3x STREAK!`, `5x ON FIRE!`)
+  - Safe no-op when muted or in headless environments without AudioContext
+
+## 2. TypeScript & Production Build (`npm run build`)
+- Command: `tsc && vite build`
+- Result: PASS (1681 modules transformed, built in 3.87s, 0 errors)
+
+## 3. Performance, Zero-Blur & File Size Audit
+- Zero-Blur (`backdrop-blur` / `filter: blur()`): 0 CSS matches across `src/components/zen/*.tsx` and `src/styles/zenMode.css`
+- 900-line limit: PASS (Max file in `src/`: `SettingsModal.tsx` 714 lines; `ZenModeView.tsx` 693 lines; `ZenDispatchView.tsx` 692 lines)
+- Performance Guarantees:
+  - Lazy singleton `AudioContext` (0ms startup cost, 0 CPU/RAM when muted, auto-disconnecting oscillators)
+  - Timer-free consecutive combo tracking (`Date.now()` diff)
+  - Ephemeral 8-particle GPU SVG burst (mounts for 680ms on final clear only, then unmounts)
+  - Conditional `MERGED` `Dismiss` button rendered only for merged non-main worktrees
