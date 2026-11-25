@@ -108,11 +108,15 @@ impl TerminalStateHub {
                             }
                             None => true,
                         };
+                        let has_preview = self.previews.read().await.contains_key(&addr);
+                        let is_working =
+                            t.status.as_ref().map(|s| s.state.as_str()) == Some("working");
                         map.insert(addr.clone(), t);
                         if changed {
                             dirty.insert(addr.clone());
                         }
-                        if is_live {
+                        // Only request preview when terminal changed, is actively working, or lacks a preview yet
+                        if is_live && (changed || is_working || !has_preview) {
                             self.request_preview(addr);
                         }
                     }
@@ -176,7 +180,7 @@ impl TerminalStateHub {
                 return;
             }
             "doc" => {
-                let _ = app.emit(DOC_CHANGED_EVENT, raw.clone());
+                let _ = app.emit_to("main", DOC_CHANGED_EVENT, raw.clone());
                 return;
             }
             "removed" => {
@@ -334,7 +338,8 @@ impl TerminalStateHub {
             seq: *self.seq.read().await,
         };
 
-        let _ = app.emit(STATE_BATCH_EVENT, payload);
+        // Emit strictly to the main window so secondary overlay webviews never deserialize state batches
+        let _ = app.emit_to("main", STATE_BATCH_EVENT, payload);
     }
 }
 
@@ -361,11 +366,11 @@ pub fn spawn_herdr_supervisor(
         }
     });
 
-    // Periodic lightweight sync (3.5s) to keep turn/status fresh without contending with attach RPCs.
+    // Periodic lightweight sync (8s fallback; real-time changes already arrive via events.subscribe)
     let hub_prev = hub.clone();
     let client_prev = client.clone();
     tauri::async_runtime::spawn(async move {
-        let mut ticker = tokio::time::interval(Duration::from_millis(3500));
+        let mut ticker = tokio::time::interval(Duration::from_millis(8000));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             ticker.tick().await;

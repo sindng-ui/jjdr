@@ -186,7 +186,7 @@ pub async fn attach_terminal(
                                 if !buf.is_empty() {
                                     emit_term_chunk(&app, channel, &addr_clone, &mut buf);
                                 }
-                                let _ = app.emit(TERM_CLOSED_EVENT, TermClosedEvent { channel, address: addr_clone.clone() });
+                                let _ = app.emit_to("main", TERM_CLOSED_EVENT, TermClosedEvent { channel, address: addr_clone.clone() });
                                 break;
                             }
                             _ => {}
@@ -195,7 +195,7 @@ pub async fn attach_terminal(
                             if !buf.is_empty() {
                                 emit_term_chunk(&app, channel, &addr_clone, &mut buf);
                             }
-                            let _ = app.emit(TERM_CLOSED_EVENT, TermClosedEvent { channel, address: addr_clone.clone() });
+                            let _ = app.emit_to("main", TERM_CLOSED_EVENT, TermClosedEvent { channel, address: addr_clone.clone() });
                             break;
                         }
                     }
@@ -224,7 +224,9 @@ pub async fn attach_terminal(
 fn emit_term_chunk(app: &AppHandle, channel: u32, address: &str, buf: &mut Vec<u8>) {
     let encoded = BASE64.encode(&buf);
     buf.clear();
-    let _ = app.emit(
+    // Target main window only so secondary webviews never receive terminal stream payloads
+    let _ = app.emit_to(
+        "main",
         TERM_DATA_EVENT,
         TermDataEvent {
             channel,

@@ -68,13 +68,13 @@ export const SettingsModal = React.memo(function SettingsModal() {
   };
 
   const handleToggleBgOverlay = () => {
-    const nextEnabled = !(draft.bg_overlay_enabled ?? true);
+    const nextEnabled = !(draft.bg_overlay_enabled ?? false);
     const next: AppSettings = { ...draft, bg_overlay_enabled: nextEnabled };
     setDraft(next);
     useAppStore.getState().setSettings(next);
     void saveSettings(next).catch(() => {});
     if (!nextEnabled) {
-      void hideBgOverlay().catch(() => {});
+      void hideBgOverlay(true).catch(() => {});
     }
   };
 
@@ -483,16 +483,16 @@ export const SettingsModal = React.memo(function SettingsModal() {
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={draft.bg_overlay_enabled ?? true}
+                  aria-checked={draft.bg_overlay_enabled ?? false}
                   onClick={handleToggleBgOverlay}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-colors"
                   style={{
                     background:
-                      draft.bg_overlay_enabled ?? true
+                      draft.bg_overlay_enabled ?? false
                         ? "var(--accent)"
                         : "var(--pill-bg)",
                     color:
-                      draft.bg_overlay_enabled ?? true
+                      draft.bg_overlay_enabled ?? false
                         ? "#ffffff"
                         : "var(--text-muted)",
                     border: "1px solid var(--pill-border)",
@@ -502,12 +502,12 @@ export const SettingsModal = React.memo(function SettingsModal() {
                     className="w-1.5 h-1.5 rounded-full"
                     style={{
                       background:
-                        draft.bg_overlay_enabled ?? true
+                        draft.bg_overlay_enabled ?? false
                           ? "#ffffff"
                           : "var(--text-faint)",
                     }}
                   />
-                  {draft.bg_overlay_enabled ?? true ? "ON" : "OFF"}
+                  {draft.bg_overlay_enabled ?? false ? "ON" : "OFF"}
                 </button>
               </div>
             </div>
@@ -522,7 +522,7 @@ export const SettingsModal = React.memo(function SettingsModal() {
             <div
               className="grid grid-cols-3 gap-2"
               style={{
-                opacity: draft.bg_overlay_enabled ?? true ? 1 : 0.48,
+                opacity: draft.bg_overlay_enabled ?? false ? 1 : 0.48,
               }}
             >
               {BG_OVERLAY_POSITION_PRESETS.map((opt) => {
@@ -533,7 +533,7 @@ export const SettingsModal = React.memo(function SettingsModal() {
                   <button
                     key={opt.id}
                     type="button"
-                    disabled={!(draft.bg_overlay_enabled ?? true)}
+                    disabled={!(draft.bg_overlay_enabled ?? false)}
                     onClick={() => handleSelectBgOverlayPosition(opt.id)}
                     className="jjdr-card-lift text-left rounded-2xl p-2.5 cursor-pointer disabled:cursor-not-allowed flex flex-col gap-1"
                     style={{

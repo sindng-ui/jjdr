@@ -375,7 +375,7 @@ export const ProjectTray = React.memo(function ProjectTray({
                 sessions={sessions}
                 isDragging={draggingId === normId}
                 isDropTarget={overId === normId && draggingId !== null}
-                onDragPointerDown={(e) => startDrag(normId, e)}
+                onStartDrag={startDrag}
                 shouldSuppressClick={shouldSuppressClick}
               />
             );

@@ -39,6 +39,9 @@ export function useHerdrSync() {
   const dismissedOverlayStampRef = useRef<string | null>(null);
   const lastOverlaySignatureRef = useRef<string | null>(null);
   const isMainInBackgroundRef = useRef<boolean>(false);
+  const lastWorktreesJsonRef = useRef<string>("");
+  const lastWorkerDispatchMsRef = useRef<number>(0);
+  const workerThrottleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isMainInBackground, setIsMainInBackground] = useState<boolean>(false);
 
   // 1. Initialize Web Worker once
@@ -235,15 +238,20 @@ export function useHerdrSync() {
 
     void bootstrap();
 
-    // Periodic lightweight Git worktree refresh (15s) in Rust background worker
+    // Periodic lightweight Git worktree refresh (45s) in Rust background worker;
+    // skips Zustand state updates when nothing changed to avoid unnecessary re-renders.
     const gitTimer = setInterval(() => {
-      if (!active || document.hidden) return;
+      if (!active || document.hidden || isMainInBackgroundRef.current) return;
       void listAllWorktrees()
         .then((map) => {
-          if (active) useAppStore.getState().setWorktreesByProject(map);
+          if (!active) return;
+          const sig = JSON.stringify(map);
+          if (sig === lastWorktreesJsonRef.current) return;
+          lastWorktreesJsonRef.current = sig;
+          useAppStore.getState().setWorktreesByProject(map);
         })
         .catch(() => {});
-    }, 15_000);
+    }, 45_000);
 
     return () => {
       active = false;
@@ -270,6 +278,7 @@ export function useHerdrSync() {
   useEffect(() => {
     const dispatch = () => {
       if (!workerRef.current) return;
+      lastWorkerDispatchMsRef.current = Date.now();
       const id = ++reqIdRef.current;
       const payload: DashboardComputeInput = {
         terminals: Object.values(terminals),
@@ -290,10 +299,30 @@ export function useHerdrSync() {
       workerRef.current.postMessage({ id, payload });
     };
 
-    dispatch();
+    // Leading + trailing 80ms throttle prevents postMessage / full-board re-render storms during bursts
+    const elapsed = Date.now() - lastWorkerDispatchMsRef.current;
+    if (workerThrottleTimerRef.current) {
+      clearTimeout(workerThrottleTimerRef.current);
+      workerThrottleTimerRef.current = null;
+    }
+    if (elapsed >= 80) {
+      dispatch();
+    } else {
+      workerThrottleTimerRef.current = setTimeout(() => {
+        workerThrottleTimerRef.current = null;
+        dispatch();
+      }, 80 - elapsed);
+    }
+
     // Refresh elapsed / stuck classification every 30s
     const tick = setInterval(dispatch, 30_000);
-    return () => clearInterval(tick);
+    return () => {
+      clearInterval(tick);
+      if (workerThrottleTimerRef.current) {
+        clearTimeout(workerThrottleTimerRef.current);
+        workerThrottleTimerRef.current = null;
+      }
+    };
   }, [
     terminals,
     previews,
@@ -418,7 +447,7 @@ export function useHerdrSync() {
 
   // 4c. Background Top-Priority Card HUD Notification sync
   const allSessions = useAppStore((s) => s.computed.allSessions);
-  const bgOverlayEnabled = useAppStore((s) => s.settings.bg_overlay_enabled ?? true);
+  const bgOverlayEnabled = useAppStore((s) => s.settings.bg_overlay_enabled ?? false);
   const bgOverlayPosition = useAppStore((s) =>
     normalizeBgOverlayPosition(s.settings.bg_overlay_position)
   );
@@ -429,7 +458,8 @@ export function useHerdrSync() {
 
     if (!bgOverlayEnabled) {
       lastOverlaySignatureRef.current = null;
-      void hideBgOverlay().catch(() => {});
+      // Destroy overlay webview when disabled so it consumes 0 MB RAM / 0 GPU
+      void hideBgOverlay(true).catch(() => {});
       return;
     }
 

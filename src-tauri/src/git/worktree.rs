@@ -1,8 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+
+/// Bound concurrent `git` inspection processes across all projects/worktrees so Windows
+/// process creation & Defender scanning never cause CPU/UI spikes.
+fn git_inspect_semaphore() -> Arc<Semaphore> {
+    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEM.get_or_init(|| Arc::new(Semaphore::new(4))).clone()
+}
 
 pub use super::inspect::{
     detect_current_branch, detect_default_branch, get_worktree_diff, inspect_git_repo,
@@ -77,7 +86,9 @@ pub async fn list_worktrees_with_status(
         let is_merged =
             !is_main && !branch.is_empty() && branch != default_branch && merged_set.contains(&branch);
         let default_b = default_branch.clone();
+        let sem = git_inspect_semaphore();
         join_set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
             let (dirty_count, added_lines, deleted_lines, changed_files) = if is_bare {
                 (0, 0, 0, Vec::new())
             } else {

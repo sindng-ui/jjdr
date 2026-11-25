@@ -24,7 +24,7 @@ pub fn spawn_preview_worker(hub: Arc<TerminalStateHub>, client: Arc<HerdrClient>
         while let Some(addr) = preview_rx.recv().await {
             let now = now_ms();
             if let Some(&prev) = last_fetched.get(&addr) {
-                if now.saturating_sub(prev) < 1500 {
+                if now.saturating_sub(prev) < 3000 {
                     continue;
                 }
             }

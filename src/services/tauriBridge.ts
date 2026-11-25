@@ -373,9 +373,9 @@ export async function showBgOverlay(
   return invoke<boolean>("show_bg_overlay", { payload, forcePreview });
 }
 
-export async function hideBgOverlay(): Promise<void> {
+export async function hideBgOverlay(destroy = false): Promise<void> {
   if (!isTauriRuntime()) return;
-  return invoke<void>("hide_bg_overlay");
+  return invoke<void>("hide_bg_overlay", { destroy });
 }
 
 export async function dismissBgOverlay(stamp: string): Promise<void> {
@@ -402,6 +402,12 @@ export async function listenBgOverlayUpdate(
   return listen<BgOverlayPayload>("jjdr:bg-overlay-update", (e) =>
     cb(e.payload)
   );
+}
+
+export async function listenBgOverlayClear(
+  cb: () => void
+): Promise<UnlistenFn> {
+  return listen<void>("jjdr:bg-overlay-clear", () => cb());
 }
 
 export async function listenOverlayOpenCard(

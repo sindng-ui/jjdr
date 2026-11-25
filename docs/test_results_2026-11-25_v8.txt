@@ -1,0 +1,23 @@
+jjdr v0.3.6 Performance Audit Fixes + Notification Default OFF Verification (2026-11-25)
+========================================================================================
+Changes Verified:
+1. Notification defaults set to OFF (`bg_overlay_enabled: false`, `notify_on_blocked: false`)
+   - Disabling BG overlay destroys `bg-overlay` WebView2 window completely (0 MB RAM / 0 GPU)
+   - Hiding overlay clears DOM payload (`jjdr:bg-overlay-clear`) so hidden CSS animations stop completely
+2. Eliminated duplicate multi-window IPC broadcasts (`events.rs`, `attach.rs`):
+   - Switched `STATE_BATCH_EVENT`, `DOC_CHANGED_EVENT`, `TERM_DATA_EVENT`, `TERM_CLOSED_EVENT` from `app.emit` to `app.emit_to("main", ...)`
+3. Eliminated 3.5s `terminal.read` RPC storm (`events.rs`, `preview.rs`):
+   - Periodic fallback sync relaxed 3.5s -> 8s; preview requested only for changed / working / missing-preview live terminals; preview cooldown 1.5s -> 3s
+4. Eliminated Windows `git.exe` spawn spike & redundant re-renders (`git/worktree.rs`, `useHerdrSync.ts`):
+   - Added `Semaphore(4)` concurrency cap on parallel `inspect_worktree_changes`
+   - Relaxed background Git polling 15s -> 45s (skipped when unfocused/hidden) with equality check to skip unchanged Zustand updates
+5. Eliminated burst Web Worker & `RadarTile` re-render storms (`useHerdrSync.ts`, `ProjectTray.tsx`, `RadarTile.tsx`):
+   - Added 80ms leading+trailing throttle on Web Worker `postMessage` dispatch
+   - Replaced inline `onDragPointerDown` arrow closure with stable `onStartDrag={startDrag}` prop so `React.memo(RadarTile)` works properly
+6. Version bump: 0.3.5 -> 0.3.6 (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`)
+
+Results:
+- `npm run test`: PASS (12 test files, 44 tests passed, 0 failed, 1.04s)
+- `npm run build` (`tsc && vite build`): PASS (0 errors, 3.09s)
+- `cargo check --manifest-path src-tauri/Cargo.toml --offline`: PASS (0 errors, 0 warnings)
+- `cargo test --manifest-path src-tauri/Cargo.toml --offline --lib`: PASS (19 passed, 0 failed, 0.01s)

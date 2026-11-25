@@ -58,6 +58,8 @@ fn position_overlay_window(app: &AppHandle, overlay: &tauri::WebviewWindow, posi
 
 pub fn hide_overlay_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window(OVERLAY_WINDOW_LABEL) {
+        // Clear payload in overlay webview so CSS animations stop running while hidden
+        let _ = app.emit_to(OVERLAY_WINDOW_LABEL, "jjdr:bg-overlay-clear", ());
         // Ensure a hidden transparent overlay can never swallow clicks on Windows DWM
         let _ = win.set_ignore_cursor_events(true);
         let _ = win.hide();
@@ -158,14 +160,19 @@ pub async fn show_bg_overlay(
 pub async fn hide_bg_overlay(
     app: AppHandle,
     state: State<'_, AppState>,
+    destroy: Option<bool>,
 ) -> Result<(), String> {
     state.bg_overlay_gen.fetch_add(1, Ordering::SeqCst);
     if let Ok(mut g) = state.bg_overlay_payload.lock() {
-        if g.as_ref().map(|p| p.is_preview).unwrap_or(false) {
+        if destroy.unwrap_or(false) || g.as_ref().map(|p| p.is_preview).unwrap_or(false) {
             *g = None;
         }
     }
-    hide_overlay_window(&app);
+    if destroy.unwrap_or(false) {
+        destroy_overlay_window(&app);
+    } else {
+        hide_overlay_window(&app);
+    }
     Ok(())
 }
 

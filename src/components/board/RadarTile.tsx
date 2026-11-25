@@ -35,7 +35,7 @@ interface RadarTileProps {
   sessions: EnrichedSession[];
   isDragging?: boolean;
   isDropTarget?: boolean;
-  onDragPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onStartDrag?: (id: string, e: React.PointerEvent<HTMLElement>) => void;
   shouldSuppressClick?: () => boolean;
 }
 
@@ -45,7 +45,7 @@ export const RadarTile = React.memo(function RadarTile({
   sessions,
   isDragging = false,
   isDropTarget = false,
-  onDragPointerDown,
+  onStartDrag,
   shouldSuppressClick,
 }: RadarTileProps) {
   const normWtPath = normalizePath(worktree.path);
@@ -186,7 +186,7 @@ export const RadarTile = React.memo(function RadarTile({
       data-jjdr-project-id={project.id}
       data-jjdr-worktree-path={worktree.path}
       data-jjdr-branch={worktree.branch}
-      onPointerDown={onDragPointerDown}
+      onPointerDown={onStartDrag ? (e) => onStartDrag(normWtPath, e) : undefined}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();

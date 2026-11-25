@@ -88,13 +88,13 @@ pub struct AppSettings {
     pub root_card_mode: String,
     #[serde(default = "default_stuck_minutes")]
     pub stuck_minutes: u64,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub notify_on_blocked: bool,
     #[serde(default)]
     pub notify_on_done: bool,
     #[serde(default = "default_true")]
     pub show_merge_overlap: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub bg_overlay_enabled: bool,
     #[serde(default = "default_bg_overlay_position")]
     pub bg_overlay_position: String,
@@ -152,10 +152,10 @@ impl Default for AppSettings {
             radar_density: default_radar_density(),
             root_card_mode: default_root_card_mode(),
             stuck_minutes: default_stuck_minutes(),
-            notify_on_blocked: true,
+            notify_on_blocked: false,
             notify_on_done: false,
             show_merge_overlap: true,
-            bg_overlay_enabled: true,
+            bg_overlay_enabled: false,
             bg_overlay_position: default_bg_overlay_position(),
             prompt_presets: default_presets(),
         }

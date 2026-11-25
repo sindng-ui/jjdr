@@ -5,6 +5,7 @@ import {
   focusMainFromOverlay,
   getBgOverlayPayload,
   hideBgOverlay,
+  listenBgOverlayClear,
   listenBgOverlayUpdate,
 } from "../../services/tauriBridge";
 import type { BgOverlayPayload } from "../../types/domain";
@@ -16,7 +17,7 @@ export const BgOverlayToast: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    let unlisten: (() => void) | null = null;
+    const unlisteners: Array<() => void> = [];
 
     const applyPayload = (next: BgOverlayPayload | null) => {
       if (!active || !next) return;
@@ -29,16 +30,21 @@ export const BgOverlayToast: React.FC = () => {
       .then((initial) => applyPayload(initial))
       .catch(() => {});
 
-    void listenBgOverlayUpdate((next) => applyPayload(next))
-      .then((fn) => {
-        if (!active) fn();
-        else unlisten = fn;
+    void Promise.all([
+      listenBgOverlayUpdate((next) => applyPayload(next)),
+      listenBgOverlayClear(() => {
+        if (active) setPayload(null);
+      }),
+    ])
+      .then((fns) => {
+        if (!active) fns.forEach((fn) => fn());
+        else unlisteners.push(...fns);
       })
       .catch(() => {});
 
     return () => {
       active = false;
-      if (unlisten) unlisten();
+      unlisteners.forEach((fn) => fn());
     };
   }, []);
 

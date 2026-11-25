@@ -29,10 +29,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   radar_density: DEFAULT_RADAR_DENSITY,
   root_card_mode: "header_chip",
   stuck_minutes: 5,
-  notify_on_blocked: true,
+  notify_on_blocked: false,
   notify_on_done: false,
   show_merge_overlap: true,
-  bg_overlay_enabled: true,
+  bg_overlay_enabled: false,
   bg_overlay_position: "top_center",
   prompt_presets: [
     { id: "test", label: "Run Tests", prompt: "Run the test suite and fix any failures." },
@@ -230,7 +230,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         settings.root_card_mode === "header_chip"
           ? settings.root_card_mode
           : "header_chip",
-      bg_overlay_enabled: settings.bg_overlay_enabled ?? true,
+      bg_overlay_enabled: settings.bg_overlay_enabled ?? false,
       bg_overlay_position:
         settings.bg_overlay_position === "bottom_center" ||
         settings.bg_overlay_position === "bottom_right" ||
@@ -261,7 +261,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         settings?.root_card_mode === "header_chip"
           ? settings.root_card_mode
           : "header_chip",
-      bg_overlay_enabled: settings?.bg_overlay_enabled ?? true,
+      bg_overlay_enabled: settings?.bg_overlay_enabled ?? false,
       bg_overlay_position:
         settings?.bg_overlay_position === "bottom_center" ||
         settings?.bg_overlay_position === "bottom_right" ||
