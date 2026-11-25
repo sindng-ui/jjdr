@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import {
+  BellRing,
   Check,
   LayoutGrid,
   Palette,
+  Play,
   Plus,
   Settings,
   Trash2,
@@ -10,10 +12,20 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
-import { saveSettings } from "../../services/tauriBridge";
+import {
+  hideBgOverlay,
+  saveSettings,
+  showBgOverlay,
+} from "../../services/tauriBridge";
 import { RADAR_DENSITY_PRESETS, THEME_PRESETS } from "../../utils/themes";
+import {
+  BG_OVERLAY_POSITION_PRESETS,
+  buildPreviewBgOverlayPayload,
+  normalizeBgOverlayPosition,
+} from "../../utils/bgOverlay";
 import type {
   AppSettings,
+  BgOverlayPosition,
   PromptPreset,
   RadarDensity,
   RootCardMode,
@@ -53,6 +65,31 @@ export const SettingsModal = React.memo(function SettingsModal() {
     setDraft(next);
     useAppStore.getState().setSettings(next);
     void saveSettings(next).catch(() => {});
+  };
+
+  const handleToggleBgOverlay = () => {
+    const nextEnabled = !(draft.bg_overlay_enabled ?? true);
+    const next: AppSettings = { ...draft, bg_overlay_enabled: nextEnabled };
+    setDraft(next);
+    useAppStore.getState().setSettings(next);
+    void saveSettings(next).catch(() => {});
+    if (!nextEnabled) {
+      void hideBgOverlay().catch(() => {});
+    }
+  };
+
+  const handleSelectBgOverlayPosition = (position: BgOverlayPosition) => {
+    const next: AppSettings = { ...draft, bg_overlay_position: position };
+    setDraft(next);
+    useAppStore.getState().setSettings(next);
+    void saveSettings(next).catch(() => {});
+  };
+
+  const handlePreviewBgOverlay = () => {
+    const pos = normalizeBgOverlayPosition(draft.bg_overlay_position);
+    const allSessions = useAppStore.getState().computed.allSessions;
+    const payload = buildPreviewBgOverlayPayload(allSessions, pos, draft.theme);
+    void showBgOverlay(payload, true).catch(() => {});
   };
 
   const updatePreset = (idx: number, patch: Partial<PromptPreset>) => {
@@ -370,6 +407,130 @@ export const SettingsModal = React.memo(function SettingsModal() {
                     type="button"
                     onClick={() => handleSelectRootMode(opt.id)}
                     className="jjdr-card-lift text-left rounded-2xl p-2.5 cursor-pointer flex flex-col gap-1"
+                    style={{
+                      background: active
+                        ? "var(--accent-soft)"
+                        : "var(--input-bg)",
+                      border: `1.5px solid ${
+                        active ? "var(--accent)" : "var(--input-border)"
+                      }`,
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className="font-bold text-xs"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {opt.label}
+                      </span>
+                      {active && (
+                        <span
+                          className="w-4 h-4 rounded-full inline-flex items-center justify-center shrink-0"
+                          style={{
+                            background: "var(--accent)",
+                            color: "#ffffff",
+                          }}
+                        >
+                          <Check className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className="text-[11px] leading-snug"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {opt.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Background Top-Priority Card Overlay HUD */}
+          <div
+            className="pt-4 space-y-2.5"
+            style={{ borderTop: "1px solid var(--divider)" }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <BellRing
+                  className="w-3.5 h-3.5"
+                  style={{ color: "var(--accent)" }}
+                />
+                <span
+                  className="font-bold text-xs"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  백그라운드 최우선 카드 알림 (HUD)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePreviewBgOverlay}
+                  className="jjdr-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
+                  style={{ color: "var(--accent)" }}
+                >
+                  <Play className="w-3 h-3" />
+                  미리보기
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={draft.bg_overlay_enabled ?? true}
+                  onClick={handleToggleBgOverlay}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-colors"
+                  style={{
+                    background:
+                      draft.bg_overlay_enabled ?? true
+                        ? "var(--accent)"
+                        : "var(--pill-bg)",
+                    color:
+                      draft.bg_overlay_enabled ?? true
+                        ? "#ffffff"
+                        : "var(--text-muted)",
+                    border: "1px solid var(--pill-border)",
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      background:
+                        draft.bg_overlay_enabled ?? true
+                          ? "#ffffff"
+                          : "var(--text-faint)",
+                    }}
+                  />
+                  {draft.bg_overlay_enabled ?? true ? "ON" : "OFF"}
+                </button>
+              </div>
+            </div>
+
+            <p
+              className="text-[11px] leading-snug"
+              style={{ color: "var(--text-muted)" }}
+            >
+              jjdr이 백그라운드에 있을 때 가장 급한 카드(Needs You → Ready)를 포커스 방해 없이 화면에 크게 띄워줍니다. 클릭하면 해당 카드로 즉시 이동합니다.
+            </p>
+
+            <div
+              className="grid grid-cols-3 gap-2"
+              style={{
+                opacity: draft.bg_overlay_enabled ?? true ? 1 : 0.48,
+              }}
+            >
+              {BG_OVERLAY_POSITION_PRESETS.map((opt) => {
+                const active =
+                  normalizeBgOverlayPosition(draft.bg_overlay_position) ===
+                  opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={!(draft.bg_overlay_enabled ?? true)}
+                    onClick={() => handleSelectBgOverlayPosition(opt.id)}
+                    className="jjdr-card-lift text-left rounded-2xl p-2.5 cursor-pointer disabled:cursor-not-allowed flex flex-col gap-1"
                     style={{
                       background: active
                         ? "var(--accent-soft)"

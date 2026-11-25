@@ -7,6 +7,9 @@
     <script>
       (function () {
         try {
+          if (window.location.search.indexOf("overlay=1") !== -1) {
+            document.documentElement.classList.add("jjdr-overlay-root");
+          }
           var t = localStorage.getItem("jjdr-theme") || "aurora";
           if (t !== "aurora" && t !== "lounge" && t !== "nordic" && t !== "botanical") {
             t = "aurora";

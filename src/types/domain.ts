@@ -129,6 +129,7 @@ export interface PromptPreset {
 export type ThemeId = "aurora" | "lounge" | "nordic" | "botanical";
 export type RadarDensity = "comfortable" | "balanced" | "compact";
 export type RootCardMode = "header_chip" | "card" | "hidden";
+export type BgOverlayPosition = "top_center" | "bottom_center" | "bottom_right";
 
 export interface AppSettings {
   theme: ThemeId;
@@ -138,7 +139,32 @@ export interface AppSettings {
   notify_on_blocked: boolean;
   notify_on_done: boolean;
   show_merge_overlap: boolean;
+  bg_overlay_enabled?: boolean;
+  bg_overlay_position?: BgOverlayPosition;
   prompt_presets: PromptPreset[];
+}
+
+export interface BgOverlayPayload {
+  card_key: string;
+  address: string;
+  bucket: string;
+  badge: string;
+  project_name: string;
+  project_color: string;
+  branch: string;
+  agent_label: string;
+  message: string;
+  pending_count: number;
+  is_approval: boolean;
+  position: BgOverlayPosition;
+  theme: ThemeId;
+  stamp: string;
+  is_preview?: boolean;
+}
+
+export interface OverlayOpenCardEvent {
+  card_key: string;
+  address: string;
 }
 
 export interface WorktreeCardMeta {

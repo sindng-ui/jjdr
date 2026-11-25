@@ -19,7 +19,7 @@
 | 파일 | 역할 | 주요 인터페이스 / Export |
 | :--- | :--- | :--- |
 | `src-tauri/src/main.rs` | 데스크톱 엔트리 포인트 | `jjdr_lib::run()` |
-| `src-tauri/src/lib.rs` | Tauri v2 앱 초기화, 시스템 트레이(`jjdr-tray`), 커맨드 등록, Exit 시 무손실 Disconnect | `AppState`, `run()` |
+| `src-tauri/src/lib.rs` | Tauri v2 앱 초기화, 시스템 트레이(`jjdr-tray`), 메인 윈도우 포커스/종료 이벤트 연동(`jjdr:main-bg-changed` + 오버레이 자동 숨김/정리), 커맨드 등록, Exit 시 무손실 Disconnect | `AppState`, `run()` |
 | `src-tauri/src/herdr/types.rs` | `herdr-core` OpenRPC 1.3.2 도메인 타입 | `Terminal`, `Status`, `HelloResult`, `SubscribeResult`, `AttachResult`, `StateBatchPayload`, `HerdrHealth` |
 | `src-tauri/src/herdr/naming.rs` | `herdr-core` 세션 이름 정규화(영문 시작/허용 문자 보정) 및 `-32602`/중복 이름 오류 판별 | `sanitize_herdr_name`, `is_recoverable_name_error` |
 | `src-tauri/src/herdr/protocol.rs` | 바이너리 Framed 코덱, ANSI 제거, AI TUI 크롬 필터링 스마트 프리뷰 추출 | `Frame`, `FrameKind`, `read_frame`, `write_frame`, `strip_ansi`, `extract_smart_preview_lines` |
@@ -31,7 +31,9 @@
 | `src-tauri/src/git/bootstrap.rs` | Worktree 생성 후 `.env` 등 파일 복사 및 초기 명령 실행 | `BootstrapConfig`, `BootstrapResult`, `run_bootstrap` |
 | `src-tauri/src/store/file_index.rs` | 포커스된 프로젝트만 백그라운드 캐시하는 LRU(최대 6개) Shared Base + Worktree Delta 파일 인덱스 저장소 (Regex/Glob/Fuzzy 모드 위임) | `FileIndexStore::{new, warm_background, search}`, `WorktreeDelta`, `compute_worktree_delta` |
 | `src-tauri/src/store/file_matcher.rs` | `git ls-files` 고속 스캔 및 네이티브 Rust Fuzzy + Glob(`*.cpp`, `src/**/*.ts`) + Regex(`/pat/`, `use_regex`) 파일 검색·점수화 엔진 | `scan_directory_files`, `score_and_collect`, `fuzzy_score_path`, `MatchCollection`, `FileSearchResult`, `FileMatchItem` |
-| `src-tauri/src/store/projects.rs` | `herdr-core` `doc.get/set` (`jjdr.projects.v1`, `jjdr.ui_state.v1`, `jjdr.settings.v1`) + 로컬 `%APPDATA%/jjdr` 이중 저장, 프로젝트 순서·`root_card_mode`·터미널 너비·Worktree 메타/순서 영속화 | `ProjectConfig`, `WorktreeCardMeta`, `PersistedUiState`, `AppSettings`, `PersistenceStore::{load_bundle, upsert_project, delete_project, reorder_projects, save_ui_state, save_settings}`, `apply_project_order` |
+| `src-tauri/src/store/overlay.rs` | 백그라운드 최우선 카드 HUD 페이로드·위치 정규화(`top_center`/`bottom_center`/`bottom_right`)·모니터 Work Area 좌표 계산(작업표시줄 회피) | `BgOverlayPayload`, `OverlayOpenCardEvent`, `normalize_overlay_position`, `compute_overlay_position` |
+| `src-tauri/src/store/projects.rs` | `herdr-core` `doc.get/set` (`jjdr.projects.v1`, `jjdr.ui_state.v1`, `jjdr.settings.v1`) + 로컬 `%APPDATA%/jjdr` 이중 저장, 프로젝트 순서·`root_card_mode`·`bg_overlay_enabled`/`bg_overlay_position`·터미널 너비·Worktree 메타/순서 영속화 | `ProjectConfig`, `WorktreeCardMeta`, `PersistedUiState`, `AppSettings`, `PersistenceStore::{load_bundle, upsert_project, delete_project, reorder_projects, save_ui_state, save_settings}`, `apply_project_order` |
+| `src-tauri/src/commands/overlay.rs` | 네이티브 Tauri v2 투명·포커스 미탈취(`focused(false)`) 항상 위 오버레이 창(`bg-overlay`) 생성/배치/표시/숨김/닫기/메인 포커스 점프 커맨드 | `show_bg_overlay`, `hide_bg_overlay`, `dismiss_bg_overlay`, `get_bg_overlay_payload`, `focus_main_from_overlay`, `hide_overlay_window`, `destroy_overlay_window` |
 | `src-tauri/src/commands/files.rs` | 프로젝트 파일 백그라운드 캐시 워밍·Fuzzy/Glob/Regex 검색·바이너리 감지 텍스트 읽기·기본 앱/VS Code 실행 커맨드 | `warm_project_file_index`, `search_project_files`, `read_text_file`, `open_with_default_app`, `open_in_vscode`, `TextFileContent` |
 | `src-tauri/src/commands/system.rs` | 시스템/상태/템플릿/트레이, 프레임리스 윈도우 제어 및 탐색기 폴더 열기 커맨드 | `get_initial_state`, `get_herdr_health`, `reconnect_herdr`, `list_templates`, `load_persisted_bundle`, `save_ui_state`, `save_settings`, `update_tray_summary`, `request_preview_refresh`, `window_minimize`, `window_toggle_maximize`, `window_close`, `window_start_dragging`, `open_in_explorer` |
 | `src-tauri/src/commands/projects.rs` | 레포 자동 분석 및 프로젝트 CRUD·순서 변경 커맨드 | `inspect_git_repo`, `list_projects`, `upsert_project`, `delete_project`, `reorder_projects` |
@@ -45,13 +47,16 @@
 
 | 파일 | 역할 | 주요 인터페이스 / Export |
 | :--- | :--- | :--- |
-| `src/types/domain.ts` | 프론트엔드 전체 도메인, `RootCardMode`, Worktree 카드 메타, UI 영속화 및 Worker 결과 타입 (`worktreeSessionCount` 포함) | `TerminalInfo`, `ProjectConfig`, `WorktreeInfo`, `WorktreeCardMeta`, `RootCardMode`, `PersistedUiState`, `EnrichedSession`, `DashboardWorkerResult` |
-| `src/services/tauriBridge.ts` | Tauri `invoke` / `listen` 타입 안전 래퍼 | 모든 백엔드 커맨드(`searchProjectFiles(useRegex)`, `readTextFile(is_binary)`, `reorderProjects`, `renameWorktreeBranch` 포함) 및 `listenStateBatch`, `listenTermData`, `listenTermClosed` |
+| `src/main.tsx` | 앱 엔트리 포인트 (`?overlay=1` 쿼리 시 초경량 `<BgOverlayToast />`만 단독 마운트, 일반 실행 시 `<App />`) | `main` |
+| `src/types/domain.ts` | 프론트엔드 전체 도메인, `RootCardMode`, `BgOverlayPosition`/`BgOverlayPayload`, Worktree 카드 메타, UI 영속화 및 Worker 결과 타입 (`worktreeSessionCount` 포함) | `TerminalInfo`, `ProjectConfig`, `WorktreeInfo`, `WorktreeCardMeta`, `RootCardMode`, `BgOverlayPosition`, `BgOverlayPayload`, `OverlayOpenCardEvent`, `PersistedUiState`, `EnrichedSession`, `DashboardWorkerResult` |
+| `src/services/tauriBridge.ts` | Tauri `invoke` / `listen` 타입 안전 래퍼 | 모든 백엔드 커맨드(`showBgOverlay`, `hideBgOverlay`, `dismissBgOverlay`, `getBgOverlayPayload`, `focusMainFromOverlay`, `searchProjectFiles(useRegex)`, `readTextFile(is_binary)`, `reorderProjects`, `renameWorktreeBranch` 포함) 및 `listenStateBatch`, `listenTermData`, `listenTermClosed`, `listenBgOverlayUpdate`, `listenOverlayOpenCard`, `listenOverlayDismissed`, `listenMainBgChanged` |
+| `src/utils/bgOverlay.ts` | 백그라운드 최우선 카드 HUD 후보 선정(전역 `needs_you` > `ready`, Worktree 중복 제거), 페이로드/미리보기 빌더, 위치 프리셋 | `BG_OVERLAY_POSITION_PRESETS`, `normalizeBgOverlayPosition`, `selectTopBgOverlayCandidate`, `buildBgOverlayPayload`, `buildPreviewBgOverlayPayload` |
+| `src/components/overlay/BgOverlayToast.tsx` | 백그라운드 최우선 카드 고시인성 플로팅 HUD 창 UI (4종 테마 동기화, Zero-Blur, 클릭 시 앱 복귀·카드 자동 포커스, `×` 숨김, 미리보기 5.5초 자동 종료) | `BgOverlayToast` |
 | `src/workers/dashboardLogic.ts` | 순수 함수: live 세션 전용 필터링, OS 시스템 경로 고아 차단, 일반 Shell `Ready` 오분류 방지(`isPlainShellTerminal`), Queue Worktree 카드 단위 중복 제거(`byBucket`/`sessions`/`counts`), `permission` 전용 승인 판별, Stuck 판별, 라벨+CWD 재매핑, 커스텀 순서 정렬 | `classifyBucket`, `computeDashboard`, `normalizePath`, `isSystemPath`, `isPlainShellTerminal`, `isPermissionApprovalPending` |
 | `src/workers/dashboardWorker.ts` | 전용 Web Worker 엔트리 | `onmessage` → `computeDashboard` → `postMessage` |
 | `src/store/useAppStore.ts` | 도메인 상태 Atomic Zustand 스토어 (Worktree 카드 메타, 프로젝트별 카드 순서, `root_card_mode`, `ackedSnapshots` 포함) | `terminals`, `previews`, `projects`, `worktreesByProject`, `ackedSnapshots`, `acknowledgeSession`, `clearAckedSnapshot`, `worktreeMeta`, `worktreeOrderByProject`, `computed` |
 | `src/store/useUiStore.ts` | UI/모달/선택/3대 뷰 모드(`radar`/`queue`/`zen`)/Zen 넘김·결재·확인완료 스탬프(`zenSkipNonce`, `zenApproveNonce`, `zenDismissedStamps`)/드로어 열림·폭·포커스/내장 MD·코드 뷰어/키보드 카드 그랩 스토어 | `ViewMode`, `viewMode`, `selectedCardKey`, `attachedAddress`, `terminalFocusNonce`, `requestZenSkip`, `requestZenApprove`, `dismissZenCardStamp`, `codeViewerTarget`, `cardGrabState` |
-| `src/hooks/useHerdrSync.ts` | Worker 라이프사이클, 초기 Hydration(터미널 폭·카드 메타·순서 포함), 재실행 Attach 복원, Calm 알림, 트레이 동기화, UI 상태 자동 저장 | `useHerdrSync` |
+| `src/hooks/useHerdrSync.ts` | Worker 라이프사이클, 초기 Hydration(터미널 폭·카드 메타·순서 포함), 재실행 Attach 복원, Calm 알림, 백그라운드 최우선 카드 HUD 동기화 및 클릭 복귀(`overlay-open-card`), 트레이 동기화, UI 상태 자동 저장 | `useHerdrSync` |
 | `src/utils/shortcutActions.ts` | DOM 카드 조회, 2D 공간 이동 + 자동 터미널 포커스, 카드 단위 안정 `Ctrl+N` 점프(`buildActionableCardList`), 키보드 그랩-교환(`stepKeyboardCardGrab`/`commitKeyboardCardGrab`), 세션 탭 순환, Shell/AI 단축 실행 | `readBoardCards`, `openOrLaunchCard`, `toggleSelectedTerminal`, `moveRadarSpatial`, `buildActionableCardList`, `jumpToNextActionable`, `moveQueueSelection`, `stepKeyboardCardGrab`, `commitKeyboardCardGrab`, `cancelKeyboardCardGrab`, `cycleCurrentWorktreeTab`, `spawnShellTabInAttachedWorktree`, `openAiLauncherForAttachedWorktree` |
 | `src/hooks/useGlobalShortcuts.ts` | 키보드 퍼스트 전역 단축키 바인딩(`Ctrl+N/F/K/P/M/1/2/B`, `Ctrl+↑↓←→` 이동+포커스, `Ctrl+Shift+Alt+↑↓←→` 카드 1:1 교환, `Ctrl+\``, `Ctrl+Tab`, `Ctrl+Shift+T/A`, `Alt+Enter`, `Enter`, `Esc` 순차 해제) | `useGlobalShortcuts`, `jumpToNextActionable` |
 | `src/hooks/useXtermSession.ts` | 단일 `xterm.js` + WebGL 인스턴스 재사용, attach 전후 강제 `fitNow` + `focusNow` 자동 포커스, 드래그→우클릭 클립보드 복사 & 스마트 `Ctrl+C`/`Ctrl+Shift+C/V`, DEC-2026 무깜빡임 스트림 교체 | `useXtermSession` |
@@ -100,5 +105,5 @@
 | `src/components/modals/LaunchSessionModal.tsx` | **새 세션 추가 모달**: **AI CLI** 그룹과 **터미널(PowerShell / cmd)** 그룹을 명확히 구분하여 실행 | `LaunchSessionModal` |
 | `src/components/modals/TeardownModal.tsx` | 안전 가드 포함 Worktree 정리 모달 + 에러 시 실제 목록 재조회 자동 동기화 | `TeardownModal` |
 | `src/components/modals/DiffPreviewModal.tsx` | 경량 Git Diff 뷰어 모달 | `DiffPreviewModal` |
-| `src/components/modals/SettingsModal.tsx` | 4종 테마, 레이더 한 줄 카드 밀도, `ROOT` 카드 표시 방식(`헤더 칩`/`그리드 카드`/`숨기기`), Stuck 시간, Calm 알림, Merge Overlap, 프롬프트 프리셋 편집 모달 | `SettingsModal` |
+| `src/components/modals/SettingsModal.tsx` | 4종 테마, 레이더 한 줄 카드 밀도, `ROOT` 카드 표시 방식(`헤더 칩`/`그리드 카드`/`숨기기`), 백그라운드 최우선 카드 알림 HUD(ON/OFF·위치 3종·미리보기), Stuck 시간, Calm 알림, Merge Overlap, 프롬프트 프리셋 편집 모달 | `SettingsModal` |
 | `src/App.tsx` | 외곽 쉘(`h-full overflow-hidden`) + 22px 플로팅 라운드 캔버스 레이아웃, `Suspense` 지연 로드 터미널 드로어·MD 뷰어·코드 뷰어 및 전체 모달 & 토스트 | `App` |

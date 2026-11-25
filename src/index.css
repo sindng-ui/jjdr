@@ -428,6 +428,41 @@ body,
   animation: jjdr-soft-pulse 2.2s ease-in-out infinite;
 }
 
+html.jjdr-overlay-root,
+html.jjdr-overlay-root body,
+html.jjdr-overlay-root #root {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+@keyframes jjdr-overlay-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes jjdr-overlay-beacon-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.jjdr-overlay-card {
+  animation: jjdr-overlay-enter 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.jjdr-overlay-beacon {
+  animation: jjdr-overlay-beacon-pulse 1.5s ease-in-out infinite;
+}
+
 /* Slim organic scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

@@ -3,9 +3,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppSettings,
   AttachResult,
+  BgOverlayPayload,
   BootstrapConfig,
   DiffDetail,
   HerdrHealth,
+  OverlayOpenCardEvent,
   PersistedBundle,
   PersistedUiState,
   ProjectConfig,
@@ -361,4 +363,63 @@ export async function listenTermClosed(
   cb: (payload: TermClosedEvent) => void
 ): Promise<UnlistenFn> {
   return listen<TermClosedEvent>("jjdr:term-closed", (e) => cb(e.payload));
+}
+
+export async function showBgOverlay(
+  payload: BgOverlayPayload,
+  forcePreview = false
+): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  return invoke<boolean>("show_bg_overlay", { payload, forcePreview });
+}
+
+export async function hideBgOverlay(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("hide_bg_overlay");
+}
+
+export async function dismissBgOverlay(stamp: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("dismiss_bg_overlay", { stamp });
+}
+
+export async function getBgOverlayPayload(): Promise<BgOverlayPayload | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<BgOverlayPayload | null>("get_bg_overlay_payload");
+}
+
+export async function focusMainFromOverlay(
+  cardKey: string,
+  address: string
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("focus_main_from_overlay", { cardKey, address });
+}
+
+export async function listenBgOverlayUpdate(
+  cb: (payload: BgOverlayPayload) => void
+): Promise<UnlistenFn> {
+  return listen<BgOverlayPayload>("jjdr:bg-overlay-update", (e) =>
+    cb(e.payload)
+  );
+}
+
+export async function listenOverlayOpenCard(
+  cb: (payload: OverlayOpenCardEvent) => void
+): Promise<UnlistenFn> {
+  return listen<OverlayOpenCardEvent>("jjdr:overlay-open-card", (e) =>
+    cb(e.payload)
+  );
+}
+
+export async function listenOverlayDismissed(
+  cb: (stamp: string) => void
+): Promise<UnlistenFn> {
+  return listen<string>("jjdr:overlay-dismissed", (e) => cb(e.payload));
+}
+
+export async function listenMainBgChanged(
+  cb: (isBackground: boolean) => void
+): Promise<UnlistenFn> {
+  return listen<boolean>("jjdr:main-bg-changed", (e) => cb(e.payload));
 }

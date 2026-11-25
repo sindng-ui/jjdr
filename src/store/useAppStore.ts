@@ -31,6 +31,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   notify_on_blocked: true,
   notify_on_done: false,
   show_merge_overlap: true,
+  bg_overlay_enabled: true,
+  bg_overlay_position: "top_center",
   prompt_presets: [
     { id: "test", label: "Run Tests", prompt: "Run the test suite and fix any failures." },
     { id: "review", label: "Self Review", prompt: "Review your diff carefully for edge cases and performance issues." },
@@ -166,6 +168,13 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         settings.root_card_mode === "header_chip"
           ? settings.root_card_mode
           : "header_chip",
+      bg_overlay_enabled: settings.bg_overlay_enabled ?? true,
+      bg_overlay_position:
+        settings.bg_overlay_position === "bottom_center" ||
+        settings.bg_overlay_position === "bottom_right" ||
+        settings.bg_overlay_position === "top_center"
+          ? settings.bg_overlay_position
+          : "top_center",
     };
     applyThemeToDom(normalized.theme);
     set({ settings: normalized });
@@ -190,6 +199,13 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         settings?.root_card_mode === "header_chip"
           ? settings.root_card_mode
           : "header_chip",
+      bg_overlay_enabled: settings?.bg_overlay_enabled ?? true,
+      bg_overlay_position:
+        settings?.bg_overlay_position === "bottom_center" ||
+        settings?.bg_overlay_position === "bottom_right" ||
+        settings?.bg_overlay_position === "top_center"
+          ? settings.bg_overlay_position
+          : "top_center",
     };
     applyThemeToDom(normalizedSettings.theme);
     set({

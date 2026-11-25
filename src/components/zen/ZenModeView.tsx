@@ -176,6 +176,14 @@ export const ZenModeView = React.memo(function ZenModeView() {
     closeTerminalDrawer,
   ]);
 
+  // Ensure right terminal receives keyboard focus whenever a new Zen card finishes rising into view
+  useEffect(() => {
+    if (exitingCard || !activeCard || activeCard.terminal.state !== "live") {
+      return;
+    }
+    requestTerminalFocus();
+  }, [enterNonce, exitingCard, activeCard, requestTerminalFocus]);
+
   const handleChangeStyle = useCallback((next: ZenCardStyle) => {
     setStyleMode(next);
     writeStoredZenStyle(next);
@@ -235,6 +243,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const handlePrimaryAction = useCallback(() => {
     if (animatingRef.current || !activeCard || !activeKey) return;
     animatingRef.current = true;
+    (document.activeElement as HTMLElement | null)?.blur();
 
     const cardSnapshot = activeCard;
     const isApproval = isPermissionApprovalPending(cardSnapshot.terminal);

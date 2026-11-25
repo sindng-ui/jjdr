@@ -1,0 +1,23 @@
+jjdr v0.3.2 Verification Results (2026-11-25)
+=============================================
+Changes Verified:
+1. Zen Mode right-pane terminal auto-focus on new card enter (`useXtermSession.ts`, `ZenModeView.tsx`)
+2. Background Top-Priority Card Overlay Notification HUD:
+   - Native Tauri v2 always-on-top, transparent, focus-free (`focused(false)`) overlay window (`bg-overlay`)
+   - Work-area aware positioning (`top_center` default, `bottom_center`, `bottom_right`)
+   - Settings ON/OFF toggle, 3-way position selector, and instant Preview button
+   - Click-to-focus main app and jump straight to the card's terminal; `x` dismiss per card stamp
+   - Automatic hide when main window gains focus; clean destroy on main window close/exit
+3. Version bump: 0.3.1 -> 0.3.2 (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`)
+
+Test & Build Commands:
+- `npm run test`: PASS (12 test files, 44 tests passed, 0 failed, 1.04s)
+- `npm run build` (`tsc && vite build`): PASS (0 errors, built in 3.10s)
+- `cargo test --manifest-path src-tauri/Cargo.toml --offline --lib`: PASS (18 passed, 0 failed, 0.00s)
+- `cargo check --manifest-path src-tauri/Cargo.toml --offline`: PASS (0 errors, 0 code warnings)
+
+Quality & Performance Checks:
+- Max file length: 709 lines (`src/components/modals/SettingsModal.tsx`) < 900-line limit
+- Zero-Blur compliance: 0 CSS `backdrop-filter` / `blur()` occurrences
+- Overlay webview isolation: `?overlay=1` mounts only `<BgOverlayToast />` (no `<App />`, Worker, or xterm)
+- IPC deduplication: `lastOverlaySignatureRef` suppresses duplicate show IPC calls on unchanged state

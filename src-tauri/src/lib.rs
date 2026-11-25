@@ -5,14 +5,14 @@ pub mod herdr;
 pub mod store;
 
 #[cfg(not(test))]
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[cfg(not(test))]
 use tauri::menu::{Menu, MenuItem};
 #[cfg(not(test))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 #[cfg(not(test))]
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 #[cfg(not(test))]
 use commands::terminals::AttachManager;
@@ -23,6 +23,8 @@ use herdr::events::{spawn_herdr_supervisor, TerminalStateHub};
 #[cfg(not(test))]
 use store::file_index::FileIndexStore;
 #[cfg(not(test))]
+use store::overlay::BgOverlayPayload;
+#[cfg(not(test))]
 use store::projects::PersistenceStore;
 
 #[cfg(not(test))]
@@ -32,6 +34,7 @@ pub struct AppState {
     pub store: Arc<PersistenceStore>,
     pub attach: Arc<AttachManager>,
     pub file_index: Arc<FileIndexStore>,
+    pub bg_overlay_payload: Mutex<Option<BgOverlayPayload>>,
 }
 
 #[cfg(not(test))]
@@ -55,6 +58,7 @@ pub fn run() {
         store,
         attach: attach.clone(),
         file_index,
+        bg_overlay_payload: Mutex::new(None),
     };
 
     let app = tauri::Builder::default()
@@ -63,6 +67,21 @@ pub fn run() {
         .manage(state)
         .setup(move |app| {
             setup_tray(app)?;
+            if let Some(main_win) = app.get_webview_window("main") {
+                let handle = app.handle().clone();
+                main_win.on_window_event(move |event| match event {
+                    WindowEvent::Focused(focused) => {
+                        if *focused {
+                            commands::overlay::hide_overlay_window(&handle);
+                        }
+                        let _ = handle.emit_to("main", "jjdr:main-bg-changed", !*focused);
+                    }
+                    WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                        commands::overlay::destroy_overlay_window(&handle);
+                    }
+                    _ => {}
+                });
+            }
             spawn_herdr_supervisor(app.handle().clone(), herdr.clone(), hub.clone());
             Ok(())
         })
@@ -108,6 +127,11 @@ pub fn run() {
             commands::attach::resize_terminal,
             commands::attach::focus_terminal,
             commands::terminals::popout_external_terminal,
+            commands::overlay::show_bg_overlay,
+            commands::overlay::hide_bg_overlay,
+            commands::overlay::dismiss_bg_overlay,
+            commands::overlay::get_bg_overlay_payload,
+            commands::overlay::focus_main_from_overlay,
         ])
         .build(tauri::generate_context!())
         .expect("error while building jjdr tauri application");
@@ -115,8 +139,9 @@ pub fn run() {
     let herdr_exit = app.state::<AppState>().herdr.clone();
     let attach_exit = app.state::<AppState>().attach.clone();
 
-    app.run(move |_app_handle, event| {
+    app.run(move |app_handle, event| {
         if let RunEvent::Exit = event {
+            commands::overlay::destroy_overlay_window(app_handle);
             // Gracefully close only our hc connect bridge; herdr-core & all AI sessions remain alive!
             tauri::async_runtime::block_on(async {
                 attach_exit.detach_all(&herdr_exit).await;

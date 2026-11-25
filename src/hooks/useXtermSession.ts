@@ -215,7 +215,19 @@ export function useXtermSession(
   const focusNow = useCallback(() => {
     const term = termRef.current;
     if (!term || !activeAddressRef.current) return;
+    const activeEl = document.activeElement as HTMLElement | null;
+    // Never steal focus if user deliberately opened a modal/search input
+    if (
+      activeEl &&
+      (activeEl.tagName === "INPUT" ||
+        activeEl.tagName === "SELECT" ||
+        (activeEl.tagName === "TEXTAREA" &&
+          !activeEl.classList.contains("xterm-helper-textarea")))
+    ) {
+      return;
+    }
     term.focus();
+    term.textarea?.focus({ preventScroll: true });
     if (activeChannelRef.current !== null) {
       void focusTerminal(activeChannelRef.current, true);
     }
@@ -379,11 +391,17 @@ export function useXtermSession(
     }
   }, [themeId]);
 
-  // 2b. Explicit focus requests (e.g. Ctrl+Arrow card switch or Ctrl+N jump)
+  // 2b. Explicit focus requests (e.g. Ctrl+Arrow card switch, Ctrl+N jump, or Zen card rise)
   useEffect(() => {
     if (terminalFocusNonce === 0 || !attachedAddress) return;
     const raf = requestAnimationFrame(() => focusNow());
-    return () => cancelAnimationFrame(raf);
+    const t1 = setTimeout(() => focusNow(), 70);
+    const t2 = setTimeout(() => focusNow(), 180);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [terminalFocusNonce, attachedAddress, focusNow]);
 
   // 3. Switch attached stream smoothly without blank-screen flashing
@@ -500,6 +518,7 @@ export function useXtermSession(
           setTimeout(() => {
             if (!cancelled && gen === attachGenRef.current) {
               fitNow();
+              focusNow();
             }
           }, 140);
 

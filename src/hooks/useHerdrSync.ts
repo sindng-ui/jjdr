@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   isPermissionGranted,
   requestPermission,
@@ -6,12 +6,17 @@ import {
 } from "@tauri-apps/plugin-notification";
 import {
   getInitialState,
+  hideBgOverlay,
   isTauriRuntime,
   listAllWorktrees,
   listTemplates,
+  listenMainBgChanged,
+  listenOverlayDismissed,
+  listenOverlayOpenCard,
   listenStateBatch,
   loadPersistedBundle,
   saveUiState,
+  showBgOverlay,
   updateTraySummary,
 } from "../services/tauriBridge";
 import { useAppStore } from "../store/useAppStore";
@@ -19,12 +24,22 @@ import { useUiStore } from "../store/useUiStore";
 import type { DashboardWorkerResult, StateBatchPayload } from "../types/domain";
 import type { DashboardComputeInput } from "../workers/dashboardLogic";
 import { getWorktreeLiveSessions } from "../utils/worktreeSessions";
+import {
+  buildBgOverlayPayload,
+  normalizeBgOverlayPosition,
+  selectTopBgOverlayCandidate,
+} from "../utils/bgOverlay";
 
 export function useHerdrSync() {
   const workerRef = useRef<Worker | null>(null);
   const reqIdRef = useRef(0);
   const notifiedBlockedRef = useRef<Set<string>>(new Set());
   const rehydratedAttachRef = useRef(false);
+  const dismissedOverlayStampRef = useRef<string | null>(null);
+  const lastOverlaySignatureRef = useRef<string | null>(null);
+  const [isMainInBackground, setIsMainInBackground] = useState<boolean>(() =>
+    typeof document !== "undefined" ? !document.hasFocus() : false
+  );
 
   // 1. Initialize Web Worker once
   useEffect(() => {
@@ -299,6 +314,125 @@ export function useHerdrSync() {
       globalCounts.running
     ).catch(() => {});
   }, [globalCounts.needsYou, globalCounts.ready, globalCounts.running]);
+
+  // 4b. Track foreground/background state & overlay interaction events
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let active = true;
+    const unlisteners: Array<() => void> = [];
+
+    const markBg = (inBg: boolean) => {
+      if (!active) return;
+      if (!inBg) {
+        dismissedOverlayStampRef.current = null;
+        lastOverlaySignatureRef.current = null;
+      }
+      setIsMainInBackground(inBg);
+    };
+
+    const onWindowBlur = () => markBg(true);
+    const onWindowFocus = () => markBg(false);
+    const onVisibilityChange = () => {
+      if (document.hidden) markBg(true);
+    };
+
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    void Promise.all([
+      listenMainBgChanged((inBg) => markBg(inBg)),
+      listenOverlayDismissed((stamp) => {
+        dismissedOverlayStampRef.current = stamp;
+        lastOverlaySignatureRef.current = null;
+      }),
+      listenOverlayOpenCard(({ card_key, address }) => {
+        const ui = useUiStore.getState();
+        if (card_key && card_key !== "__preview__") {
+          ui.setSelectedCardKey(card_key);
+        }
+        if (address) {
+          ui.setSelectedAddress(address);
+          ui.setAttachedAddress(address);
+          ui.requestTerminalFocus();
+        }
+      }),
+    ])
+      .then((fns) => {
+        if (!active) {
+          fns.forEach((fn) => fn());
+        } else {
+          unlisteners.push(...fns);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("focus", onWindowFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      unlisteners.forEach((fn) => fn());
+    };
+  }, []);
+
+  // 4c. Background Top-Priority Card HUD Notification sync
+  const allSessions = useAppStore((s) => s.computed.allSessions);
+  const bgOverlayEnabled = useAppStore((s) => s.settings.bg_overlay_enabled ?? true);
+  const bgOverlayPosition = useAppStore((s) =>
+    normalizeBgOverlayPosition(s.settings.bg_overlay_position)
+  );
+  const theme = useAppStore((s) => s.settings.theme);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    if (!bgOverlayEnabled) {
+      lastOverlaySignatureRef.current = null;
+      void hideBgOverlay().catch(() => {});
+      return;
+    }
+
+    if (!isMainInBackground) {
+      // Foreground hides real alerts (Rust Focused(true) already hides immediately,
+      // and leaving settings preview untouched if SettingsModal triggered one)
+      lastOverlaySignatureRef.current = null;
+      return;
+    }
+
+    const { top, pendingCount } = selectTopBgOverlayCandidate(allSessions);
+    if (!top) {
+      lastOverlaySignatureRef.current = null;
+      void hideBgOverlay().catch(() => {});
+      return;
+    }
+
+    const payload = buildBgOverlayPayload(
+      top,
+      pendingCount,
+      bgOverlayPosition,
+      theme,
+      false
+    );
+
+    if (dismissedOverlayStampRef.current === payload.stamp) {
+      return;
+    }
+
+    const sig = `${payload.stamp}|${payload.position}|${payload.theme}|${payload.pending_count}`;
+    if (lastOverlaySignatureRef.current === sig) {
+      return;
+    }
+    lastOverlaySignatureRef.current = sig;
+
+    void showBgOverlay(payload, false).catch(() => {});
+  }, [
+    allSessions,
+    bgOverlayEnabled,
+    bgOverlayPosition,
+    theme,
+    isMainInBackground,
+  ]);
 
   // 5. Persist UI state (debounced 800ms) for zero-loss session restoration across restarts
   const hydrated = useAppStore((s) => s.hydrated);
