@@ -4,6 +4,11 @@ import type {
   ProjectConfig,
   WorktreeInfo,
 } from "../types/domain";
+import {
+  readStoredRadarLayout,
+  writeStoredRadarLayout,
+  type RadarLayoutMode,
+} from "../utils/radarLayout";
 
 export type ViewMode = "radar" | "queue" | "zen";
 export type ZenModeTab = "inbox" | "dispatch";
@@ -89,6 +94,8 @@ export interface CardGrabState {
 interface UiStoreState {
   startupReady: boolean;
   viewMode: ViewMode;
+  radarLayoutMode: RadarLayoutMode;
+  radarFocusSlideDir: "next" | "prev" | null;
   activeGroup: string;
   selectedProjectId: string | null;
   searchQuery: string;
@@ -129,6 +136,8 @@ interface UiStoreState {
   toast: { message: string; kind: "info" | "error" | "success" } | null;
 
   setViewMode: (mode: ViewMode) => void;
+  setRadarLayoutMode: (mode: RadarLayoutMode) => void;
+  setRadarFocusSlideDir: (dir: "next" | "prev" | null) => void;
   completeStartupRouting: (tab: ZenModeTab) => void;
   toggleViewMode: () => void;
   setActiveGroup: (group: string) => void;
@@ -185,6 +194,8 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null;
 export const useUiStore = create<UiStoreState>((set) => ({
   startupReady: false,
   viewMode: "zen",
+  radarLayoutMode: readStoredRadarLayout(),
+  radarFocusSlideDir: null,
   activeGroup: "All",
   selectedProjectId: null,
   searchQuery: "",
@@ -225,6 +236,11 @@ export const useUiStore = create<UiStoreState>((set) => ({
   toast: null,
 
   setViewMode: (viewMode) => set({ viewMode, startupReady: true }),
+  setRadarLayoutMode: (radarLayoutMode) => {
+    writeStoredRadarLayout(radarLayoutMode);
+    set({ radarLayoutMode });
+  },
+  setRadarFocusSlideDir: (radarFocusSlideDir) => set({ radarFocusSlideDir }),
   completeStartupRouting: (tab) =>
     set((s) => {
       // Respect user's manual view switch if they already navigated away during boot

@@ -1,0 +1,20 @@
+# Test & Verification Results — Radar Vertical Kanban Columns Hybrid Layout (2026-11-26)
+
+## 1. Vitest Unit Tests (`npm run test`)
+- Result: PASS (17 test files, 61 tests passed, 0 failed)
+- Duration: 1.26s
+- Added / Updated Suites:
+  - `src/utils/radarLayout.test.ts` (2 tests passed): default `"columns"`, `localStorage` persistence, density -> column width mapping
+  - `src/utils/spatialNav.test.ts` (3 tests passed): vertical Kanban column up/down within project and left/right across projects
+
+## 2. TypeScript & Production Build (`npm run build`)
+- Command: `tsc && vite build`
+- Result: PASS (1685 modules transformed, built in 3.58s, 0 errors)
+
+## 3. Performance, Zero-Blur & File Size Audit
+- Zero-Blur (`backdrop-blur` / `filter: blur()`): 0 matches across `src/components/board/*.tsx`
+- 900-line limit: PASS (Max file in `src/`: `ZenModeView.tsx` 736 lines; `ProjectTray.tsx` 560 lines; `RadarTile.tsx` 504 lines)
+- Performance Guarantees:
+  - `WorkerMonsterAvatar` (`React.memo`, pure SVG) + `useMemo(getWorkerPersona)` per `RadarTile`
+  - Atomic Boolean Selectors preserved on `RadarTile`
+  - Zero card reflow when toggling or resizing the right terminal drawer in `Columns` mode

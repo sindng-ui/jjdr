@@ -46,6 +46,7 @@ export function App() {
 
   const startupReady = useUiStore((s) => s.startupReady);
   const viewMode = useUiStore((s) => s.viewMode);
+  const radarLayoutMode = useUiStore((s) => s.radarLayoutMode);
   const terminalDrawerOpen = useUiStore((s) => s.terminalDrawerOpen);
   const attachedAddress = useUiStore((s) => s.attachedAddress);
   const terminalWidthPx = useUiStore((s) => s.terminalWidthPx);
@@ -56,6 +57,10 @@ export function App() {
   const clearToast = useUiStore((s) => s.clearToast);
 
   const showDrawer = terminalDrawerOpen || Boolean(attachedAddress);
+  const isRadarColumnsAutoFlex =
+    terminalWidthPx === null &&
+    viewMode === "radar" &&
+    radarLayoutMode === "columns";
 
   return (
     <div className="jjdr-shell h-full w-full flex flex-col overflow-hidden">
@@ -82,9 +87,13 @@ export function App() {
                   style={
                     terminalWidthPx
                       ? { width: `${terminalWidthPx}px` }
+                      : isRadarColumnsAutoFlex
+                      ? undefined
                       : { width: "50%" }
                   }
-                  className="min-w-[360px] max-w-[78%] p-2.5 pl-0 shrink-0"
+                  className={`min-w-[360px] p-2.5 pl-0 ${
+                    isRadarColumnsAutoFlex ? "flex-1" : "max-w-[78%] shrink-0"
+                  }`}
                 >
                   <div
                     className="h-full rounded-[18px] flex items-center justify-center text-xs"

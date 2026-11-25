@@ -14,7 +14,13 @@ import {
   getCycledSession,
   getWorktreeLiveSessions,
   MAX_SHELLS_PER_WORKTREE,
+  pickPreferredWorktreeSession,
 } from "./worktreeSessions";
+import {
+  pickPreferredCellForLane,
+  resolveFocusedRadarColumn,
+  type FocusedRadarColumn,
+} from "./radarLayout";
 
 export interface DomBoardCard extends CardRect {
   el: HTMLElement;
@@ -22,6 +28,7 @@ export interface DomBoardCard extends CardRect {
   projectId: string | null;
   worktreePath: string | null;
   branch: string | null;
+  unreorderable: boolean;
 }
 
 export function readBoardCards(): DomBoardCard[] {
@@ -37,6 +44,7 @@ export function readBoardCards(): DomBoardCard[] {
         projectId: el.dataset.jjdrProjectId || null,
         worktreePath: el.dataset.jjdrWorktreePath || null,
         branch: el.dataset.jjdrBranch || null,
+        unreorderable: el.dataset.jjdrUnreorderable === "true",
         el,
         left: r.left,
         right: r.right,
@@ -129,15 +137,118 @@ export async function toggleSelectedTerminal(fromXterm: boolean) {
   await openOrLaunchCard(currentCard, targetAddr);
 }
 
+function cycleFocusedRadarColumn(
+  delta: 1 | -1,
+  syncAttachedPane: boolean,
+  focusTerminalPane: boolean
+): boolean {
+  const ui = useUiStore.getState();
+  const { matrixLanes, unassignedSessions, allSessions } =
+    useAppStore.getState().computed;
+
+  const targets: NonNullable<FocusedRadarColumn>[] = [
+    ...matrixLanes.map((l) => ({ kind: "project" as const, projectId: l.project.id })),
+    ...(unassignedSessions.length > 0 ? [{ kind: "external" as const }] : []),
+  ];
+  if (targets.length <= 1) return false;
+
+  const current = resolveFocusedRadarColumn({
+    lanes: matrixLanes,
+    unassigned: unassignedSessions,
+    allSessions,
+    attachedAddress: ui.attachedAddress,
+    selectedCardKey: ui.selectedCardKey,
+    selectedProjectId: ui.selectedProjectId,
+  });
+
+  const curIdx = targets.findIndex((t) => {
+    if (!current || t.kind !== current.kind) return false;
+    if (t.kind === "project" && current.kind === "project") {
+      return t.projectId === current.projectId;
+    }
+    return true;
+  });
+
+  const nextTarget =
+    targets[
+      curIdx === -1
+        ? delta > 0
+          ? 0
+          : targets.length - 1
+        : (curIdx + delta + targets.length) % targets.length
+    ];
+
+  const drawerOpen = ui.terminalDrawerOpen || Boolean(ui.attachedAddress);
+  const shouldSync = syncAttachedPane && (drawerOpen || focusTerminalPane);
+  ui.setRadarFocusSlideDir(delta > 0 ? "next" : "prev");
+
+  if (nextTarget.kind === "project") {
+    const lane = matrixLanes.find((l) => l.project.id === nextTarget.projectId);
+    if (!lane) return false;
+    const cell = pickPreferredCellForLane(lane);
+    if (!cell) return false;
+    const cardKey = `wt::${lane.project.id}::${normalizePath(cell.worktree.path)}`;
+    const remembered = ui.lastSessionByCardKey[cardKey] ?? null;
+    const target = pickPreferredWorktreeSession(cell.sessions, remembered);
+
+    ui.setSelectedCardKey(cardKey);
+    ui.setSelectedAddress(target?.address ?? null);
+    if (shouldSync) {
+      if (target && target.terminal.state === "live") {
+        ui.setAttachedAddress(target.address);
+        ui.rememberCardSession(cardKey, target.address);
+        if (focusTerminalPane) ui.requestTerminalFocus();
+      } else if (drawerOpen) {
+        ui.detachToEmptyDrawer();
+      }
+    }
+    return true;
+  }
+
+  const ext =
+    unassignedSessions.find((s) => s.bucket === "needs_you") ??
+    unassignedSessions.find((s) => s.bucket === "ready") ??
+    unassignedSessions.find((s) => s.bucket === "running") ??
+    unassignedSessions[0];
+  if (!ext) return false;
+  ui.setSelectedCardKey(`ext::${ext.address}`);
+  ui.setSelectedAddress(ext.address);
+  if (shouldSync) {
+    if (ext.terminal.state === "live") {
+      ui.setAttachedAddress(ext.address);
+      if (focusTerminalPane) ui.requestTerminalFocus();
+    } else if (drawerOpen) {
+      ui.detachToEmptyDrawer();
+    }
+  }
+  return true;
+}
+
 export function moveRadarSpatial(
   dir: NavDirection,
   syncAttachedPane: boolean,
   focusTerminalPane = false
 ) {
+  const ui = useUiStore.getState();
+  const drawerOpen = ui.terminalDrawerOpen || Boolean(ui.attachedAddress);
+
+  // In Radar Columns Focus Mode (single project column visible), Left/Right cycles projects cleanly
+  if (
+    ui.radarLayoutMode === "columns" &&
+    drawerOpen &&
+    (dir === "left" || dir === "right")
+  ) {
+    cycleFocusedRadarColumn(
+      dir === "right" ? 1 : -1,
+      syncAttachedPane,
+      focusTerminalPane
+    );
+    return;
+  }
+
   const cards = readBoardCards();
   if (cards.length === 0) return;
 
-  const ui = useUiStore.getState();
   const nextKey = findNextCardInDirection(cards, ui.selectedCardKey, dir);
   if (!nextKey) return;
 
@@ -146,9 +257,12 @@ export function moveRadarSpatial(
 
   ui.setSelectedCardKey(nextCard.key);
   ui.setSelectedAddress(nextCard.addr);
-  nextCard.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  nextCard.el.scrollIntoView({
+    block: "nearest",
+    inline: "nearest",
+    behavior: "smooth",
+  });
 
-  const drawerOpen = ui.terminalDrawerOpen || Boolean(ui.attachedAddress);
   const shouldSync = syncAttachedPane && (drawerOpen || focusTerminalPane);
 
   if (shouldSync) {
@@ -296,7 +410,11 @@ export function jumpToNextActionable(delta: 1 | -1 = 1) {
         cards.find((c) => c.addr === next.address);
       if (match) {
         useUiStore.getState().setSelectedCardKey(match.key);
-        match.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        match.el.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+          behavior: "smooth",
+        });
         return true;
       }
       return false;
@@ -551,10 +669,15 @@ export function stepKeyboardCardGrab(dir: NavDirection): boolean {
   if (!existing) {
     const source =
       allCards.find((c) => c.key === ui.selectedCardKey) ?? allCards[0] ?? null;
-    if (!source || !source.projectId || !source.worktreePath) return false;
+    if (!source || !source.projectId || !source.worktreePath || source.unreorderable) {
+      return false;
+    }
 
     const projectCards = allCards.filter(
-      (c) => c.projectId === source.projectId && Boolean(c.worktreePath)
+      (c) =>
+        c.projectId === source.projectId &&
+        Boolean(c.worktreePath) &&
+        !c.unreorderable
     );
     if (projectCards.length <= 1) return false;
 
@@ -574,7 +697,10 @@ export function stepKeyboardCardGrab(dir: NavDirection): boolean {
   }
 
   const projectCards = allCards.filter(
-    (c) => c.projectId === existing.projectId && Boolean(c.worktreePath)
+    (c) =>
+      c.projectId === existing.projectId &&
+      Boolean(c.worktreePath) &&
+      !c.unreorderable
   );
   if (projectCards.length <= 1) return false;
 

@@ -32,4 +32,46 @@ describe("findNextCardInDirection", () => {
     expect(findNextCardInDirection(cards, "projA-wt1", "down")).toBe("projB-main");
     expect(findNextCardInDirection(cards, "projB-main", "up")).toBe("projA-main");
   });
+
+  it("navigates cleanly in vertical Kanban columns (up/down within project, left/right across projects)", () => {
+    const columns: CardRect[] = [
+      // Column A (Project A)
+      rect("colA-1", 0, 0, 276, 86),
+      rect("colA-2", 0, 98, 276, 86),
+      rect("colA-3", 0, 196, 276, 86),
+      // Column B (Project B)
+      rect("colB-1", 292, 0, 276, 86),
+      rect("colB-2", 292, 98, 276, 86),
+    ];
+
+    expect(findNextCardInDirection(columns, "colA-1", "down")).toBe("colA-2");
+    expect(findNextCardInDirection(columns, "colA-2", "down")).toBe("colA-3");
+    expect(findNextCardInDirection(columns, "colA-3", "up")).toBe("colA-2");
+    expect(findNextCardInDirection(columns, "colA-2", "right")).toBe("colB-2");
+    expect(findNextCardInDirection(columns, "colB-2", "left")).toBe("colA-2");
+    // Column A row 3 moving right lands on Column B's closest row (row 2)
+    expect(findNextCardInDirection(columns, "colA-3", "right")).toBe("colB-2");
+  });
+
+  it("navigates into and out of a compact ROOT header chip with up/down/right arrows", () => {
+    const columnWithRootChip: CardRect[] = [
+      // Compact ROOT main header chip aligned right inside Column A header
+      rect("colA-root", 160, 44, 110, 24),
+      // Worktree cards inside Column A
+      rect("colA-wt1", 12, 84, 260, 86),
+      rect("colA-wt2", 12, 182, 260, 86),
+      // Neighbor Column B card
+      rect("colB-root", 304, 84, 260, 86),
+    ];
+
+    expect(findNextCardInDirection(columnWithRootChip, "colA-wt1", "up")).toBe(
+      "colA-root"
+    );
+    expect(findNextCardInDirection(columnWithRootChip, "colA-root", "down")).toBe(
+      "colA-wt1"
+    );
+    expect(findNextCardInDirection(columnWithRootChip, "colA-root", "right")).toBe(
+      "colB-root"
+    );
+  });
 });

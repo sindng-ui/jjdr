@@ -9,15 +9,22 @@ import { normalizePath } from "../../workers/dashboardLogic";
 import { usePointerReorder } from "../../hooks/usePointerReorder";
 import { pickPreferredWorktreeSession } from "../../utils/worktreeSessions";
 import { launchSession } from "../../services/tauriBridge";
+import type { RadarLayoutMode } from "../../utils/radarLayout";
 
 interface ProjectTrayProps {
   lane: MatrixProjectLane;
   activeCols: number;
+  layout?: RadarLayoutMode;
+  columnWidthPx?: number;
+  focusedMode?: boolean;
 }
 
 export const ProjectTray = React.memo(function ProjectTray({
   lane,
   activeCols,
+  layout = "rows",
+  columnWidthPx = 276,
+  focusedMode = false,
 }: ProjectTrayProps) {
   const { project, cells } = lane;
   const collapsed = useUiStore((s) => Boolean(s.collapsedProjects[project.id]));
@@ -68,6 +75,13 @@ export const ProjectTray = React.memo(function ProjectTray({
   );
   const rootRememberedAddr = useUiStore((s) =>
     rootCardKey ? s.lastSessionByCardKey[rootCardKey] ?? null : null
+  );
+  const rootAttachTarget = useMemo(
+    () =>
+      rootCell
+        ? pickPreferredWorktreeSession(rootCell.sessions, rootRememberedAddr)
+        : null,
+    [rootCell, rootRememberedAddr]
   );
 
   const gridRef = useRef<HTMLDivElement>(null);
@@ -171,7 +185,7 @@ export const ProjectTray = React.memo(function ProjectTray({
         requestTerminalFocus();
       }
     } catch (err) {
-      showToast(`AI 시작 실패: ${String(err)}`, "error");
+      showToast(`Failed to start AI: ${String(err)}`, "error");
     }
   }, [
     rootCell,
@@ -198,6 +212,288 @@ export const ProjectTray = React.memo(function ProjectTray({
     (n, c) => n + c.sessions.filter((s) => s.bucket === "running").length,
     0
   );
+
+  const isColumns = layout === "columns";
+
+  // Slim vertical bar when a Kanban column is collapsed (never collapse when solo-focused)
+  if (isColumns && collapsed && !focusedMode) {
+    return (
+      <section
+        className="jjdr-tray w-14 shrink-0 h-full rounded-[22px] py-3.5 px-2 flex flex-col items-center justify-between gap-3 select-none"
+        title={`${project.name} (${gridCells.length}) · Click to expand`}
+      >
+        <button
+          type="button"
+          onClick={() => toggleProjectCollapsed(project.id)}
+          className="flex flex-col items-center gap-2.5 cursor-pointer min-h-0 flex-1"
+        >
+          <span
+            className="w-7 h-7 rounded-[10px] flex items-center justify-center text-xs font-bold shrink-0"
+            style={{
+              backgroundColor: `${project.color}26`,
+              color: project.color,
+              border: `1px solid ${project.color}42`,
+            }}
+          >
+            {project.name.slice(0, 1).toUpperCase()}
+          </span>
+          <span
+            className="text-[11px] font-mono-code font-bold tabular-nums"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {gridCells.length}
+          </span>
+          {(needs > 0 || ready > 0 || running > 0) && (
+            <div className="flex flex-col items-center gap-1">
+              {needs > 0 && (
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: "var(--action-fg)" }}
+                />
+              )}
+              {ready > 0 && (
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: "var(--ready-fg)" }}
+                />
+              )}
+              {running > 0 && (
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: "var(--run-fg)" }}
+                />
+              )}
+            </div>
+          )}
+          <span
+            className="text-xs font-bold tracking-tight truncate max-h-40"
+            style={{
+              color: "var(--text-secondary)",
+              writingMode: "vertical-rl",
+            }}
+          >
+            {project.name}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCreateWorktreeProjectId(project.id)}
+          className="jjdr-pill w-7 h-7 rounded-full inline-flex items-center justify-center cursor-pointer shrink-0"
+          style={{ color: "var(--text-secondary)" }}
+          title="New Worktree"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </section>
+    );
+  }
+
+  const rootChipEl =
+    collapseRootToHeader && rootCell && rootCardKey ? (
+      <button
+        type="button"
+        data-jjdr-card={rootCardKey}
+        data-jjdr-session-addr={rootAttachTarget?.address ?? ""}
+        data-jjdr-project-id={project.id}
+        data-jjdr-worktree-path={rootCell.worktree.path}
+        data-jjdr-branch={rootCell.worktree.branch || ""}
+        data-jjdr-unreorderable="true"
+        onClick={handleClickRootChip}
+        onDoubleClick={() => void handleDoubleClickRootChip()}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const target = pickPreferredWorktreeSession(
+            rootCell.sessions,
+            rootRememberedAddr
+          );
+          setSelectedCardKey(rootCardKey);
+          setSelectedAddress(target?.address ?? null);
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            cardKey: rootCardKey,
+            project,
+            worktree: rootCell.worktree,
+            sessions: rootCell.sessions,
+          });
+        }}
+        title={`Project ROOT (${rootCell.worktree.branch || "main"}) · Click or Ctrl+Arrow to focus / Double-click or Enter to launch / Right-click menu`}
+        className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono-code transition-colors shrink-0 cursor-pointer whitespace-nowrap"
+        style={{
+          color: isRootSelected ? "var(--accent)" : "var(--text-muted)",
+          borderColor: isRootSelected ? "var(--accent-border)" : undefined,
+          background: isRootSelected ? "var(--accent-soft)" : undefined,
+          boxShadow: isRootSelected ? "var(--card-selected-shadow)" : undefined,
+        }}
+      >
+        {rootCell.sessions.length > 0 ? (
+          <StatusBadge
+            bucket={rootCell.topBucket}
+            status={rootCell.sessions[0]?.terminal.status}
+            isStuck={rootCell.sessions[0]?.isStuck}
+            stuckMinutes={rootCell.sessions[0]?.stuckMinutes}
+            compact
+          />
+        ) : (
+          <Home className="w-3 h-3 opacity-75" />
+        )}
+        <span>ROOT</span>
+        <span className="opacity-70 max-w-[90px] truncate">
+          {rootCell.worktree.branch || "main"}
+        </span>
+      </button>
+    ) : null;
+
+  const statusPillsEl = (
+    <div className="flex items-center gap-1 font-mono-code text-[11px] tabular-nums shrink-0">
+      {needs > 0 && (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
+          style={{
+            background: "var(--action-soft)",
+            color: "var(--action-fg)",
+          }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "var(--action-fg)" }}
+          />
+          {needs}
+        </span>
+      )}
+      {ready > 0 && (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
+          style={{
+            background: "var(--ready-soft)",
+            color: "var(--ready-fg)",
+          }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "var(--ready-fg)" }}
+          />
+          {ready}
+        </span>
+      )}
+      {running > 0 && (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
+          style={{
+            background: "var(--run-soft)",
+            color: "var(--run-fg)",
+          }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "var(--run-fg)" }}
+          />
+          {running}
+        </span>
+      )}
+    </div>
+  );
+
+  if (isColumns) {
+    const hasSubHeader = needs > 0 || ready > 0 || running > 0 || Boolean(rootChipEl);
+    return (
+      <section
+        style={focusedMode ? { width: "100%" } : { width: `${columnWidthPx}px` }}
+        className="jjdr-tray shrink-0 h-full min-h-0 rounded-[22px] p-3 flex flex-col gap-2.5 min-w-0 transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      >
+        {/* Compact 2-Row Sticky Column Header */}
+        <div className="shrink-0 space-y-1.5 px-0.5">
+          <div className="flex items-center justify-between gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!focusedMode) toggleProjectCollapsed(project.id);
+              }}
+              className={`group flex items-center gap-2 min-w-0 text-left ${
+                focusedMode ? "cursor-default" : "cursor-pointer"
+              }`}
+              title={
+                focusedMode
+                  ? project.name
+                  : `${project.name} · Click to collapse column`
+              }
+            >
+              <span
+                className="w-6 h-6 rounded-[9px] flex items-center justify-center text-[11px] font-bold shrink-0"
+                style={{
+                  backgroundColor: `${project.color}26`,
+                  color: project.color,
+                  border: `1px solid ${project.color}42`,
+                }}
+              >
+                {project.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span
+                className="text-[13px] font-bold tracking-tight truncate"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {project.name}
+              </span>
+              <span
+                className="text-xs font-mono-code tabular-nums shrink-0"
+                style={{ color: "var(--text-faint)" }}
+              >
+                {gridCells.length}
+              </span>
+              {!focusedMode && (
+                <ChevronDown
+                  className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  style={{ color: "var(--text-faint)" }}
+                />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCreateWorktreeProjectId(project.id)}
+              className="jjdr-pill inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 cursor-pointer whitespace-nowrap"
+              style={{ color: "var(--text-secondary)" }}
+              title="New Worktree (based on current branch)"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+
+          {hasSubHeader && (
+            <div className="flex items-center justify-between gap-1.5 flex-wrap">
+              {statusPillsEl}
+              {rootChipEl}
+            </div>
+          )}
+        </div>
+
+        {/* Independent Vertical Scroll List (Zero Reflow, outer bleed prevents 2px focus ring clipping) */}
+        <div
+          ref={gridRef}
+          data-radar-col-scroll="true"
+          className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 -mx-2 px-2 py-2"
+        >
+          {gridCells.map(({ worktree, sessions }) => {
+            const normId = normalizePath(worktree.path);
+            return (
+              <RadarTile
+                key={worktree.path}
+                project={project}
+                worktree={worktree}
+                sessions={sessions}
+                isDragging={draggingId === normId}
+                isDropTarget={overId === normId && draggingId !== null}
+                onStartDrag={startDrag}
+                shouldSuppressClick={shouldSuppressClick}
+              />
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="jjdr-tray w-full rounded-[22px] p-3.5 space-y-3 min-w-0">
@@ -242,114 +538,17 @@ export const ProjectTray = React.memo(function ProjectTray({
             />
           )}
 
-          <div className="flex items-center gap-1 font-mono-code text-[11px] tabular-nums shrink-0">
-            {needs > 0 && (
-              <span
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
-                style={{
-                  background: "var(--action-soft)",
-                  color: "var(--action-fg)",
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: "var(--action-fg)" }}
-                />
-                {needs}
-              </span>
-            )}
-            {ready > 0 && (
-              <span
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
-                style={{
-                  background: "var(--ready-soft)",
-                  color: "var(--ready-fg)",
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: "var(--ready-fg)" }}
-                />
-                {ready}
-              </span>
-            )}
-            {running > 0 && (
-              <span
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-semibold"
-                style={{
-                  background: "var(--run-soft)",
-                  color: "var(--run-fg)",
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: "var(--run-fg)" }}
-                />
-                {running}
-              </span>
-            )}
-          </div>
+          {statusPillsEl}
         </button>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {collapseRootToHeader && rootCell && rootCardKey && (
-            <button
-              type="button"
-              onClick={handleClickRootChip}
-              onDoubleClick={() => void handleDoubleClickRootChip()}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const target = pickPreferredWorktreeSession(
-                  rootCell.sessions,
-                  rootRememberedAddr
-                );
-                setSelectedCardKey(rootCardKey);
-                setSelectedAddress(target?.address ?? null);
-                setContextMenu({
-                  x: e.clientX,
-                  y: e.clientY,
-                  cardKey: rootCardKey,
-                  project,
-                  worktree: rootCell.worktree,
-                  sessions: rootCell.sessions,
-                });
-              }}
-              title={`프로젝트 ROOT (${rootCell.worktree.branch || "main"}) · 클릭 선택 / 더블클릭 실행 / 우클릭 메뉴`}
-              className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono-code transition-colors shrink-0 cursor-pointer whitespace-nowrap"
-              style={{
-                color: isRootSelected
-                  ? "var(--accent)"
-                  : "var(--text-muted)",
-                borderColor: isRootSelected
-                  ? "var(--accent-border)"
-                  : undefined,
-                background: isRootSelected ? "var(--accent-soft)" : undefined,
-              }}
-            >
-              {rootCell.sessions.length > 0 ? (
-                <StatusBadge
-                  bucket={rootCell.topBucket}
-                  status={rootCell.sessions[0]?.terminal.status}
-                  isStuck={rootCell.sessions[0]?.isStuck}
-                  stuckMinutes={rootCell.sessions[0]?.stuckMinutes}
-                  compact
-                />
-              ) : (
-                <Home className="w-3 h-3 opacity-75" />
-              )}
-              <span>ROOT</span>
-              <span className="opacity-70 max-w-[90px] truncate">
-                {rootCell.worktree.branch || "main"}
-              </span>
-            </button>
-          )}
+          {rootChipEl}
 
           <button
             onClick={() => setCreateWorktreeProjectId(project.id)}
             className="jjdr-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 cursor-pointer whitespace-nowrap"
             style={{ color: "var(--text-secondary)" }}
-            title="새 Worktree 추가 (현재 브랜치 기준)"
+            title="New Worktree (based on current branch)"
           >
             <Plus className="w-3 h-3" />
             <span>Worktree</span>

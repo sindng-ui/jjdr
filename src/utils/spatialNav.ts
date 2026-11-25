@@ -37,15 +37,16 @@ export function findNextCardInDirection(
     if (dir === "left" && cand.cx >= cur.cx - EPS) continue;
 
     if (isVertical) {
-      // Primary: vertical gap (prefer the immediately adjacent row below/above)
-      // Secondary: horizontal alignment (prefer same column / closest cx)
+      // Primary: stay within the same column (horizontal overlap) first, then pick closest row above/below
+      const horizontalOverlap =
+        Math.min(cur.right, cand.right) - Math.max(cur.left, cand.left);
+      const sameColPenalty = horizontalOverlap > 10 ? 0 : 100_000;
       const primary =
         dir === "down"
           ? Math.max(0, cand.top - cur.bottom) + (cand.cy - cur.cy) * 0.35
           : Math.max(0, cur.top - cand.bottom) + (cur.cy - cand.cy) * 0.35;
       const secondary = Math.abs(cand.cx - cur.cx);
-      // Slight horizontal alignment weight so moving down jumps to the next row, not 3 rows below in exact column
-      const score = primary * 3.0 + secondary * 0.8;
+      const score = sameColPenalty + primary * 3.0 + secondary * 0.8;
       if (score < bestScore) {
         bestScore = score;
         bestKey = cand.key;

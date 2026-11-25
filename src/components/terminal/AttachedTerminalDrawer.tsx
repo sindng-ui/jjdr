@@ -26,6 +26,8 @@ const MAX_DRAWER_RATIO = 0.78;
 
 export const AttachedTerminalDrawer = React.memo(
   function AttachedTerminalDrawer() {
+    const viewMode = useUiStore((s) => s.viewMode);
+    const radarLayoutMode = useUiStore((s) => s.radarLayoutMode);
     const terminalDrawerOpen = useUiStore((s) => s.terminalDrawerOpen);
     const attachedAddress = useUiStore((s) => s.attachedAddress);
     const selectedCardKey = useUiStore((s) => s.selectedCardKey);
@@ -88,6 +90,16 @@ export const AttachedTerminalDrawer = React.memo(
     const [resizing, setResizing] = useState(false);
 
     const { statusText, fitNow } = useXtermSession(containerRef, attachedAddress);
+
+    const isRadarColumnsFocus =
+      viewMode === "radar" && radarLayoutMode === "columns";
+
+    // Re-fit XTerm cleanly once the accelerated Radar focus column width transition settles
+    useEffect(() => {
+      if (!terminalDrawerOpen && !attachedAddress) return;
+      const timer = setTimeout(() => fitNow(), 240);
+      return () => clearTimeout(timer);
+    }, [isRadarColumnsFocus, terminalWidthPx, terminalDrawerOpen, attachedAddress, fitNow]);
 
     // Remember active tab per worktree
     useEffect(() => {
@@ -333,15 +345,21 @@ export const AttachedTerminalDrawer = React.memo(
 
     const canSpawnInWorktree = Boolean(session?.projectId && session.worktreePath);
 
-    const widthStyle: React.CSSProperties = terminalWidthPx
+    const isAutoFlexFocus = terminalWidthPx === null && isRadarColumnsFocus;
+
+    const widthStyle: React.CSSProperties | undefined = terminalWidthPx
       ? { width: `${terminalWidthPx}px` }
+      : isAutoFlexFocus
+      ? undefined
       : { width: "50%" };
 
     return (
       <section
         ref={drawerRef}
         style={widthStyle}
-        className="relative h-full min-h-0 min-w-[360px] max-w-[78%] p-2.5 pl-0 flex shrink-0"
+        className={`relative h-full min-h-0 min-w-[360px] p-2.5 pl-0 flex ${
+          isAutoFlexFocus ? "flex-1" : "max-w-[78%] shrink-0"
+        }`}
       >
         {/* Left Drag-to-Resize Handle (#12) */}
         <div

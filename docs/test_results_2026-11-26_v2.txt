@@ -1,0 +1,17 @@
+# Test & Build Verification Results — 2026-11-26 (Radar Columns Focus Mode + ROOT Chip Keyboard Nav)
+
+## 1. Vitest Unit Tests (`npm run test`)
+- Result: PASS — 17 test files passed, 65 / 65 tests passed (1.42s)
+- Added / Updated Tests:
+  - `src/utils/radarLayout.test.ts` (5 tests): default columns + localStorage persistence, overview/focus density column width mapping (`244->320`, `276->356`, `308->388`), `wt::` project ID extraction, `resolveFocusedRadarColumn` priority (`attachedAddress` -> `selectedCardKey` -> `selectedProjectId` -> first lane -> external), `pickPreferredCellForLane` priority.
+  - `src/utils/spatialNav.test.ts` (4 tests): compact `ROOT main` header chip `up` / `down` / `right` spatial navigation.
+
+## 2. TypeScript + Vite Production Build (`npm run build`)
+- Command: `tsc && vite build`
+- Result: PASS — 0 TypeScript errors, 1686 modules transformed, built in 5.64s.
+
+## 3. Performance & Quality Audits
+- Zero-Blur CSS Check (`backdrop-filter|backdrop-blur|filter: blur|blur-[`): 0 matches across `src/`.
+- File Line-Count Limit (<900 lines): PASS — largest file `shortcutActions.ts` (759 lines), `RadarBoardView.tsx` (616 lines).
+- XTerm Resize Protection: Single 240ms post-transition `fitNow()` sync paired with existing 60ms `ResizeObserver` debounce (no per-frame resize thrashing).
+- Memoization & Atomic Selectors: `RadarFocusSwitcherBar` wrapped in `React.memo`; `radarLayoutMode` subscribed via atomic Zustand selectors.

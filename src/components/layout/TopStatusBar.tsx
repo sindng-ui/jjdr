@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Command,
+  FileSearch,
   Inbox,
   Minus,
   PanelLeft,
@@ -37,6 +38,7 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
   const searchQuery = useUiStore((s) => s.searchQuery);
   const setSearchQuery = useUiStore((s) => s.setSearchQuery);
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const setQuickFileOpen = useUiStore((s) => s.setQuickFileOpen);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -256,8 +258,8 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
         )}
       </div>
 
-      {/* Center: Group Filter Pill + Organic Search Pill */}
-      <div className="flex items-center gap-2 flex-1 max-w-md">
+      {/* Center: Group Filter Pill + Organic Search Pill + Quick File Search Button */}
+      <div className="flex items-center gap-2 flex-1 max-w-lg">
         {groups.length > 1 && (
           <div className="jjdr-pill flex items-center rounded-full p-0.5 text-xs">
             {groups.map((g) => (
@@ -288,7 +290,7 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder="프로젝트, 브랜치, 에이전트 검색..."
+            placeholder="Search projects, branches, agents..."
             className="jjdr-pill w-full h-9 pl-9 pr-14 text-xs rounded-full focus:outline-none transition-colors"
             style={{ color: "var(--text-primary)" }}
           />
@@ -311,6 +313,18 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
             </kbd>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setQuickFileOpen(true)}
+          title="Quick File Search (Ctrl+P)"
+          className="jjdr-pill inline-flex items-center gap-1.5 h-9 px-3 rounded-full text-xs font-medium transition-colors cursor-pointer shrink-0"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          <FileSearch className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">Files</span>
+          <kbd className="text-[10px] font-mono-code opacity-75">Ctrl+P</kbd>
+        </button>
       </div>
 
       {/* Right: Pill View Switch + Circular Controls + Soft Frameless Window Controls */}

@@ -97,13 +97,13 @@ export const RadarTile = React.memo(function RadarTile({
 
   const lastLine = (() => {
     if (!session) {
-      return customNote || "대기 중 · Ctrl+` 또는 더블클릭으로 시작";
+      return customNote || "Standby · Ctrl+` or double-click to launch";
     }
     if (session.terminal.status?.msg) return session.terminal.status.msg;
     if (session.previewLines.length > 0) {
       return session.previewLines[session.previewLines.length - 1];
     }
-    return bucket === "running" ? "작업 진행 중..." : "응답 준비 완료";
+    return bucket === "running" ? "Working..." : "Ready for review";
   })();
 
   const openOrLaunch = async () => {
@@ -132,7 +132,7 @@ export const RadarTile = React.memo(function RadarTile({
         rememberCardSession(cardKey, addr);
       }
     } catch (err) {
-      showToast(`AI 시작 실패: ${String(err)}`, "error");
+      showToast(`Failed to start AI: ${String(err)}`, "error");
     }
   };
 
@@ -201,10 +201,15 @@ export const RadarTile = React.memo(function RadarTile({
           sessions,
         });
       }}
-      onClick={() => {
+      onClick={(e) => {
         if (shouldSuppressClick?.()) return;
         setSelectedCardKey(cardKey);
         setSelectedAddress(attachTarget?.address ?? session?.address ?? null);
+        e.currentTarget.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+          behavior: "smooth",
+        });
         const { terminalDrawerOpen, attachedAddress } = useUiStore.getState();
         if (terminalDrawerOpen || attachedAddress) {
           if (attachTarget && isTargetLive) {
@@ -231,7 +236,7 @@ export const RadarTile = React.memo(function RadarTile({
             color: "#ffffff",
           }}
         >
-          {isGrabSource ? "붙잡힘 · 방향키 이동" : "⇄ 1:1 교환"}
+          {isGrabSource ? "Grabbed · Arrows" : "⇄ Swap"}
         </span>
       )}
       {/* Row 1: Status Pill + ROOT Badge + Name/Branch + Hover Actions */}
@@ -243,14 +248,15 @@ export const RadarTile = React.memo(function RadarTile({
               status={session.terminal.status}
               isStuck={session.isStuck}
               stuckMinutes={session.stuckMinutes}
+              compact
             />
           ) : (
-            <StatusBadge bucket="idle" />
+            <StatusBadge bucket="idle" compact />
           )}
 
           {worktree.is_main && (
             <span
-              title="프로젝트 Root (메인 저장소)"
+              title="Project Root (main repository)"
               className="inline-flex items-center gap-0.5 text-[9.5px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide shrink-0"
               style={{
                 background: "var(--accent-soft)",
@@ -350,7 +356,7 @@ export const RadarTile = React.memo(function RadarTile({
                     branch: worktree.branch,
                   })
                 }
-                title="Git Diff 보기"
+                title="Preview Git Diff"
                 className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
                 style={{ color: "var(--text-secondary)" }}
               >
@@ -367,7 +373,7 @@ export const RadarTile = React.memo(function RadarTile({
                   isMain: worktree.is_main,
                 })
               }
-              title="카드 이름 / 정보 편집"
+              title="Edit card alias / note"
               className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
               style={{ color: "var(--text-secondary)" }}
             >
@@ -383,7 +389,7 @@ export const RadarTile = React.memo(function RadarTile({
                   defaultAgent: project.default_agent,
                 })
               }
-              title="세션 추가 (AI / 터미널)"
+              title="Add session (AI / Terminal)"
               className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
               style={{ color: "var(--text-secondary)" }}
             >
@@ -402,7 +408,7 @@ export const RadarTile = React.memo(function RadarTile({
                     terminalAddresses: sessions.map((s) => s.address),
                   })
                 }
-                title="Worktree 삭제"
+                title="Remove worktree"
                 className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
                 style={{ color: "var(--action-fg)" }}
               >
@@ -416,7 +422,7 @@ export const RadarTile = React.memo(function RadarTile({
                     void killTerminal(session.address, true);
                     if (isAttached) detachToEmptyDrawer();
                   }}
-                  title="세션 종료"
+                  title="Close session"
                   className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
                   style={{ color: "var(--action-fg)" }}
                 >
@@ -471,7 +477,7 @@ export const RadarTile = React.memo(function RadarTile({
             }}
           >
             <Check className="w-3 h-3" />
-            승인
+            Approve
           </button>
         )}
       </div>
