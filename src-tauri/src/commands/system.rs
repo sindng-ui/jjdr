@@ -88,7 +88,7 @@ pub async fn request_preview_refresh(
 }
 
 #[tauri::command]
-pub fn window_minimize(app: AppHandle) -> Result<(), String> {
+pub async fn window_minimize(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         win.minimize().map_err(|e| e.to_string())?;
     }
@@ -96,7 +96,7 @@ pub fn window_minimize(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn window_toggle_maximize(app: AppHandle) -> Result<(), String> {
+pub async fn window_toggle_maximize(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         let is_max = win.is_maximized().unwrap_or(false);
         if is_max {
@@ -109,7 +109,7 @@ pub fn window_toggle_maximize(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn window_close(app: AppHandle) -> Result<(), String> {
+pub async fn window_close(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         win.close().map_err(|e| e.to_string())?;
     }
@@ -117,7 +117,7 @@ pub fn window_close(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn window_start_dragging(app: AppHandle) -> Result<(), String> {
+pub async fn window_start_dragging(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         win.start_dragging().map_err(|e| e.to_string())?;
     }

@@ -228,7 +228,11 @@ pub async fn launch_session(
         .unwrap_or("")
         .to_string();
 
-    state.hub.sync_terminals_now(&state.herdr).await;
+    let hub = state.hub.clone();
+    let herdr = state.herdr.clone();
+    tokio::spawn(async move {
+        hub.sync_terminals_now(&herdr).await;
+    });
 
     Ok(address)
 }

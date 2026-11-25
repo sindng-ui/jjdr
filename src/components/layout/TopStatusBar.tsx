@@ -87,9 +87,9 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
 
   const handleHeaderMouseDown = (e: React.MouseEvent<HTMLElement>) => {
     if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
+    const target = e.target as Element | null;
     if (
-      target.closest(
+      target?.closest(
         "button, input, a, select, textarea, [data-no-drag='true']"
       )
     ) {
@@ -104,7 +104,6 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
 
   return (
     <header
-      data-tauri-drag-region
       onMouseDown={handleHeaderMouseDown}
       className="h-14 pl-3.5 pr-2.5 flex items-center justify-between gap-3 shrink-0 select-none"
     >
@@ -315,9 +314,10 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
       </div>
 
       {/* Right: Pill View Switch + Circular Controls + Soft Frameless Window Controls */}
-      <div className="flex items-center gap-1.5">
+      <div data-no-drag="true" className="flex items-center gap-1.5">
         <div className="jjdr-pill flex items-center rounded-full p-0.5 text-xs">
           <button
+            type="button"
             onClick={() => setViewMode("radar")}
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors cursor-pointer ${
               viewMode === "radar" ? "jjdr-pill-active font-semibold" : ""
@@ -331,6 +331,7 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
             Radar
           </button>
           <button
+            type="button"
             onClick={() => setViewMode("queue")}
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors cursor-pointer ${
               viewMode === "queue" ? "jjdr-pill-active font-semibold" : ""
@@ -344,6 +345,7 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
             Queue
           </button>
           <button
+            type="button"
             onClick={() => setViewMode("zen")}
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors cursor-pointer ${
               viewMode === "zen" ? "jjdr-pill-active font-semibold" : ""
@@ -359,6 +361,7 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
         </div>
 
         <button
+          type="button"
           onClick={() => setCommandPaletteOpen(true)}
           className="jjdr-pill inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors cursor-pointer"
           style={{ color: "var(--text-secondary)" }}
@@ -369,6 +372,7 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
         </button>
 
         <button
+          type="button"
           onClick={() => void handleRefreshGit()}
           title="Refresh Git worktrees & diff stats"
           className="jjdr-pill h-8 w-8 inline-flex items-center justify-center rounded-full transition-colors cursor-pointer"
@@ -378,6 +382,7 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
         </button>
 
         <button
+          type="button"
           onClick={() => setSettingsOpen(true)}
           title="Settings, Themes & Prompt Presets"
           className="jjdr-pill h-8 w-8 inline-flex items-center justify-center rounded-full transition-colors cursor-pointer"

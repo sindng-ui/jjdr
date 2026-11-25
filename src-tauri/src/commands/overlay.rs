@@ -53,6 +53,8 @@ fn position_overlay_window(app: &AppHandle, overlay: &tauri::WebviewWindow, posi
 
 pub fn hide_overlay_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window(OVERLAY_WINDOW_LABEL) {
+        // Ensure a hidden transparent overlay can never swallow clicks on Windows DWM
+        let _ = win.set_ignore_cursor_events(true);
         let _ = win.hide();
     }
 }
@@ -63,13 +65,16 @@ pub fn destroy_overlay_window(app: &AppHandle) {
     }
 }
 
+/// Async command is REQUIRED on Windows Tauri v2 when calling `WebviewWindowBuilder::build()`
+/// to prevent WebView2 COM main-thread deadlock / input routing corruption.
 #[tauri::command]
-pub fn show_bg_overlay(
+pub async fn show_bg_overlay(
     app: AppHandle,
     state: State<'_, AppState>,
     payload: BgOverlayPayload,
     force_preview: Option<bool>,
 ) -> Result<bool, String> {
+    let _op_guard = state.bg_overlay_op_lock.lock().await;
     let preview = force_preview.unwrap_or(false) || payload.is_preview;
 
     // Enforce background-only visibility unless explicitly requested as a settings preview
@@ -105,7 +110,14 @@ pub fn show_bg_overlay(
         .map_err(|e| format!("Failed to create bg overlay window: {}", e))?,
     };
 
+    // Re-check foreground state after async WebView2 creation so returning to main never flashes overlay
+    if !preview && is_main_in_foreground(&app) {
+        hide_overlay_window(&app);
+        return Ok(false);
+    }
+
     position_overlay_window(&app, &overlay, &payload.position);
+    let _ = overlay.set_ignore_cursor_events(false);
     let _ = overlay.set_always_on_top(true);
     let _ = app.emit_to(OVERLAY_WINDOW_LABEL, "jjdr:bg-overlay-update", &payload);
     // Show without focusing so user typing in another app is NEVER interrupted
@@ -115,20 +127,20 @@ pub fn show_bg_overlay(
 }
 
 #[tauri::command]
-pub fn hide_bg_overlay(app: AppHandle) -> Result<(), String> {
+pub async fn hide_bg_overlay(app: AppHandle) -> Result<(), String> {
     hide_overlay_window(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn dismiss_bg_overlay(app: AppHandle, stamp: String) -> Result<(), String> {
+pub async fn dismiss_bg_overlay(app: AppHandle, stamp: String) -> Result<(), String> {
     hide_overlay_window(&app);
     let _ = app.emit_to("main", "jjdr:overlay-dismissed", stamp);
     Ok(())
 }
 
 #[tauri::command]
-pub fn get_bg_overlay_payload(
+pub async fn get_bg_overlay_payload(
     state: State<'_, AppState>,
 ) -> Result<Option<BgOverlayPayload>, String> {
     let guard = state
@@ -139,7 +151,7 @@ pub fn get_bg_overlay_payload(
 }
 
 #[tauri::command]
-pub fn focus_main_from_overlay(
+pub async fn focus_main_from_overlay(
     app: AppHandle,
     card_key: String,
     address: String,

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function reorderIds(
   ids: string[],
@@ -65,6 +65,14 @@ export function usePointerReorder({
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const suppressClickUntilRef = useRef<number>(0);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+    };
+  }, []);
 
   const shouldSuppressClick = useCallback(
     () => Date.now() < suppressClickUntilRef.current,
@@ -136,13 +144,29 @@ export function usePointerReorder({
         }
       };
 
-      const onUp = () => {
+      const cleanup = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        window.removeEventListener("blur", onCancel);
+        document.body.style.userSelect = "";
+        document.body.style.cursor = "";
+        if (cleanupRef.current === cleanup) {
+          cleanupRef.current = null;
+        }
+      };
+
+      const onCancel = () => {
+        cleanup();
         if (active) {
-          document.body.style.userSelect = "";
-          document.body.style.cursor = "";
+          setDraggingId(null);
+          setOverId(null);
+        }
+      };
+
+      const onUp = () => {
+        cleanup();
+        if (active) {
           suppressClickUntilRef.current = Date.now() + 180;
           const finalOver = currentOver;
           setDraggingId(null);
@@ -157,9 +181,12 @@ export function usePointerReorder({
         }
       };
 
+      cleanupRef.current?.();
+      cleanupRef.current = cleanup;
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
+      window.addEventListener("pointercancel", onCancel);
+      window.addEventListener("blur", onCancel);
     },
     [containerRef, disabled]
   );

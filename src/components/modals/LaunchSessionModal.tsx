@@ -40,9 +40,6 @@ const SHELL_OPTIONS: ShellOption[] = [
 export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
   const target = useUiStore((s) => s.launchTarget);
   const setTarget = useUiStore((s) => s.setLaunchTarget);
-  const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
-  const setAttachedAddress = useUiStore((s) => s.setAttachedAddress);
-  const rememberCardSession = useUiStore((s) => s.rememberCardSession);
   const showToast = useUiStore((s) => s.showToast);
   const lastAgentMap = useAppStore((s) => s.lastAgentByWorktree);
   const allSessions = useAppStore((s) => s.computed.allSessions);
@@ -54,7 +51,6 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
   const [autonomous, setAutonomous] = useState(true);
   const [customMode, setCustomMode] = useState(false);
   const [prompt, setPrompt] = useState("");
-  const [launching, setLaunching] = useState(false);
 
   useEffect(() => {
     if (!target) return;
@@ -80,7 +76,7 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
   );
   const shellLimitReached = liveShellCount >= MAX_SHELLS_PER_WORKTREE;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (sessionKind === "shell" && shellLimitReached) {
       showToast(
@@ -89,57 +85,67 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
       );
       return;
     }
-    setLaunching(true);
-    try {
-      let argv: string[] = [];
-      let toastLabel = "PowerShell";
 
-      if (sessionKind === "shell") {
-        const chosen =
-          SHELL_OPTIONS.find((s) => s.id === selectedShellId) ??
-          SHELL_OPTIONS[0];
-        argv = chosen.argv;
-        toastLabel = chosen.label;
-      } else {
-        argv = cmdText.trim().split(/\s+/).filter(Boolean);
-        if (argv.length === 0) {
-          setLaunching(false);
-          return;
-        }
-        toastLabel = argv[0];
-      }
+    let argv: string[] = [];
+    let toastLabel = "PowerShell";
 
-      const addr = await launchSession({
-        project_id: target.projectId,
-        cwd: target.cwd,
-        branch: target.branch,
-        argv,
-        initial_prompt:
-          sessionKind === "ai" ? prompt.trim() || undefined : undefined,
-        autonomous: sessionKind === "ai" ? autonomous : false,
-      });
-
-      if (sessionKind === "ai" && argv.length > 0) {
-        useAppStore.getState().recordLastAgent(normalizePath(target.cwd), argv);
-      }
-
-      showToast(`${toastLabel} 실행됨 (${addr})`, "success");
-      if (addr) {
-        setSelectedAddress(addr);
-        setAttachedAddress(addr);
-        if (target.projectId) {
-          rememberCardSession(
-            `wt::${target.projectId}::${normalizePath(target.cwd)}`,
-            addr
-          );
-        }
-      }
-      setTarget(null);
-    } catch (err) {
-      showToast(`세션 실행 실패: ${String(err)}`, "error");
-    } finally {
-      setLaunching(false);
+    if (sessionKind === "shell") {
+      const chosen =
+        SHELL_OPTIONS.find((s) => s.id === selectedShellId) ?? SHELL_OPTIONS[0];
+      argv = chosen.argv;
+      toastLabel = chosen.label;
+    } else {
+      argv = cmdText.trim().split(/\s+/).filter(Boolean);
+      if (argv.length === 0) return;
+      toastLabel = argv[0];
     }
+
+    const snapTarget = target;
+    const snapKind = sessionKind;
+    const snapPrompt = prompt.trim() || undefined;
+    const snapAutonomous = autonomous;
+    const normCwd = normalizePath(snapTarget.cwd);
+    const targetCardKey = snapTarget.projectId
+      ? `wt::${snapTarget.projectId}::${normCwd}`
+      : null;
+
+    // Close modal IMMEDIATELY (0ms) so the user can keep working while session spawns in background
+    setTarget(null);
+    showToast(`${toastLabel} 백그라운드에서 실행 중...`, "info", 2600);
+
+    void launchSession({
+      project_id: snapTarget.projectId,
+      cwd: snapTarget.cwd,
+      branch: snapTarget.branch,
+      argv,
+      initial_prompt: snapKind === "ai" ? snapPrompt : undefined,
+      autonomous: snapKind === "ai" ? snapAutonomous : false,
+    })
+      .then((addr) => {
+        if (snapKind === "ai" && argv.length > 0) {
+          useAppStore.getState().recordLastAgent(normCwd, argv);
+        }
+        const ui = useUiStore.getState();
+        ui.showToast(`${toastLabel} 실행됨 (${addr})`, "success");
+        if (addr) {
+          if (targetCardKey) {
+            ui.rememberCardSession(targetCardKey, addr);
+          }
+          // Auto-attach only if user hasn't moved on to another card's active terminal
+          const sameCardOrIdle =
+            !ui.attachedAddress ||
+            (targetCardKey !== null && ui.selectedCardKey === targetCardKey);
+          if (sameCardOrIdle) {
+            ui.setSelectedAddress(addr);
+            ui.setAttachedAddress(addr);
+          }
+        }
+      })
+      .catch((err) => {
+        useUiStore
+          .getState()
+          .showToast(`세션 실행 실패 (${toastLabel}): ${String(err)}`, "error", 6000);
+      });
   };
 
   const chipStyle = (active: boolean): React.CSSProperties => ({
@@ -155,7 +161,7 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
       style={{ background: "var(--modal-overlay)" }}
     >
       <form
-        onSubmit={(e) => void handleSubmit(e)}
+        onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
         className="jjdr-modal w-full max-w-md rounded-[22px] overflow-hidden"
       >
@@ -402,14 +408,9 @@ export const LaunchSessionModal = React.memo(function LaunchSessionModal() {
           </button>
           <button
             type="submit"
-            disabled={launching}
             className="jjdr-primary-btn px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer"
           >
-            {launching
-              ? "실행 중..."
-              : sessionKind === "shell"
-              ? "터미널 열기"
-              : "AI 실행"}
+            {sessionKind === "shell" ? "터미널 열기" : "AI 실행"}
           </button>
         </div>
       </form>

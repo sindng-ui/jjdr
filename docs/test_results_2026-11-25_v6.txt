@@ -1,0 +1,23 @@
+jjdr P0 Unresponsive Click Fix + Non-Blocking Session/Worktree Creation Verification (2026-11-25)
+==================================================================================================
+Root Causes Found & Fixed for Unresponsive Clicks:
+1. [CRITICAL] Windows Tauri v2 WebView2 main-thread deadlock hazard in synchronous `show_bg_overlay` calling `WebviewWindowBuilder::build()`
+   - Fixed: Converted all overlay commands (`show_bg_overlay`, `hide_bg_overlay`, `dismiss_bg_overlay`, `get_bg_overlay_payload`, `focus_main_from_overlay`) and window commands (`window_minimize`, `window_toggle_maximize`, `window_close`, `window_start_dragging`) to `async fn`
+   - Added `bg_overlay_op_lock: tokio::sync::Mutex<()>` to prevent concurrent window build races
+   - Added `set_ignore_cursor_events(true)` on hide and re-checked foreground state after async build
+2. [CRITICAL] Zen Mode focus/IPC storm (`ZenModeView.tsx`): `useEffect` depended on `activeCard` object reference (recreated on every state batch), calling `requestTerminalFocus()` up to 30x/sec -> 90 `term.focus()` + IPC calls/sec
+   - Fixed: Depend strictly on primitives (`enterNonce`, `hasExitingCard`, `activeKey`, `activeAddr`, `isActiveLive`) with `lastFocusedCardEnterRef` once-per-enter guard
+   - Guarded `focusNow()` in `useXtermSession.ts` against stealing focus when any modal or context menu is open
+3. [HIGH] Double window-drag conflict in `TopStatusBar.tsx` (`data-tauri-drag-region` + `onMouseDown={handleHeaderMouseDown}`) causing Windows WebView2 `WM_NCLBUTTONDOWN` / missing `WM_LBUTTONUP` click lock
+   - Fixed: Removed duplicate `data-tauri-drag-region`, added `data-no-drag="true"` on right controls container and explicit `type="button"` on interactive header buttons
+4. [MEDIUM] Pointer capture / drag listener leaks in `ZenTactileControl.tsx`, `AttachedTerminalDrawer.tsx`, `usePointerReorder.ts`
+   - Fixed: Added `releasePointerCapture`, `lostpointercapture`, `pointercancel`, `window.blur`, and unmount cleanup
+
+Additional Feature Verified in Same Workspace:
+- Non-blocking 0ms modal close & background launch for `LaunchSessionModal.tsx` and `CreateWorktreeModal.tsx` + non-blocking Rust post-launch hub sync
+
+Test & Build Results:
+- `npm run test`: PASS (12 test files, 44 tests passed, 0 failed, 1.03s)
+- `npm run build` (`tsc && vite build`): PASS (0 errors, 3.16s)
+- `cargo check --manifest-path src-tauri/Cargo.toml --offline`: PASS (0 errors, 0 code warnings)
+- `cargo test --manifest-path src-tauri/Cargo.toml --offline --lib`: PASS (19 passed, 0 failed, 0.01s)

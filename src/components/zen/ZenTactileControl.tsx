@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { ZenCardStyle } from "../../utils/zenQueue";
 
 interface ZenTactileControlProps {
@@ -26,7 +26,15 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
 }: ZenTactileControlProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
   const [pulling, setPulling] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+    };
+  }, []);
 
   if (styleMode === "gacha_dial") {
     return (
@@ -76,13 +84,38 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
     const knob = knobRef.current;
     if (!track || !knob) return;
 
+    const pointerId = e.pointerId;
     const startY = e.clientY;
     let pullY = 0;
     let moved = false;
+    let finished = false;
 
+    dragCleanupRef.current?.();
     setPulling(true);
-    track.setPointerCapture(e.pointerId);
+    try {
+      track.setPointerCapture(pointerId);
+    } catch {
+      // ignore if capture is unsupported
+    }
     knob.style.transition = "none";
+
+    const detach = () => {
+      track.removeEventListener("pointermove", onMove);
+      track.removeEventListener("pointerup", onUp);
+      track.removeEventListener("pointercancel", onCancel);
+      track.removeEventListener("lostpointercapture", onCancel);
+      window.removeEventListener("blur", onCancel);
+      try {
+        if (track.hasPointerCapture(pointerId)) {
+          track.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // ignore release error if detached
+      }
+      if (dragCleanupRef.current === detach) {
+        dragCleanupRef.current = null;
+      }
+    };
 
     const onMove = (ev: PointerEvent) => {
       pullY = Math.max(0, Math.min(MAX_PULL_PX, ev.clientY - startY));
@@ -91,10 +124,23 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
       onPullProgress?.(pullY / MAX_PULL_PX);
     };
 
+    const onCancel = () => {
+      if (finished) return;
+      finished = true;
+      detach();
+      setPulling(false);
+      onPullProgress?.(0);
+      if (knobRef.current) {
+        knobRef.current.style.transition =
+          "transform 240ms cubic-bezier(0.22, 1.3, 0.36, 1)";
+        knobRef.current.style.transform = "translateY(0px)";
+      }
+    };
+
     const onUp = () => {
-      track.removeEventListener("pointermove", onMove);
-      track.removeEventListener("pointerup", onUp);
-      track.removeEventListener("pointercancel", onUp);
+      if (finished) return;
+      finished = true;
+      detach();
       setPulling(false);
       onPullProgress?.(0);
 
@@ -121,9 +167,12 @@ export const ZenTactileControl = React.memo(function ZenTactileControl({
       }
     };
 
+    dragCleanupRef.current = detach;
     track.addEventListener("pointermove", onMove);
     track.addEventListener("pointerup", onUp);
-    track.addEventListener("pointercancel", onUp);
+    track.addEventListener("pointercancel", onCancel);
+    track.addEventListener("lostpointercapture", onCancel);
+    window.addEventListener("blur", onCancel);
   };
 
   return (

@@ -33,7 +33,7 @@
 | `src-tauri/src/store/file_matcher.rs` | `git ls-files` 고속 스캔 및 네이티브 Rust Fuzzy + Glob(`*.cpp`, `src/**/*.ts`) + Regex(`/pat/`, `use_regex`) 파일 검색·점수화 엔진 | `scan_directory_files`, `score_and_collect`, `fuzzy_score_path`, `MatchCollection`, `FileSearchResult`, `FileMatchItem` |
 | `src-tauri/src/store/overlay.rs` | 백그라운드 최우선 카드 HUD 페이로드·위치 정규화(`top_center`/`bottom_center`/`bottom_right`)·모니터 Work Area 좌표 계산(작업표시줄 회피) | `BgOverlayPayload`, `OverlayOpenCardEvent`, `normalize_overlay_position`, `compute_overlay_position` |
 | `src-tauri/src/store/projects.rs` | `herdr-core` `doc.get/set` (`jjdr.projects.v1`, `jjdr.ui_state.v1`, `jjdr.settings.v1`) + 로컬 `%APPDATA%/jjdr` 이중 저장, 프로젝트 순서·`root_card_mode`·`bg_overlay_enabled`/`bg_overlay_position`·터미널 너비·Worktree 메타/순서 영속화 | `ProjectConfig`, `WorktreeCardMeta`, `PersistedUiState`, `AppSettings`, `PersistenceStore::{load_bundle, upsert_project, delete_project, reorder_projects, save_ui_state, save_settings}`, `apply_project_order` |
-| `src-tauri/src/commands/overlay.rs` | 네이티브 Tauri v2 투명·포커스 미탈취(`focused(false)`) 항상 위 오버레이 창(`bg-overlay`) 생성/배치/표시/숨김/닫기/메인 포커스 점프 커맨드 | `show_bg_overlay`, `hide_bg_overlay`, `dismiss_bg_overlay`, `get_bg_overlay_payload`, `focus_main_from_overlay`, `hide_overlay_window`, `destroy_overlay_window` |
+| `src-tauri/src/commands/overlay.rs` | 비동기(`async fn`) 네이티브 Tauri v2 투명·포커스 미탈취 항상 위 오버레이 창(`bg-overlay`) 직렬 생성(`bg_overlay_op_lock`)·숨김 시 `set_ignore_cursor_events(true)` 클릭 통과 보장·배치/표시/닫기/메인 포커스 점프 커맨드 | `show_bg_overlay`, `hide_bg_overlay`, `dismiss_bg_overlay`, `get_bg_overlay_payload`, `focus_main_from_overlay`, `hide_overlay_window`, `destroy_overlay_window` |
 | `src-tauri/src/commands/files.rs` | 프로젝트 파일 백그라운드 캐시 워밍·Fuzzy/Glob/Regex 검색·바이너리 감지 텍스트 읽기·기본 앱/VS Code 실행 커맨드 | `warm_project_file_index`, `search_project_files`, `read_text_file`, `open_with_default_app`, `open_in_vscode`, `TextFileContent` |
 | `src-tauri/src/commands/system.rs` | 시스템/상태/템플릿/트레이, 프레임리스 윈도우 제어 및 탐색기 폴더 열기 커맨드 | `get_initial_state`, `get_herdr_health`, `reconnect_herdr`, `list_templates`, `load_persisted_bundle`, `save_ui_state`, `save_settings`, `update_tray_summary`, `request_preview_refresh`, `window_minimize`, `window_toggle_maximize`, `window_close`, `window_start_dragging`, `open_in_explorer` |
 | `src-tauri/src/commands/projects.rs` | 레포 자동 분석 및 프로젝트 CRUD·순서 변경 커맨드 | `inspect_git_repo`, `list_projects`, `upsert_project`, `delete_project`, `reorder_projects` |
@@ -100,9 +100,9 @@
 | `src/components/modals/ProjectDefaultsSection.tsx` | 프로젝트 모달 기본 AI CLI·그룹 선택 섹션 | `ProjectDefaultsSection` |
 | `src/components/modals/ProjectAdvancedSection.tsx` | 프로젝트 모달 고급 옵션(부트스트랩 파일 복사·Setup/Verify 커맨드) 섹션 | `ProjectAdvancedSection` |
 | `src/components/modals/ProjectModal.tsx` | Git 프로젝트 등록/수정 모달 (폴더 자동 분석 + **Git 브랜치 드랍다운 선택** + 기본 AI + 그룹) | `ProjectModal` |
-| `src/components/modals/CreateWorktreeModal.tsx` | 현재 브랜치 자동 베이스 Worktree 생성 + 객관식 AI CLI 기동 모달 | `CreateWorktreeModal` |
+| `src/components/modals/CreateWorktreeModal.tsx` | 현재 브랜치 자동 베이스 Worktree 생성 + 객관식 AI CLI 기동 모달 (0ms 즉시 모달 닫기·백그라운드 비동기 생성/부트스트랩/실행) | `CreateWorktreeModal` |
 | `src/components/modals/EditWorktreeModal.tsx` | Worktree 카드 편집 모달 (표시 이름/별칭, 간단 메모, 일반 Worktree 로컬 Git 브랜치 개명 `git branch -m`) | `EditWorktreeModal` |
-| `src/components/modals/LaunchSessionModal.tsx` | **새 세션 추가 모달**: **AI CLI** 그룹과 **터미널(PowerShell / cmd)** 그룹을 명확히 구분하여 실행 | `LaunchSessionModal` |
+| `src/components/modals/LaunchSessionModal.tsx` | **새 세션 추가 모달**: **AI CLI** 그룹과 **터미널(PowerShell / cmd)** 그룹을 명확히 구분하여 실행 (0ms 즉시 모달 닫기·백그라운드 비동기 실행 및 타 카드 작업 비방해 자동 연결) | `LaunchSessionModal` |
 | `src/components/modals/TeardownModal.tsx` | 0ms 즉시 모달 닫기·낙관적 카드 제거·백그라운드 비동기 Worktree 정리 요청 모달 (완료/실패 토스트는 `jjdr:worktree-teardown-result` 이벤트로 수신) | `TeardownModal` |
 | `src/components/modals/DiffPreviewModal.tsx` | 경량 Git Diff 뷰어 모달 | `DiffPreviewModal` |
 | `src/components/modals/SettingsModal.tsx` | 4종 테마, 레이더 한 줄 카드 밀도, `ROOT` 카드 표시 방식(`헤더 칩`/`그리드 카드`/`숨기기`), 백그라운드 최우선 카드 알림 HUD(ON/OFF·위치 3종·미리보기), Stuck 시간, Calm 알림, Merge Overlap, 프롬프트 프리셋 편집 모달 | `SettingsModal` |

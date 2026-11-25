@@ -35,6 +35,7 @@ pub struct AppState {
     pub attach: Arc<AttachManager>,
     pub file_index: Arc<FileIndexStore>,
     pub bg_overlay_payload: Mutex<Option<BgOverlayPayload>>,
+    pub bg_overlay_op_lock: tokio::sync::Mutex<()>,
 }
 
 #[cfg(not(test))]
@@ -59,6 +60,7 @@ pub fn run() {
         attach: attach.clone(),
         file_index,
         bg_overlay_payload: Mutex::new(None),
+        bg_overlay_op_lock: tokio::sync::Mutex::new(()),
     };
 
     let app = tauri::Builder::default()

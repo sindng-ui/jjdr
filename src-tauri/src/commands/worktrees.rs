@@ -155,7 +155,11 @@ pub async fn create_worktree_and_launch(
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        state.hub.sync_terminals_now(&state.herdr).await;
+        let hub = state.hub.clone();
+        let herdr = state.herdr.clone();
+        tokio::spawn(async move {
+            hub.sync_terminals_now(&herdr).await;
+        });
     }
 
     Ok(CreateWorktreeOutput {

@@ -17,7 +17,6 @@ import {
 export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
   const projectId = useUiStore((s) => s.createWorktreeProjectId);
   const setProjectId = useUiStore((s) => s.setCreateWorktreeProjectId);
-  const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
   const showToast = useUiStore((s) => s.showToast);
 
   const project = useAppStore((s) =>
@@ -35,7 +34,6 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
   const [autonomous, setAutonomous] = useState(true);
   const [customAgentMode, setCustomAgentMode] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState("");
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,51 +70,68 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
     setBranchName(`${prefix}${stripped}`);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!branchName.trim()) {
+    const trimmedBranch = branchName.trim();
+    if (!trimmedBranch) {
       setError("Branch name is required.");
       return;
     }
-    setCreating(true);
-    setError(null);
-    try {
-      const launchArgv = agentCmd.trim()
-        ? agentCmd.trim().split(/\s+/)
-        : undefined;
-      const res = await createWorktreeAndLaunch({
-        project_id: project.id,
-        branch_name: branchName.trim(),
-        base_branch: overrideBase || undefined,
-        launch_argv: launchArgv,
-        initial_prompt: initialPrompt.trim() || undefined,
-        autonomous,
-      });
 
-      if (launchArgv && launchArgv.length > 0) {
-        useAppStore
+    const snapProjectId = project.id;
+    const snapBase = overrideBase || undefined;
+    const launchArgv = agentCmd.trim()
+      ? agentCmd.trim().split(/\s+/)
+      : undefined;
+    const snapPrompt = initialPrompt.trim() || undefined;
+    const snapAutonomous = autonomous;
+
+    // Close modal IMMEDIATELY (0ms) so worktree creation + bootstrap + AI launch run in background
+    setProjectId(null);
+    showToast(`'${trimmedBranch}' Worktree 백그라운드 생성 중...`, "info", 3000);
+
+    void createWorktreeAndLaunch({
+      project_id: snapProjectId,
+      branch_name: trimmedBranch,
+      base_branch: snapBase,
+      launch_argv: launchArgv,
+      initial_prompt: snapPrompt,
+      autonomous: snapAutonomous,
+    })
+      .then(async (res) => {
+        if (launchArgv && launchArgv.length > 0) {
+          useAppStore
+            .getState()
+            .recordLastAgent(normalizePath(res.worktree_path), launchArgv);
+        }
+
+        const updatedWts = await listProjectWorktrees(snapProjectId).catch(
+          () => null
+        );
+        if (updatedWts) {
+          useAppStore.getState().setProjectWorktrees(snapProjectId, updatedWts);
+        }
+
+        const ui = useUiStore.getState();
+        ui.showToast(
+          res.terminal_address
+            ? `'${res.branch_name}' 생성 및 세션 시작됨 (${res.terminal_address})`
+            : `'${res.branch_name}' Worktree 생성 완료`,
+          "success"
+        );
+        if (res.terminal_address && !ui.attachedAddress) {
+          ui.setSelectedAddress(res.terminal_address);
+        }
+      })
+      .catch((err) => {
+        useUiStore
           .getState()
-          .recordLastAgent(normalizePath(res.worktree_path), launchArgv);
-      }
-
-      const updatedWts = await listProjectWorktrees(project.id).catch(() => []);
-      useAppStore.getState().setProjectWorktrees(project.id, updatedWts);
-
-      showToast(
-        res.terminal_address
-          ? `Created ${res.branch_name} & launched ${res.terminal_address}`
-          : `Created worktree ${res.branch_name}`,
-        "success"
-      );
-      if (res.terminal_address) {
-        setSelectedAddress(res.terminal_address);
-      }
-      setProjectId(null);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setCreating(false);
-    }
+          .showToast(
+            `Worktree 생성 실패 (${trimmedBranch}): ${String(err)}`,
+            "error",
+            6000
+          );
+      });
   };
 
   const chipStyle = (active: boolean): React.CSSProperties => ({
@@ -132,7 +147,7 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
       style={{ background: "var(--modal-overlay)" }}
     >
       <form
-        onSubmit={(e) => void handleSubmit(e)}
+        onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
         className="jjdr-modal w-full max-w-lg rounded-[22px] overflow-hidden"
       >
@@ -429,10 +444,10 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
           </button>
           <button
             type="submit"
-            disabled={creating || !branchName.trim()}
+            disabled={!branchName.trim()}
             className="jjdr-primary-btn px-4 py-1.5 rounded-full text-xs font-semibold disabled:opacity-40 cursor-pointer"
           >
-            {creating ? "Creating..." : "Create & Launch"}
+            Create & Launch
           </button>
         </div>
       </form>

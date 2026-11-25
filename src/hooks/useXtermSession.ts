@@ -215,6 +215,24 @@ export function useXtermSession(
   const focusNow = useCallback(() => {
     const term = termRef.current;
     if (!term || !activeAddressRef.current) return;
+    // Never steal focus when any modal or context menu is open
+    const ui = useUiStore.getState();
+    if (
+      ui.settingsOpen ||
+      ui.commandPaletteOpen ||
+      ui.quickFileOpen ||
+      ui.projectModalProject ||
+      ui.createWorktreeProjectId ||
+      ui.editWorktreeTarget ||
+      ui.launchTarget ||
+      ui.teardownTarget ||
+      ui.diffTarget ||
+      ui.markdownViewerTarget ||
+      ui.codeViewerTarget ||
+      ui.contextMenu
+    ) {
+      return;
+    }
     const activeEl = document.activeElement as HTMLElement | null;
     // Never steal focus if user deliberately opened a modal/search input
     if (

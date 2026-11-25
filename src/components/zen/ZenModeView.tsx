@@ -176,13 +176,28 @@ export const ZenModeView = React.memo(function ZenModeView() {
     closeTerminalDrawer,
   ]);
 
-  // Ensure right terminal receives keyboard focus whenever a new Zen card finishes rising into view
+  // Ensure right terminal receives keyboard focus ONCE whenever a new Zen card finishes rising into view
+  const lastFocusedCardEnterRef = useRef<string | null>(null);
+  const hasExitingCard = Boolean(exitingCard);
+  const activeAddr = activeCard?.address ?? null;
+  const isActiveLive = activeCard?.terminal.state === "live";
+
   useEffect(() => {
-    if (exitingCard || !activeCard || activeCard.terminal.state !== "live") {
+    if (hasExitingCard || !activeKey || !activeAddr || !isActiveLive) {
       return;
     }
+    const token = `${enterNonce}::${activeKey}::${activeAddr}`;
+    if (lastFocusedCardEnterRef.current === token) return;
+    lastFocusedCardEnterRef.current = token;
     requestTerminalFocus();
-  }, [enterNonce, exitingCard, activeCard, requestTerminalFocus]);
+  }, [
+    enterNonce,
+    hasExitingCard,
+    activeKey,
+    activeAddr,
+    isActiveLive,
+    requestTerminalFocus,
+  ]);
 
   const handleChangeStyle = useCallback((next: ZenCardStyle) => {
     setStyleMode(next);

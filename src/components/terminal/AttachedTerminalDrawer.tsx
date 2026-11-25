@@ -142,11 +142,15 @@ export const AttachedTerminalDrawer = React.memo(
           document.body.style.userSelect = "";
           window.removeEventListener("pointermove", onPointerMove);
           window.removeEventListener("pointerup", onPointerUp);
+          window.removeEventListener("pointercancel", onPointerUp);
+          window.removeEventListener("blur", onPointerUp);
           requestAnimationFrame(() => fitNow());
         };
 
         window.addEventListener("pointermove", onPointerMove);
         window.addEventListener("pointerup", onPointerUp);
+        window.addEventListener("pointercancel", onPointerUp);
+        window.addEventListener("blur", onPointerUp);
       },
       [setTerminalWidthPx, fitNow]
     );
