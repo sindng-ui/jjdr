@@ -9,7 +9,11 @@ import {
   listenBgOverlayUpdate,
 } from "../../services/tauriBridge";
 import type { BgOverlayPayload } from "../../types/domain";
-import { applyThemeToDom, normalizeThemeId } from "../../utils/themes";
+import {
+  applyThemeToDom,
+  getThemePreset,
+  normalizeThemeId,
+} from "../../utils/themes";
 
 export const BgOverlayToast: React.FC = () => {
   const [payload, setPayload] = useState<BgOverlayPayload | null>(null);
@@ -68,7 +72,7 @@ export const BgOverlayToast: React.FC = () => {
   }
 
   const isUrgent = payload.bucket === "needs_you";
-  const isLightTheme = payload.theme === "nordic";
+  const isLightTheme = getThemePreset(payload.theme).isLight;
   const accentColor = isUrgent ? "var(--action-fg)" : "var(--ready-fg)";
   const accentSoft = isUrgent ? "var(--action-soft)" : "var(--ready-soft)";
   const badgeTextColor = isLightTheme ? "#ffffff" : "#0b0f1c";
