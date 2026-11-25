@@ -300,10 +300,16 @@ export function useXtermSession(
     term.attachCustomKeyEventHandler((ev) => {
       if (isReservedGlobalShortcut(ev)) return false;
 
-      if (ev.type === "keydown") {
-        const hasCtrl = ev.ctrlKey || ev.metaKey;
-        const k = ev.key.toLowerCase();
+      const hasCtrl = ev.ctrlKey || ev.metaKey;
+      const k = ev.key.toLowerCase();
 
+      // Let native browser/WebView2 `paste` event handle Ctrl+V instead of xterm sending raw 0x16 (^V),
+      // so Claude CLI (which binds ^V to image-only paste) receives text via xterm's paste handler.
+      if (hasCtrl && !ev.altKey && !ev.shiftKey && (k === "v" || ev.code === "KeyV")) {
+        return false;
+      }
+
+      if (ev.type === "keydown") {
         // Smart Ctrl+C: copy when text is selected; otherwise forward SIGINT (^C) to PTY
         if (hasCtrl && !ev.altKey && !ev.shiftKey && (k === "c" || ev.code === "KeyC")) {
           if (term.hasSelection()) {
@@ -320,14 +326,14 @@ export function useXtermSession(
             return false;
           }
         }
-        // Ctrl+Shift+V: explicit paste into PTY
+        // Ctrl+Shift+V: explicit text paste via term.paste() (preserves CRLF normalization & bracketed paste)
         if (hasCtrl && ev.shiftKey && !ev.altKey && (k === "v" || ev.code === "KeyV")) {
           ev.preventDefault();
           void navigator.clipboard
             ?.readText()
             .then((clip) => {
               if (clip && activeChannelRef.current !== null) {
-                void writeTerminalInput(activeChannelRef.current, clip);
+                term.paste(clip);
               }
             })
             .catch(() => {});
@@ -336,6 +342,26 @@ export function useXtermSession(
       }
       return true;
     });
+
+    // Preserve Claude CLI's image-paste shortcut (^V / 0x16) when clipboard holds an image and no plain text
+    const onPasteCapture = (ev: ClipboardEvent) => {
+      if (activeChannelRef.current === null) return;
+      const plainText = ev.clipboardData?.getData("text/plain") ?? "";
+      if (plainText.length > 0) {
+        // Allow xterm's native textarea paste handler to process text cleanly
+        return;
+      }
+      const items = ev.clipboardData?.items;
+      const hasImage =
+        items !== undefined &&
+        Array.from(items).some((item) => item.type.startsWith("image/"));
+      if (hasImage) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void writeTerminalInput(activeChannelRef.current, "\x16");
+      }
+    };
+    hostEl.addEventListener("paste", onPasteCapture, true);
 
     const onContextMenu = (ev: MouseEvent) => {
       ev.preventDefault();
@@ -387,6 +413,7 @@ export function useXtermSession(
       writeQueueRef.current = [];
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
+      hostEl.removeEventListener("paste", onPasteCapture, true);
       hostEl.removeEventListener("contextmenu", onContextMenu);
       hostEl.removeEventListener("focusin", onFocusIn);
       hostEl.removeEventListener("focusout", onFocusOut);
