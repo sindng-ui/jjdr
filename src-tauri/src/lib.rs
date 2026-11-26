@@ -1,5 +1,6 @@
 #[cfg(not(test))]
 pub mod commands;
+pub mod gemini;
 pub mod git;
 pub mod herdr;
 pub mod store;
@@ -20,6 +21,8 @@ use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 #[cfg(not(test))]
 use commands::terminals::AttachManager;
 #[cfg(not(test))]
+use gemini::bridge::GeminiBridgeRuntime;
+#[cfg(not(test))]
 use herdr::client::HerdrClient;
 #[cfg(not(test))]
 use herdr::events::{spawn_herdr_supervisor, TerminalStateHub};
@@ -34,6 +37,7 @@ use store::projects::PersistenceStore;
 pub struct AppState {
     pub herdr: Arc<HerdrClient>,
     pub hub: Arc<TerminalStateHub>,
+    pub gemini_bridge: Arc<GeminiBridgeRuntime>,
     pub store: Arc<PersistenceStore>,
     pub attach: Arc<AttachManager>,
     pub file_index: Arc<FileIndexStore>,
@@ -53,6 +57,7 @@ pub fn run() {
 
     let herdr = Arc::new(HerdrClient::new());
     let hub = TerminalStateHub::new();
+    let gemini_bridge = GeminiBridgeRuntime::new();
     let store = Arc::new(PersistenceStore::new());
     let attach = Arc::new(AttachManager::new());
     let file_index = Arc::new(FileIndexStore::new());
@@ -60,6 +65,7 @@ pub fn run() {
     let state = AppState {
         herdr: herdr.clone(),
         hub: hub.clone(),
+        gemini_bridge: gemini_bridge.clone(),
         store,
         attach: attach.clone(),
         file_index,
@@ -102,6 +108,7 @@ pub fn run() {
                 });
             }
             spawn_herdr_supervisor(app.handle().clone(), herdr.clone(), hub.clone());
+            gemini_bridge.start(hub.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -155,6 +162,10 @@ pub fn run() {
             commands::update::check_for_update,
             commands::update::download_and_install_update,
             commands::update::open_external_url,
+            commands::gemini_bridge::get_gemini_bridge_status,
+            commands::gemini_bridge::install_gemini_bridge_hooks,
+            commands::gemini_bridge::uninstall_gemini_bridge_hooks,
+            commands::gemini_bridge::test_gemini_bridge_event,
         ])
         .build(tauri::generate_context!())
         .expect("error while building jjdr tauri application");

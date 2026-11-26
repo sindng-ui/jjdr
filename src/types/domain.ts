@@ -172,6 +172,19 @@ export interface DownloadOutcome {
   dry_run: boolean;
 }
 
+export interface GeminiBridgeStatus {
+  running: boolean;
+  port: number;
+  hooks_installed: boolean;
+  settings_path: string;
+  endpoint_path: string;
+  events_received: number;
+  last_event_ms?: number | null;
+  last_event_name?: string | null;
+  last_matched_terminal?: string | null;
+  active_gemini_terminals: number;
+}
+
 export interface BgOverlayPayload {
   card_key: string;
   address: string;

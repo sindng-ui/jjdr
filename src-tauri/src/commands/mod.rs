@@ -1,5 +1,6 @@
 pub mod attach;
 pub mod files;
+pub mod gemini_bridge;
 pub mod overlay;
 pub mod projects;
 pub mod system;

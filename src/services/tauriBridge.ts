@@ -7,6 +7,7 @@ import type {
   BootstrapConfig,
   DiffDetail,
   DownloadOutcome,
+  GeminiBridgeStatus,
   HerdrHealth,
   OverlayOpenCardEvent,
   PersistedBundle,
@@ -452,7 +453,7 @@ export async function listenWorktreeTeardownResult(
 }
 
 export async function getAppVersion(): Promise<string> {
-  if (!isTauriRuntime()) return "0.4.4";
+  if (!isTauriRuntime()) return "0.4.5";
   return invoke<string>("get_app_version");
 }
 
@@ -484,4 +485,24 @@ export async function listenUpdateProgress(
   return listen<UpdateProgressEvent>("jjdr:update-progress", (e) =>
     cb(e.payload)
   );
+}
+
+export async function getGeminiBridgeStatus(): Promise<GeminiBridgeStatus> {
+  return invoke<GeminiBridgeStatus>("get_gemini_bridge_status");
+}
+
+export async function installGeminiBridgeHooks(): Promise<GeminiBridgeStatus> {
+  return invoke<GeminiBridgeStatus>("install_gemini_bridge_hooks");
+}
+
+export async function uninstallGeminiBridgeHooks(): Promise<GeminiBridgeStatus> {
+  return invoke<GeminiBridgeStatus>("uninstall_gemini_bridge_hooks");
+}
+
+export async function testGeminiBridgeEvent(
+  eventName?: string
+): Promise<GeminiBridgeStatus> {
+  return invoke<GeminiBridgeStatus>("test_gemini_bridge_event", {
+    eventName: eventName ?? null,
+  });
 }

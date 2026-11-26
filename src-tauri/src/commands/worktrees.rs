@@ -127,22 +127,48 @@ pub async fn create_worktree_and_launch(
                 format!("{}-{}", proj.name, slug)
             });
 
-        let labels = json!({
-            "jjdr.project": proj.id,
-            "jjdr.worktree": normalize_path(&wt_path),
-            "jjdr.branch": input.branch_name,
-            "jjdr.agent": agent_name
-        });
+        let mut labels = serde_json::Map::new();
+        labels.insert("jjdr.project".into(), json!(proj.id));
+        labels.insert("jjdr.worktree".into(), json!(normalize_path(&wt_path)));
+        labels.insert("jjdr.branch".into(), json!(input.branch_name));
+        labels.insert("jjdr.agent".into(), json!(agent_name));
 
-        let params = json!({
+        let is_gemini = argv
+            .first()
+            .map(|a| {
+                a.replace('\\', "/")
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(a)
+                    .trim_end_matches(".exe")
+                    .trim_end_matches(".cmd")
+                    .trim_end_matches(".bat")
+                    .eq_ignore_ascii_case("gemini")
+            })
+            .unwrap_or(false);
+        let gemini_tag = if is_gemini {
+            Some(uuid::Uuid::new_v4().to_string())
+        } else {
+            None
+        };
+        if let Some(ref tag) = gemini_tag {
+            labels.insert("jjdr.gemini_tag".into(), json!(tag));
+        }
+
+        let mut params = json!({
             "argv": argv,
             "cwd": wt_path,
-            "labels": labels,
+            "labels": serde_json::Value::Object(labels),
             "outlive_parent": true,
             "no_parent": true,
             "keep": true,
             "wait": false
         });
+        if let Some(ref tag) = gemini_tag {
+            params["env"] = json!({
+                "JJDR_GEMINI_ADDR": tag
+            });
+        }
 
         let run_res = call_terminal_run_safe(&state.herdr, params, Some(&raw_name))
             .await

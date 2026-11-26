@@ -210,6 +210,27 @@ pub async fn launch_session(
         labels.insert("jjdr.branch".into(), json!(br));
     }
 
+    let is_gemini = !is_plain_shell
+        && argv
+            .first()
+            .map(|a| {
+                a.replace('\\', "/")
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(a)
+                    .trim_end_matches(".exe")
+                    .eq_ignore_ascii_case("gemini")
+            })
+            .unwrap_or(false);
+    let gemini_tag = if is_gemini {
+        Some(uuid::Uuid::new_v4().to_string())
+    } else {
+        None
+    };
+    if let Some(ref tag) = gemini_tag {
+        labels.insert("jjdr.gemini_tag".into(), json!(tag));
+    }
+
     let mut params = json!({
         "cwd": cwd,
         "labels": labels,
@@ -218,6 +239,9 @@ pub async fn launch_session(
         "keep": true,
         "wait": false
     });
+    if let Some(tag) = gemini_tag {
+        params["env"] = json!({ "JJDR_GEMINI_ADDR": tag });
+    }
     if !argv.is_empty() {
         params["argv"] = json!(argv);
     }
@@ -277,6 +301,10 @@ pub async fn send_terminal_keys(
     address: String,
     keys: Vec<String>,
 ) -> Result<(), String> {
+    let sent_enter = keys.iter().any(|k| {
+        let low = k.trim().to_lowercase();
+        low == "enter" || low == "return" || k.contains('\r') || k.contains('\n')
+    });
     state
         .herdr
         .call(
@@ -288,6 +316,9 @@ pub async fn send_terminal_keys(
         )
         .await
         .map_err(|e| e.to_string())?;
+    if sent_enter {
+        state.hub.notify_gemini_user_approved(&address).await;
+    }
     Ok(())
 }
 
@@ -301,6 +332,7 @@ pub async fn interrupt_terminal(
         .call("terminal.interrupt", json!({ "terminal": address }))
         .await
         .map_err(|e| e.to_string())?;
+    state.hub.notify_gemini_user_interrupted(&address, false).await;
     Ok(())
 }
 

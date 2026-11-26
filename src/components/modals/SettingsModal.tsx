@@ -29,6 +29,7 @@ import {
   buildPreviewBgOverlayPayload,
   normalizeBgOverlayPosition,
 } from "../../utils/bgOverlay";
+import { GeminiBridgeSettingsSection } from "./GeminiBridgeSettingsSection";
 import { UpdateSettingsSection } from "./UpdateSettingsSection";
 import type {
   AppSettings,
@@ -774,6 +775,8 @@ export const SettingsModal = React.memo(function SettingsModal() {
               ))}
             </div>
           </div>
+
+          <GeminiBridgeSettingsSection />
 
           <UpdateSettingsSection />
         </div>

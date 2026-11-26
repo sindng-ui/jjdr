@@ -10,7 +10,9 @@ use tracing::{info, warn};
 use super::client::HerdrClient;
 use super::preview::spawn_preview_worker;
 use super::protocol::{Frame, FrameKind};
-use super::types::{StateBatchPayload, SubscribeResult, Terminal, TerminalPreview};
+use super::types::{StateBatchPayload, Status, SubscribeResult, Terminal, TerminalPreview};
+use crate::gemini::state::{GeminiStateEngine, HOOK_AUTHORITY_WINDOW_MS};
+use crate::gemini::{is_gemini_terminal, GeminiStatusSource};
 
 pub const STATE_BATCH_EVENT: &str = "jjdr:state-batch";
 pub const DOC_CHANGED_EVENT: &str = "jjdr:doc-changed";
@@ -18,6 +20,7 @@ pub const DOC_CHANGED_EVENT: &str = "jjdr:doc-changed";
 pub struct TerminalStateHub {
     pub terminals: RwLock<HashMap<String, Terminal>>,
     pub previews: RwLock<HashMap<String, TerminalPreview>>,
+    gemini_state: RwLock<GeminiStateEngine>,
     pub seq: RwLock<u64>,
     dirty_terminals: RwLock<HashSet<String>>,
     removed_terminals: RwLock<HashSet<String>>,
@@ -33,6 +36,7 @@ impl TerminalStateHub {
         Arc::new(Self {
             terminals: RwLock::new(HashMap::new()),
             previews: RwLock::new(HashMap::new()),
+            gemini_state: RwLock::new(GeminiStateEngine::new()),
             seq: RwLock::new(0),
             dirty_terminals: RwLock::new(HashSet::new()),
             removed_terminals: RwLock::new(HashSet::new()),
@@ -41,6 +45,92 @@ impl TerminalStateHub {
             preview_tx,
             preview_rx: tokio::sync::Mutex::new(Some(preview_rx)),
         })
+    }
+
+    /// Apply a Gemini CLI lifecycle event (Layer 1 UDP hook or Layer 2 screen fallback)
+    /// onto the matching live terminal in `TerminalStateHub`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn apply_gemini_event(
+        &self,
+        terminal_id: &str,
+        jjdr_addr: &str,
+        cwd: &str,
+        status: Status,
+        bump_turn: bool,
+        ts: u64,
+        source: GeminiStatusSource,
+        event_name: &str,
+    ) -> Option<String> {
+        let mut map = self.terminals.write().await;
+        let mut engine = self.gemini_state.write().await;
+        let (addr, should_preview) = engine.apply_event(
+            &mut map,
+            terminal_id,
+            jjdr_addr,
+            cwd,
+            status,
+            bump_turn,
+            ts,
+            source,
+            event_name,
+        )?;
+        drop(engine);
+        drop(map);
+
+        self.dirty_terminals.write().await.insert(addr.clone());
+        if should_preview {
+            self.request_preview(addr.clone());
+        }
+        Some(addr)
+    }
+
+    /// Immediately release a Gemini `blocked` state into `working` when the user sends
+    /// Approve (Enter) via card action or interactive terminal input.
+    pub async fn notify_gemini_user_approved(&self, addr: &str) {
+        let ts = now_ms();
+        let changed = {
+            let mut map = self.terminals.write().await;
+            let mut engine = self.gemini_state.write().await;
+            engine.apply_user_approval(&mut map, addr, ts)
+        };
+        if changed {
+            self.dirty_terminals.write().await.insert(addr.to_string());
+        }
+    }
+
+    /// Immediately release a Gemini `working`/`blocked` state into `idle` on user interrupt (`Ctrl+C`/Stop)
+    /// or standalone `Esc` rejection, without bumping `turn` (prevents false Ready cards).
+    pub async fn notify_gemini_user_interrupted(&self, addr: &str, only_if_blocked: bool) {
+        let ts = now_ms();
+        let changed = {
+            let mut map = self.terminals.write().await;
+            let mut engine = self.gemini_state.write().await;
+            engine.apply_user_interrupt(&mut map, addr, ts, only_if_blocked)
+        };
+        if changed {
+            self.dirty_terminals.write().await.insert(addr.to_string());
+        }
+    }
+
+    /// Passive Layer-2 fallback invoked from `preview.rs` when `terminal.read` completes.
+    /// Skips work entirely for non-Gemini sessions or whenever a recent Layer-1 hook event exists
+    /// (except when recovering out of `blocked` into `working`).
+    pub async fn apply_gemini_screen_fallback(&self, addr: &str, raw_text: &str) {
+        let now = now_ms();
+        let outcome = {
+            let mut map = self.terminals.write().await;
+            let mut engine = self.gemini_state.write().await;
+            engine.apply_screen_fallback(&mut map, addr, raw_text, now)
+        };
+        if let Some((matched_addr, should_preview)) = outcome {
+            self.dirty_terminals
+                .write()
+                .await
+                .insert(matched_addr.clone());
+            if should_preview {
+                self.request_preview(matched_addr);
+            }
+        }
     }
 
     pub async fn take_preview_rx(&self) -> Option<mpsc::UnboundedReceiver<String>> {
@@ -92,11 +182,14 @@ impl TerminalStateHub {
                 if let Ok(terms) = serde_json::from_value::<Vec<Terminal>>(terms_val.clone()) {
                     let mut map = self.terminals.write().await;
                     let mut dirty = self.dirty_terminals.write().await;
+                    let engine = self.gemini_state.read().await;
+                    let now = now_ms();
                     let mut live_set = HashSet::new();
-                    for t in terms {
+                    for mut t in terms {
                         let addr = t.address.clone();
                         let is_live = t.state == "live";
                         live_set.insert(addr.clone());
+                        engine.overlay_terminal(&mut t);
                         let changed = match map.get(&addr) {
                             Some(prev) => {
                                 prev.state != t.state
@@ -111,12 +204,21 @@ impl TerminalStateHub {
                         let has_preview = self.previews.read().await.contains_key(&addr);
                         let is_working =
                             t.status.as_ref().map(|s| s.state.as_str()) == Some("working");
+                        let is_blocked =
+                            t.status.as_ref().map(|s| s.state.as_str()) == Some("blocked");
+                        let needs_gemini_screen_check = is_live
+                            && is_gemini_terminal(&t)
+                            && (is_blocked
+                                || !engine.has_recent_hook(&addr, now, HOOK_AUTHORITY_WINDOW_MS));
                         map.insert(addr.clone(), t);
                         if changed {
                             dirty.insert(addr.clone());
                         }
-                        // Only request preview when terminal changed, is actively working, or lacks a preview yet
-                        if is_live && (changed || is_working || !has_preview) {
+                        // Only request preview when terminal changed, is actively working, lacks a preview,
+                        // or is a live Gemini session without a recent hook event (Layer-2 fallback)
+                        if is_live
+                            && (changed || is_working || !has_preview || needs_gemini_screen_check)
+                        {
                             self.request_preview(addr);
                         }
                     }
@@ -134,14 +236,17 @@ impl TerminalStateHub {
 
     pub async fn apply_full_snapshot(&self, terminals: Vec<Terminal>, seq: u64) {
         let mut map = self.terminals.write().await;
+        let engine = self.gemini_state.read().await;
         map.clear();
-        for t in terminals {
+        for mut t in terminals {
             let addr = t.address.clone();
+            engine.overlay_terminal(&mut t);
             let should_preview = t.state == "live"
-                && matches!(
-                    t.status.as_ref().map(|s| s.state.as_str()),
-                    Some("blocked" | "done" | "error" | "idle")
-                );
+                && (is_gemini_terminal(&t)
+                    || matches!(
+                        t.status.as_ref().map(|s| s.state.as_str()),
+                        Some("blocked" | "done" | "error" | "idle")
+                    ));
             map.insert(addr.clone(), t);
             if should_preview {
                 self.request_preview(addr);
@@ -187,6 +292,7 @@ impl TerminalStateHub {
                 if let Some(addr) = extract_address(raw) {
                     self.terminals.write().await.remove(&addr);
                     self.previews.write().await.remove(&addr);
+                    self.gemini_state.write().await.remove_terminal(&addr);
                     self.removed_terminals.write().await.insert(addr);
                 }
                 return;
@@ -195,8 +301,11 @@ impl TerminalStateHub {
         }
 
         if let Some(term_val) = raw.get("terminal").filter(|v| v.is_object()) {
-            if let Ok(term) = serde_json::from_value::<Terminal>(term_val.clone()) {
+            if let Ok(mut term) = serde_json::from_value::<Terminal>(term_val.clone()) {
                 let addr = term.address.clone();
+                let engine = self.gemini_state.read().await;
+                engine.overlay_terminal(&mut term);
+                drop(engine);
                 let trigger_preview = matches!(
                     kind,
                     "created" | "status" | "turn" | "finished" | "restarted"

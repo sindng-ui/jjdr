@@ -91,6 +91,10 @@ impl AttachManager {
             client_bg.unregister_channel(channel).await;
         });
     }
+
+    pub async fn address_for_channel(&self, channel: u32) -> Option<String> {
+        self.active_channels.lock().await.get(&channel).cloned()
+    }
 }
 
 #[tauri::command]
@@ -248,11 +252,27 @@ pub async fn write_terminal_input(
     channel: u32,
     data: String,
 ) -> Result<(), String> {
+    let has_enter = data.contains('\r') || data.contains('\n');
+    let has_ctrl_c = data.contains('\x03');
+    // Standalone Esc only (ignore ANSI escape sequences like arrow keys `\x1b[A`)
+    let is_standalone_esc = data == "\x1b";
     state
         .herdr
         .send_frame(Frame::data(channel, data.into_bytes()))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if has_enter || has_ctrl_c || is_standalone_esc {
+        if let Some(addr) = state.attach.address_for_channel(channel).await {
+            if has_ctrl_c {
+                state.hub.notify_gemini_user_interrupted(&addr, false).await;
+            } else if is_standalone_esc {
+                state.hub.notify_gemini_user_interrupted(&addr, true).await;
+            } else if has_enter {
+                state.hub.notify_gemini_user_approved(&addr).await;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]

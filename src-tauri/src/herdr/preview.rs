@@ -34,6 +34,7 @@ pub fn spawn_preview_worker(hub: Arc<TerminalStateHub>, client: Arc<HerdrClient>
             match tokio::time::timeout(Duration::from_secs(3), read_fut).await {
                 Ok(Ok(val)) => {
                     if let Ok(read_res) = serde_json::from_value::<ReadResult>(val) {
+                        hub.apply_gemini_screen_fallback(&addr, &read_res.text).await;
                         let lines = extract_preview_lines(&read_res.text, 16);
                         hub.update_preview_if_changed(addr, lines).await;
                     }

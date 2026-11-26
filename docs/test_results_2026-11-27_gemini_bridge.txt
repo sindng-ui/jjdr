@@ -1,0 +1,35 @@
+=== jjdr Embedded Gemini CLI Status Bridge Despair & Full Test Results (2026-11-27) ===
+
+0. Real Bugs Caught & Sealed Across Adversarial + Despair Audits (7 Total)
+   1) [LIVE REPRODUCED] Korean Windows CP949 stdin corruption in pwsh & PowerShell 5.1 -> Fixed via UTF-8 StreamReader + ReadAllText + UTF-16 high-surrogate boundary truncation.
+   2) [CAUGHT IN AUDIT] Radio cursor `> Allow once` / `❯ Allow once` falsely triggered idle prompt and suppressed permission detection -> Fixed via strict input-bar matcher.
+   3) [CAUGHT IN AUDIT] `blocked` stayed stuck after Approve(Enter) without per-tool hooks -> Fixed via immediate Enter release in `send_terminal_keys`/`write_terminal_input` + `blocked->working` 15s-window bypass.
+   4) [CAUGHT IN AUDIT] `Ctrl+C`/Stop/standalone `Esc` cancel lacked immediate `idle` release -> Fixed via `apply_user_interrupt` (no turn bump, ignores ANSI arrows `\x1b[A`).
+   5) [CAUGHT IN AUDIT] UTF-8 BOM (`\u{feff}`) in `~/.gemini/settings.json` broke `serde_json` -> Fixed via BOM stripping in install/uninstall/check.
+   6) [CAUGHT IN AUDIT] Out-of-order UDP packets & duplicate `AfterAgent` double-bumped `turn` -> Fixed via monotonic timestamp guard + duplicate-done deduplication.
+   7) [CAUGHT IN AUDIT] Normal prose mentioning "API error" before input prompt falsely triggered `error` instead of `done` -> Fixed via strict error banner matching.
+
+1. Rust Backend Full + Adversarial + Despair Suite (`cargo test --manifest-path src-tauri/Cargo.toml --lib`)
+   Result: 67 passed; 0 failed; 0 ignored (finished in 8.17s)
+   Gemini Bridge Dedicated Coverage: 37 tests (state: 13, screen: 13, installer: 7, bridge: 4)
+   Notable Despair/Chaos tests verified:
+   - despair_handles_utf8_bom_and_malformed_hook_shapes_without_data_loss ... ok
+   - despair_refuses_to_overwrite_corrupted_json_settings_file ... ok
+   - despair_windows_hook_survives_corrupt_stdin_100kb_payload_broken_endpoint_and_closed_port ... ok
+   - despair_rejects_out_of_order_stale_packets_and_deduplicates_double_after_agent ... ok
+   - despair_ambiguous_cwd_skips_dead_and_non_gemini_and_picks_latest_live ... ok
+   - despair_overlay_never_revives_crashed_or_finished_terminal ... ok
+   - despair_prose_mentioning_api_error_before_prompt_triggers_done_not_error ... ok
+   - despair_survives_empty_null_bytes_broken_ansi_and_50k_line_flood_fast ... ok
+
+2. Rust Full Crate Compilation Check (`cargo check --manifest-path src-tauri/Cargo.toml`)
+   Result: PASS (0 errors, 0 code warnings)
+
+3. Frontend Full + Virtual Scenario + Despair/Stress Suite (`npm run test && npm run build`)
+   Vitest: 20 test files passed (20), 87 tests passed (87)
+   geminiSimulation.test.ts: 11/11 passed (6 E2E scenarios + 5 Despair/Stress tests including 100 concurrent sessions in < 100ms)
+   Build:  tsc && vite build PASS (0 errors, 1690 modules transformed in 3.84s)
+
+4. File Size Check (900-line rule)
+   - NOTICE: src-tauri/src/gemini/state.rs reached 934 lines (~275 prod + ~659 unit tests). Refactoring plan submitted to split unit tests into state_tests.rs.
+   - All other files remain under 900 lines (max: RadarBoardView.tsx 820, SettingsModal.tsx 808, ZenModeView.tsx 803).
