@@ -10,7 +10,10 @@ describe("formatEffectiveCommand", () => {
       "agy --continue --dangerously-skip-permissions"
     );
     expect(formatEffectiveCommand("claude", true)).toBe(
-      "claude --dangerously-skip-permissions"
+      "claude --dangerously-skip-permissions --permission-mode bypassPermissions"
+    );
+    expect(formatEffectiveCommand("claude --continue", true)).toBe(
+      "claude --continue --dangerously-skip-permissions --permission-mode bypassPermissions"
     );
     expect(formatEffectiveCommand("gemini", true)).toBe("gemini -y");
     expect(formatEffectiveCommand("codex", true)).toBe(
@@ -20,6 +23,12 @@ describe("formatEffectiveCommand", () => {
 
   it("does not duplicate existing flags and respects autonomous=false", () => {
     expect(formatEffectiveCommand("gemini -y", true)).toBe("gemini -y");
+    expect(
+      formatEffectiveCommand(
+        "claude --dangerously-skip-permissions --permission-mode=acceptEdits",
+        true
+      )
+    ).toBe("claude --dangerously-skip-permissions --permission-mode=acceptEdits");
     expect(formatEffectiveCommand("agy", false)).toBe("agy");
     expect(formatEffectiveCommand("codex", false)).toBe("codex --no-daemon");
   });

@@ -72,9 +72,21 @@ pub fn normalize_agent_argv(
 
     if autonomous {
         match bin.as_str() {
-            "agy" | "claude" => {
+            "agy" => {
                 if !argv.iter().any(|a| a == "--dangerously-skip-permissions") {
                     argv.push("--dangerously-skip-permissions".into());
+                }
+            }
+            "claude" => {
+                if !argv.iter().any(|a| a == "--dangerously-skip-permissions") {
+                    argv.push("--dangerously-skip-permissions".into());
+                }
+                if !argv
+                    .iter()
+                    .any(|a| a == "--permission-mode" || a.starts_with("--permission-mode="))
+                {
+                    argv.push("--permission-mode".into());
+                    argv.push("bypassPermissions".into());
                 }
             }
             "gemini" => {
@@ -330,5 +342,46 @@ pub async fn popout_external_terminal(address: String) -> Result<(), String> {
     {
         let _ = address;
         Err("External terminal popout is currently configured for Windows.".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_agent_argv;
+
+    #[test]
+    fn claude_adds_bypass_permission_mode_and_skip_permissions() {
+        let out = normalize_agent_argv(vec!["claude".into()], None, true);
+        assert_eq!(
+            out,
+            vec![
+                "claude",
+                "--dangerously-skip-permissions",
+                "--permission-mode",
+                "bypassPermissions"
+            ]
+        );
+    }
+
+    #[test]
+    fn claude_does_not_duplicate_existing_permission_mode() {
+        let out = normalize_agent_argv(
+            vec![
+                "claude".into(),
+                "--continue".into(),
+                "--permission-mode=acceptEdits".into(),
+            ],
+            None,
+            true,
+        );
+        assert_eq!(
+            out,
+            vec![
+                "claude",
+                "--continue",
+                "--permission-mode=acceptEdits",
+                "--dangerously-skip-permissions"
+            ]
+        );
     }
 }

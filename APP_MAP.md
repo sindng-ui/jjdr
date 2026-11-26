@@ -43,7 +43,7 @@
 | `src-tauri/src/commands/projects.rs` | 레포 자동 분석 및 프로젝트 CRUD·순서 변경 커맨드 | `inspect_git_repo`, `list_projects`, `upsert_project`, `delete_project`, `reorder_projects` |
 | `src-tauri/src/commands/worktrees.rs` | Worktree 조회/생성+AI기동/완전 비동기 백그라운드 삭제(`tokio::spawn` + 병렬 세션 종료 + `jjdr:worktree-teardown-result` 완료 이벤트)/브랜치 개명/Diff 커맨드 | `list_all_worktrees`, `list_project_worktrees`, `create_worktree_and_launch`, `teardown_worktree`, `WorktreeTeardownResultEvent`, `rename_worktree_branch`, `fetch_worktree_diff` |
 | `src-tauri/src/commands/attach.rs` | 방식 C+ `AttachManager`(세대 취소·비동기 Detach·16ms 배치·CREDIT 반환) 및 스트림 제어 커맨드 | `AttachManager`, `attach_terminal`, `detach_terminal`, `write_terminal_input`, `resize_terminal`, `focus_terminal` |
-| `src-tauri/src/commands/terminals.rs` | 세션 실행/제어 + 안전 이름 정규화/재시도(`call_terminal_run_safe`) + 자율성(YOLO) 플래그 정규화(`normalize_agent_argv`) + 외부 터미널 팝아웃 | `normalize_agent_argv`, `call_terminal_run_safe`, `launch_session`, `send_terminal_text`, `send_terminal_keys`, `interrupt_terminal`, `kill_terminal`, `popout_external_terminal` |
+| `src-tauri/src/commands/terminals.rs` | 세션 실행/제어 + 안전 이름 정규화/재시도(`call_terminal_run_safe`) + 자율성(YOLO) 플래그 정규화(`normalize_agent_argv`, Claude `--dangerously-skip-permissions --permission-mode bypassPermissions`) + 외부 터미널 팝아웃 | `normalize_agent_argv`, `call_terminal_run_safe`, `launch_session`, `send_terminal_text`, `send_terminal_keys`, `interrupt_terminal`, `kill_terminal`, `popout_external_terminal` |
 
 ---
 

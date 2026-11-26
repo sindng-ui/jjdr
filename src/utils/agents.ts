@@ -19,7 +19,7 @@ export const AGENT_OPTIONS: AgentOption[] = [
     label: "Claude Code",
     cmd: "claude",
     safeCmd: "claude",
-    hint: "Anthropic Claude CLI (--dangerously-skip-permissions)",
+    hint: "Anthropic Claude CLI (--dangerously-skip-permissions --permission-mode bypassPermissions)",
   },
   {
     id: "gemini",
@@ -92,11 +92,22 @@ export function formatEffectiveCommand(cmd: string, autonomous: boolean): string
     out.push("--no-daemon");
   }
   if (autonomous) {
-    if (
-      (bin === "agy" || bin === "claude") &&
-      !out.includes("--dangerously-skip-permissions")
-    ) {
-      out.push("--dangerously-skip-permissions");
+    if (bin === "agy") {
+      if (!out.includes("--dangerously-skip-permissions")) {
+        out.push("--dangerously-skip-permissions");
+      }
+    } else if (bin === "claude") {
+      if (!out.includes("--dangerously-skip-permissions")) {
+        out.push("--dangerously-skip-permissions");
+      }
+      if (
+        !out.some(
+          (arg) =>
+            arg === "--permission-mode" || arg.startsWith("--permission-mode=")
+        )
+      ) {
+        out.push("--permission-mode", "bypassPermissions");
+      }
     } else if (bin === "gemini" && !out.includes("-y") && !out.includes("--yolo")) {
       out.push("-y");
     } else if (
