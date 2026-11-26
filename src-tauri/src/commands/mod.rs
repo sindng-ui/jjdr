@@ -4,4 +4,5 @@ pub mod overlay;
 pub mod projects;
 pub mod system;
 pub mod terminals;
+pub mod update;
 pub mod worktrees;

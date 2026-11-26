@@ -6,6 +6,7 @@ import type {
   BgOverlayPayload,
   BootstrapConfig,
   DiffDetail,
+  DownloadOutcome,
   HerdrHealth,
   OverlayOpenCardEvent,
   PersistedBundle,
@@ -16,6 +17,8 @@ import type {
   TemplateInfo,
   TermClosedEvent,
   TermDataEvent,
+  UpdateCheckResult,
+  UpdateProgressEvent,
   WorktreeInfo,
 } from "../types/domain";
 
@@ -445,5 +448,40 @@ export async function listenWorktreeTeardownResult(
   return listen<WorktreeTeardownResultEvent>(
     "jjdr:worktree-teardown-result",
     (e) => cb(e.payload)
+  );
+}
+
+export async function getAppVersion(): Promise<string> {
+  if (!isTauriRuntime()) return "0.4.3";
+  return invoke<string>("get_app_version");
+}
+
+export async function checkForUpdate(): Promise<UpdateCheckResult> {
+  return invoke<UpdateCheckResult>("check_for_update");
+}
+
+export async function downloadAndInstallUpdate(
+  downloadUrl: string,
+  assetName: string
+): Promise<DownloadOutcome> {
+  return invoke<DownloadOutcome>("download_and_install_update", {
+    downloadUrl,
+    assetName,
+  });
+}
+
+export async function openExternalUrl(url: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  return invoke<void>("open_external_url", { url });
+}
+
+export async function listenUpdateProgress(
+  cb: (payload: UpdateProgressEvent) => void
+): Promise<UnlistenFn> {
+  return listen<UpdateProgressEvent>("jjdr:update-progress", (e) =>
+    cb(e.payload)
   );
 }

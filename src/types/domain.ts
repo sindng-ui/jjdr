@@ -142,6 +142,34 @@ export interface AppSettings {
   bg_overlay_enabled?: boolean;
   bg_overlay_position?: BgOverlayPosition;
   prompt_presets: PromptPreset[];
+  skipped_update_version?: string | null;
+}
+
+export interface UpdateCheckResult {
+  current_version: string;
+  latest_version: string;
+  has_update: boolean;
+  release_name: string;
+  release_notes: string;
+  release_url: string;
+  published_at?: string | null;
+  asset_name?: string | null;
+  asset_download_url?: string | null;
+  asset_size_bytes?: number | null;
+}
+
+export interface UpdateProgressEvent {
+  stage: "downloading" | "launching" | "done" | "error" | string;
+  downloaded_bytes: number;
+  total_bytes?: number | null;
+  percent?: number | null;
+  message?: string | null;
+}
+
+export interface DownloadOutcome {
+  file_path: string;
+  bytes_written: number;
+  dry_run: boolean;
 }
 
 export interface BgOverlayPayload {

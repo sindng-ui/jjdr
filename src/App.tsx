@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { useHerdrSync } from "./hooks/useHerdrSync";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useFileIndexWarmup } from "./hooks/useFileIndexWarmup";
+import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useUiStore } from "./store/useUiStore";
 import { TopStatusBar } from "./components/layout/TopStatusBar";
 import { SidebarProjects } from "./components/layout/SidebarProjects";
@@ -39,10 +40,17 @@ const CodeViewerModal = lazy(() =>
   }))
 );
 
+const UpdateModal = lazy(() =>
+  import("./components/modals/UpdateModal").then((m) => ({
+    default: m.UpdateModal,
+  }))
+);
+
 export function App() {
   useHerdrSync();
   useGlobalShortcuts();
   useFileIndexWarmup();
+  useUpdateChecker();
 
   const startupReady = useUiStore((s) => s.startupReady);
   const viewMode = useUiStore((s) => s.viewMode);
@@ -52,6 +60,7 @@ export function App() {
   const terminalWidthPx = useUiStore((s) => s.terminalWidthPx);
   const markdownViewerTarget = useUiStore((s) => s.markdownViewerTarget);
   const codeViewerTarget = useUiStore((s) => s.codeViewerTarget);
+  const updateModalOpen = useUiStore((s) => s.updateModalOpen);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const toast = useUiStore((s) => s.toast);
   const clearToast = useUiStore((s) => s.clearToast);
@@ -135,6 +144,11 @@ export function App() {
       <TeardownModal />
       <DiffPreviewModal />
       <SettingsModal />
+      {updateModalOpen && (
+        <Suspense fallback={null}>
+          <UpdateModal />
+        </Suspense>
+      )}
 
       {/* Organic Pill Toast (Zero-Blur) */}
       {toast && (

@@ -123,7 +123,8 @@ export function useGlobalShortcuts() {
         !ui.launchTarget &&
         !ui.teardownTarget &&
         !ui.diffTarget &&
-        !ui.settingsOpen
+        !ui.settingsOpen &&
+        !ui.updateModalOpen
       ) {
         if (openContextMenuForSelectedCard()) {
           e.preventDefault();
@@ -311,6 +312,10 @@ export function useGlobalShortcuts() {
         }
         if (ui.settingsOpen) {
           ui.setSettingsOpen(false);
+          return;
+        }
+        if (ui.updateModalOpen) {
+          ui.setUpdateModalOpen(false);
           return;
         }
         if (inInput && target) {

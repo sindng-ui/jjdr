@@ -23,6 +23,7 @@ import {
   buildPreviewBgOverlayPayload,
   normalizeBgOverlayPosition,
 } from "../../utils/bgOverlay";
+import { UpdateSettingsSection } from "./UpdateSettingsSection";
 import type {
   AppSettings,
   BgOverlayPosition,
@@ -124,8 +125,14 @@ export const SettingsModal = React.memo(function SettingsModal() {
   };
 
   const handleSave = async () => {
-    useAppStore.getState().setSettings(draft);
-    await saveSettings(draft).catch(() => {});
+    const latestSkipped =
+      useAppStore.getState().settings.skipped_update_version ?? null;
+    const toSave: AppSettings = {
+      ...draft,
+      skipped_update_version: latestSkipped,
+    };
+    useAppStore.getState().setSettings(toSave);
+    await saveSettings(toSave).catch(() => {});
     showToast("설정이 저장되었습니다", "success");
     setOpen(false);
   };
@@ -685,6 +692,8 @@ export const SettingsModal = React.memo(function SettingsModal() {
               ))}
             </div>
           </div>
+
+          <UpdateSettingsSection />
         </div>
 
         <div

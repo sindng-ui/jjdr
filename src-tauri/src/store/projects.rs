@@ -100,6 +100,8 @@ pub struct AppSettings {
     pub bg_overlay_position: String,
     #[serde(default = "default_presets")]
     pub prompt_presets: Vec<PromptPreset>,
+    #[serde(default)]
+    pub skipped_update_version: Option<String>,
 }
 
 fn default_theme() -> String {
@@ -158,6 +160,7 @@ impl Default for AppSettings {
             bg_overlay_enabled: false,
             bg_overlay_position: default_bg_overlay_position(),
             prompt_presets: default_presets(),
+            skipped_update_version: None,
         }
     }
 }

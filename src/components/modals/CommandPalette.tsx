@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  DownloadCloud,
+  Eye,
   FolderPlus,
   GitBranchPlus,
   Inbox,
@@ -13,6 +15,8 @@ import {
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import { jumpToNextActionable } from "../../hooks/useGlobalShortcuts";
+import { runManualUpdateCheck } from "../../hooks/useUpdateChecker";
+import { buildMockUpdateResult } from "../../utils/updatePolicy";
 
 interface PaletteItem {
   id: string;
@@ -86,7 +90,33 @@ export const CommandPalette = React.memo(function CommandPalette() {
         ),
         run: () => ui.setSettingsOpen(true),
       },
+      {
+        id: "check-updates",
+        label: "Check for Updates",
+        detail: "GitHub Releases 최신 버전 확인",
+        icon: (
+          <DownloadCloud
+            className="w-4 h-4"
+            style={{ color: "var(--accent)" }}
+          />
+        ),
+        run: () => {
+          void runManualUpdateCheck();
+        },
+      },
     ];
+
+    if (import.meta.env.DEV) {
+      list.push({
+        id: "preview-update-mock",
+        label: "Preview Update Modal (DEV Mock)",
+        detail: "가짜 v9.9.9 릴리즈로 업데이트 팝업 미리보기",
+        icon: (
+          <Eye className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+        ),
+        run: () => ui.openUpdateModal(buildMockUpdateResult()),
+      });
+    }
 
     for (const p of projects) {
       list.push({

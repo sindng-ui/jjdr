@@ -1,0 +1,29 @@
+================================================================
+jjdr v0.4.3 GitHub Releases 자동 업데이트 기능 테스트 결과
+실행 일시: 2026-11-26 (origin/main v0.4.2 리베이스 후 최종 검증)
+================================================================
+
+[1] 신규/수정 모듈 라인 수 점검 (모두 <= 500줄)
+- src/components/modals/UpdateModal.tsx           : 456 lines
+- src/components/modals/UpdateSettingsSection.tsx : 128 lines
+- src/hooks/useUpdateChecker.ts                   :  94 lines
+- src/utils/updatePolicy.ts                       :  79 lines
+- src-tauri/src/update/semver.rs                  : 161 lines
+- src-tauri/src/update/github.rs                  : 321 lines (558줄 초과 감지 후 installer.rs로 분리)
+- src-tauri/src/update/installer.rs               : 278 lines
+- src-tauri/src/commands/update.rs                : 156 lines
+- scripts/mock-update-server.mjs                  : 141 lines
+
+[2] Frontend Vitest (`npm run test`) -> PASS
+- src/utils/updatePolicy.test.ts (6 tests) + 기존 전체 테스트 스위트 통과
+
+[3] Frontend TypeScript & Vite Production Build (`npm run build`) -> PASS
+- tsc: 0 errors, vite build 성공, UpdateModal lazy chunk 분리 확인
+
+[4] Rust Unit & Local Mock HTTP Integration Tests (`cargo test`) -> PASS
+- update::semver (4) + update::github (4) + update::installer (3) + 기존 전체 테스트 통과
+
+[5] Rust Binary Check (`cargo check`) -> PASS (0 errors, 0 warnings)
+
+[6] Local Mock E2E Server Smoke Check (`scripts/mock-update-server.mjs`) -> PASS
+- GET /latest & GET /assets/jjdr_9.9.9_x64-setup.exe (0.2 MB) -> ASSET_BYTES=209715

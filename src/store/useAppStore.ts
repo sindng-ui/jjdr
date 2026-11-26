@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     { id: "lint", label: "Fix Lint", prompt: "Run lint and typecheck, and fix all errors." },
     { id: "commit", label: "Commit Msg", prompt: "Summarize all changes concisely and propose a clean commit message." },
   ],
+  skipped_update_version: null,
 };
 
 const EMPTY_COMPUTED: DashboardWorkerResult = {

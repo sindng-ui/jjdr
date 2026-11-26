@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   EnrichedSession,
   ProjectConfig,
+  UpdateCheckResult,
   WorktreeInfo,
 } from "../types/domain";
 import {
@@ -133,6 +134,8 @@ interface UiStoreState {
   teardownTarget: TeardownModalTarget | null;
   launchTarget: LaunchModalTarget | null;
   settingsOpen: boolean;
+  updateInfo: UpdateCheckResult | null;
+  updateModalOpen: boolean;
   toast: { message: string; kind: "info" | "error" | "success" } | null;
 
   setViewMode: (mode: ViewMode) => void;
@@ -185,6 +188,9 @@ interface UiStoreState {
   setTeardownTarget: (t: TeardownModalTarget | null) => void;
   setLaunchTarget: (t: LaunchModalTarget | null) => void;
   setSettingsOpen: (open: boolean) => void;
+  setUpdateInfo: (info: UpdateCheckResult | null) => void;
+  setUpdateModalOpen: (open: boolean) => void;
+  openUpdateModal: (info: UpdateCheckResult) => void;
   showToast: (message: string, kind?: "info" | "error" | "success", durationMs?: number) => void;
   clearToast: () => void;
 }
@@ -233,6 +239,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
   teardownTarget: null,
   launchTarget: null,
   settingsOpen: false,
+  updateInfo: null,
+  updateModalOpen: false,
   toast: null,
 
   setViewMode: (viewMode) => set({ viewMode, startupReady: true }),
@@ -402,6 +410,9 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setTeardownTarget: (teardownTarget) => set({ teardownTarget }),
   setLaunchTarget: (launchTarget) => set({ launchTarget }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setUpdateInfo: (updateInfo) => set({ updateInfo }),
+  setUpdateModalOpen: (updateModalOpen) => set({ updateModalOpen }),
+  openUpdateModal: (updateInfo) => set({ updateInfo, updateModalOpen: true }),
   showToast: (message, kind = "info", durationMs = 3500) => {
     if (toastTimer) clearTimeout(toastTimer);
     set({ toast: { message, kind } });

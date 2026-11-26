@@ -3,6 +3,7 @@ pub mod commands;
 pub mod git;
 pub mod herdr;
 pub mod store;
+pub mod update;
 
 #[cfg(not(test))]
 use std::sync::atomic::AtomicU64;
@@ -150,6 +151,10 @@ pub fn run() {
             commands::overlay::dismiss_bg_overlay,
             commands::overlay::get_bg_overlay_payload,
             commands::overlay::focus_main_from_overlay,
+            commands::update::get_app_version,
+            commands::update::check_for_update,
+            commands::update::download_and_install_update,
+            commands::update::open_external_url,
         ])
         .build(tauri::generate_context!())
         .expect("error while building jjdr tauri application");
