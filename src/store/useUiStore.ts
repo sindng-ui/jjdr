@@ -6,7 +6,9 @@ import type {
   WorktreeInfo,
 } from "../types/domain";
 import {
+  readStoredRadarColumnWidth,
   readStoredRadarLayout,
+  writeStoredRadarColumnWidth,
   writeStoredRadarLayout,
   type RadarLayoutMode,
 } from "../utils/radarLayout";
@@ -96,6 +98,7 @@ interface UiStoreState {
   startupReady: boolean;
   viewMode: ViewMode;
   radarLayoutMode: RadarLayoutMode;
+  radarColumnWidthPx: number | null;
   radarFocusSlideDir: "next" | "prev" | null;
   activeGroup: string;
   selectedProjectId: string | null;
@@ -107,6 +110,7 @@ interface UiStoreState {
   terminalDrawerOpen: boolean;
   terminalWidthPx: number | null;
   terminalFocusNonce: number;
+  lastTerminalSubmit: { address: string; atMs: number } | null;
   zenSkipNonce: number;
   zenPrevNonce: number;
   zenApproveNonce: number;
@@ -140,6 +144,7 @@ interface UiStoreState {
 
   setViewMode: (mode: ViewMode) => void;
   setRadarLayoutMode: (mode: RadarLayoutMode) => void;
+  setRadarColumnWidthPx: (widthPx: number | null) => void;
   setRadarFocusSlideDir: (dir: "next" | "prev" | null) => void;
   completeStartupRouting: (tab: ZenModeTab) => void;
   toggleViewMode: () => void;
@@ -157,6 +162,7 @@ interface UiStoreState {
   closeTerminalDrawer: () => void;
   setTerminalWidthPx: (widthPx: number | null) => void;
   requestTerminalFocus: () => void;
+  recordTerminalSubmit: (address: string) => void;
   requestZenSkip: () => void;
   requestZenPrev: () => void;
   requestZenApprove: () => void;
@@ -201,6 +207,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   startupReady: false,
   viewMode: "zen",
   radarLayoutMode: readStoredRadarLayout(),
+  radarColumnWidthPx: readStoredRadarColumnWidth(),
   radarFocusSlideDir: null,
   activeGroup: "All",
   selectedProjectId: null,
@@ -212,6 +219,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   terminalDrawerOpen: false,
   terminalWidthPx: null,
   terminalFocusNonce: 0,
+  lastTerminalSubmit: null,
   zenSkipNonce: 0,
   zenPrevNonce: 0,
   zenApproveNonce: 0,
@@ -247,6 +255,10 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setRadarLayoutMode: (radarLayoutMode) => {
     writeStoredRadarLayout(radarLayoutMode);
     set({ radarLayoutMode });
+  },
+  setRadarColumnWidthPx: (radarColumnWidthPx) => {
+    writeStoredRadarColumnWidth(radarColumnWidthPx);
+    set({ radarColumnWidthPx });
   },
   setRadarFocusSlideDir: (radarFocusSlideDir) => set({ radarFocusSlideDir }),
   completeStartupRouting: (tab) =>
@@ -318,6 +330,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setTerminalWidthPx: (terminalWidthPx) => set({ terminalWidthPx }),
   requestTerminalFocus: () =>
     set((s) => ({ terminalFocusNonce: s.terminalFocusNonce + 1 })),
+  recordTerminalSubmit: (address) =>
+    set({ lastTerminalSubmit: { address, atMs: Date.now() } }),
   requestZenSkip: () =>
     set((s) => ({ zenSkipNonce: s.zenSkipNonce + 1 })),
   requestZenPrev: () =>

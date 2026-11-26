@@ -329,6 +329,7 @@ export const AttachedTerminalDrawer = React.memo(
         if (!prompt.trim() || !attachedAddress) return;
         try {
           await sendTerminalText(attachedAddress, prompt, false);
+          useUiStore.getState().recordTerminalSubmit(attachedAddress);
           if (session) {
             useAppStore
               .getState()

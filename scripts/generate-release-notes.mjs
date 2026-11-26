@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Generate structured Markdown "What's New" release notes from Git history
  * (and optional CHANGELOG.md section / workflow_dispatch custom notes).

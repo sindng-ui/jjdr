@@ -167,3 +167,53 @@ export function computeNextSkippedOrder(
   const firstOther = validKeys.find((k) => k !== currentKey) ?? validKeys[0];
   return { nextKey: firstOther, nextSkippedKeys: [currentKey] };
 }
+
+export interface RunningProgressVisual {
+  percent: number;
+  color: string;
+  stage: "fresh" | "steady" | "deep" | "long";
+}
+
+/**
+ * Computes a gently growing progress bar percentage and elapsed-duration color stage
+ * for Running AI cards in Zen "Time to chill" briefing (zero heavy polling needed).
+ *
+ * Color stages communicate duration at a glance:
+ * - < 2m:   sky blue (#38bdf8)
+ * - 2-5m:   teal mint (#2dd4bf)
+ * - 5-12m:  amber gold (#f59e0b)
+ * - 12m+:   coral rose (#fb7185)
+ */
+export function computeRunningProgressVisual(
+  elapsedMs: number,
+  explicitProgress?: number | null
+): RunningProgressVisual {
+  const safeMs = Math.max(0, Number.isFinite(elapsedMs) ? elapsedMs : 0);
+  const mins = safeMs / 60_000;
+
+  let color = "#38bdf8";
+  let stage: RunningProgressVisual["stage"] = "fresh";
+  if (mins >= 12) {
+    color = "#fb7185";
+    stage = "long";
+  } else if (mins >= 5) {
+    color = "#f59e0b";
+    stage = "deep";
+  } else if (mins >= 2) {
+    color = "#2dd4bf";
+    stage = "steady";
+  }
+
+  if (typeof explicitProgress === "number" && Number.isFinite(explicitProgress)) {
+    return {
+      percent: Math.max(4, Math.min(100, Math.round(explicitProgress))),
+      color,
+      stage,
+    };
+  }
+
+  // Smooth asymptotic growth: 16% at 0m -> ~38% at 2m -> ~64% at 6m -> ~86% at 15m -> 92% cap
+  const asymptotic = 16 + 76 * (1 - Math.exp(-mins / 6));
+  const percent = Math.max(16, Math.min(92, Math.round(asymptotic)));
+  return { percent, color, stage };
+}

@@ -7,14 +7,19 @@ import type {
   WorktreeInfo,
 } from "../types/domain";
 import {
+  clampRadarColumnWidthPx,
   DEFAULT_RADAR_LAYOUT,
   extractProjectIdFromCardKey,
   getRadarColumnWidthPx,
   getRadarFocusedColumnWidthPx,
+  MAX_RADAR_COLUMN_WIDTH_PX,
+  MIN_RADAR_COLUMN_WIDTH_PX,
   normalizeRadarLayout,
   pickPreferredCellForLane,
+  readStoredRadarColumnWidth,
   readStoredRadarLayout,
   resolveFocusedRadarColumn,
+  writeStoredRadarColumnWidth,
   writeStoredRadarLayout,
 } from "./radarLayout";
 
@@ -150,6 +155,19 @@ describe("radarLayout", () => {
     expect(getRadarFocusedColumnWidthPx("balanced")).toBe(356);
     expect(getRadarFocusedColumnWidthPx("compact")).toBe(320);
     expect(getRadarFocusedColumnWidthPx(null)).toBe(356);
+
+    // Custom wide column width override & storage clamping (210px - 560px)
+    expect(clampRadarColumnWidthPx(120)).toBe(MIN_RADAR_COLUMN_WIDTH_PX);
+    expect(clampRadarColumnWidthPx(900)).toBe(MAX_RADAR_COLUMN_WIDTH_PX);
+    expect(readStoredRadarColumnWidth()).toBeNull();
+
+    writeStoredRadarColumnWidth(440);
+    expect(readStoredRadarColumnWidth()).toBe(440);
+    expect(getRadarColumnWidthPx("balanced", 440)).toBe(440);
+    expect(getRadarFocusedColumnWidthPx("balanced", 440)).toBe(504);
+
+    writeStoredRadarColumnWidth(null);
+    expect(readStoredRadarColumnWidth()).toBeNull();
   });
 
   it("extracts projectId cleanly from wt:: card keys", () => {

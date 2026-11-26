@@ -19,7 +19,10 @@ import { pickPreferredWorktreeSession } from "../../utils/worktreeSessions";
 import {
   getRadarColumnWidthPx,
   getRadarFocusedColumnWidthPx,
+  MAX_RADAR_COLUMN_WIDTH_PX,
+  MIN_RADAR_COLUMN_WIDTH_PX,
   pickPreferredCellForLane,
+  RADAR_COLUMN_WIDTH_STEP_PX,
   resolveFocusedRadarColumn,
   type RadarLayoutMode,
 } from "../../utils/radarLayout";
@@ -39,6 +42,8 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
 
   const layoutMode = useUiStore((s) => s.radarLayoutMode);
   const setRadarLayoutMode = useUiStore((s) => s.setRadarLayoutMode);
+  const radarColumnWidthPx = useUiStore((s) => s.radarColumnWidthPx);
+  const setRadarColumnWidthPx = useUiStore((s) => s.setRadarColumnWidthPx);
   const setRadarFocusSlideDir = useUiStore((s) => s.setRadarFocusSlideDir);
   const selectedProjectId = useUiStore((s) => s.selectedProjectId);
   const selectedCardKey = useUiStore((s) => s.selectedCardKey);
@@ -152,12 +157,12 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
   );
   const activeCols = Math.min(desiredCols, maxFitCols);
   const columnWidthPx = useMemo(
-    () => getRadarColumnWidthPx(radarDensity),
-    [radarDensity]
+    () => getRadarColumnWidthPx(radarDensity, radarColumnWidthPx),
+    [radarDensity, radarColumnWidthPx]
   );
   const focusedColumnWidthPx = useMemo(
-    () => getRadarFocusedColumnWidthPx(radarDensity),
-    [radarDensity]
+    () => getRadarFocusedColumnWidthPx(radarDensity, radarColumnWidthPx),
+    [radarDensity, radarColumnWidthPx]
   );
 
   const focusedColumn = useMemo(
@@ -476,10 +481,11 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
 
   const isAutoFocusWidth = isColumnsFocusMode && terminalWidthPx === null;
   const focusExtraPx = canCycleFocus ? 84 : 32;
+  const focusMaxRatio = focusedColumnWidthPx > 400 ? "54%" : "46%";
   const boardStyle: React.CSSProperties | undefined = isAutoFocusWidth
     ? {
         width: focusWidthSettled
-          ? `min(${focusedColumnWidthPx + focusExtraPx}px, 46%)`
+          ? `min(${focusedColumnWidthPx + focusExtraPx}px, ${focusMaxRatio})`
           : `${columnWidthPx + focusExtraPx}px`,
       }
     : undefined;
@@ -592,35 +598,73 @@ export const RadarBoardView = React.memo(function RadarBoardView() {
           )}
         </div>
 
-        {/* Columns | Rows Layout Switcher (persisted in localStorage) */}
-        <div
-          className="jjdr-pill inline-flex items-center rounded-full p-0.5 text-[11px] shrink-0"
-          title="Switch Radar layout (saved locally)"
-        >
-          <button
-            type="button"
-            onClick={() => handleSetLayoutMode("columns")}
-            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full cursor-pointer transition-colors ${
-              isColumns ? "jjdr-pill-active font-semibold" : ""
-            }`}
-            style={isColumns ? undefined : { color: "var(--text-muted)" }}
-            title="Vertical project columns (focuses single project when terminal opens)"
+        {/* Right Controls: Columns Width Slider (Overview) + Columns | Rows Switcher */}
+        <div className="flex items-center gap-2 shrink-0">
+          {isColumns && !isColumnsFocusMode && (
+            <div
+              className="jjdr-pill inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-[11px]"
+              title="Adjust project column width (210px – 560px, saved locally)"
+            >
+              <span
+                className="font-mono-code tabular-nums text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {columnWidthPx}px
+              </span>
+              <input
+                type="range"
+                min={MIN_RADAR_COLUMN_WIDTH_PX}
+                max={MAX_RADAR_COLUMN_WIDTH_PX}
+                step={RADAR_COLUMN_WIDTH_STEP_PX}
+                value={columnWidthPx}
+                onChange={(e) => setRadarColumnWidthPx(Number(e.target.value))}
+                aria-label="Radar column width"
+                className="w-24 h-1 cursor-pointer accent-[var(--accent)]"
+              />
+              {radarColumnWidthPx !== null && (
+                <button
+                  type="button"
+                  onClick={() => setRadarColumnWidthPx(null)}
+                  className="text-[10px] font-semibold hover:underline cursor-pointer"
+                  style={{ color: "var(--accent)" }}
+                  title="Reset to density preset width"
+                >
+                  Auto
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Columns | Rows Layout Switcher (persisted in localStorage) */}
+          <div
+            className="jjdr-pill inline-flex items-center rounded-full p-0.5 text-[11px] shrink-0"
+            title="Switch Radar layout (saved locally)"
           >
-            <Columns3 className="w-3 h-3" />
-            <span>Columns</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSetLayoutMode("rows")}
-            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full cursor-pointer transition-colors ${
-              !isColumns ? "jjdr-pill-active font-semibold" : ""
-            }`}
-            style={!isColumns ? undefined : { color: "var(--text-muted)" }}
-            title="Horizontal stacked project rows"
-          >
-            <Rows3 className="w-3 h-3" />
-            <span>Rows</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => handleSetLayoutMode("columns")}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full cursor-pointer transition-colors ${
+                isColumns ? "jjdr-pill-active font-semibold" : ""
+              }`}
+              style={isColumns ? undefined : { color: "var(--text-muted)" }}
+              title="Vertical project columns (focuses single project when terminal opens)"
+            >
+              <Columns3 className="w-3 h-3" />
+              <span>Columns</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetLayoutMode("rows")}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full cursor-pointer transition-colors ${
+                !isColumns ? "jjdr-pill-active font-semibold" : ""
+              }`}
+              style={!isColumns ? undefined : { color: "var(--text-muted)" }}
+              title="Horizontal stacked project rows"
+            >
+              <Rows3 className="w-3 h-3" />
+              <span>Rows</span>
+            </button>
+          </div>
         </div>
       </div>
 

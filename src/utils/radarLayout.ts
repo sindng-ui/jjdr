@@ -15,6 +15,52 @@ export type FocusedRadarColumn =
 
 export const DEFAULT_RADAR_LAYOUT: RadarLayoutMode = "columns";
 export const RADAR_LAYOUT_STORAGE_KEY = "jjdr.radar_layout";
+export const RADAR_COL_WIDTH_STORAGE_KEY = "jjdr.radar_col_width_px";
+export const MIN_RADAR_COLUMN_WIDTH_PX = 210;
+export const MAX_RADAR_COLUMN_WIDTH_PX = 560;
+export const RADAR_COLUMN_WIDTH_STEP_PX = 10;
+
+export function clampRadarColumnWidthPx(widthPx: number): number {
+  const rounded = Math.round(widthPx);
+  return Math.max(
+    MIN_RADAR_COLUMN_WIDTH_PX,
+    Math.min(MAX_RADAR_COLUMN_WIDTH_PX, rounded)
+  );
+}
+
+export function readStoredRadarColumnWidth(): number | null {
+  try {
+    if (typeof window !== "undefined") {
+      const raw = window.localStorage.getItem(RADAR_COL_WIDTH_STORAGE_KEY);
+      if (raw !== null && raw.trim() !== "") {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+          return clampRadarColumnWidthPx(parsed);
+        }
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+}
+
+export function writeStoredRadarColumnWidth(widthPx: number | null): void {
+  try {
+    if (typeof window !== "undefined") {
+      if (widthPx === null || !Number.isFinite(widthPx)) {
+        window.localStorage.removeItem(RADAR_COL_WIDTH_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          RADAR_COL_WIDTH_STORAGE_KEY,
+          String(clampRadarColumnWidthPx(widthPx))
+        );
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export function normalizeRadarLayout(value?: string | null): RadarLayoutMode {
   if (value === "rows" || value === "columns") {
@@ -50,10 +96,15 @@ export function writeStoredRadarLayout(mode: RadarLayoutMode): void {
 }
 
 /**
- * Maps existing RadarDensity presets to fixed Kanban column widths so
- * overview columns stay crisp and scannable.
+ * Maps RadarDensity presets (or user's custom Columns width override) to Kanban column widths.
  */
-export function getRadarColumnWidthPx(density?: RadarDensity | null): number {
+export function getRadarColumnWidthPx(
+  density?: RadarDensity | null,
+  customWidthPx?: number | null
+): number {
+  if (typeof customWidthPx === "number" && Number.isFinite(customWidthPx)) {
+    return clampRadarColumnWidthPx(customWidthPx);
+  }
   const norm = normalizeRadarDensity(density);
   if (norm === "comfortable") return 308;
   if (norm === "compact") return 244;
@@ -65,8 +116,12 @@ export function getRadarColumnWidthPx(density?: RadarDensity | null): number {
  * pane is open and only the focused project is shown) so branch names & previews breathe.
  */
 export function getRadarFocusedColumnWidthPx(
-  density?: RadarDensity | null
+  density?: RadarDensity | null,
+  customWidthPx?: number | null
 ): number {
+  if (typeof customWidthPx === "number" && Number.isFinite(customWidthPx)) {
+    return Math.min(580, clampRadarColumnWidthPx(customWidthPx) + 64);
+  }
   const norm = normalizeRadarDensity(density);
   if (norm === "comfortable") return 388;
   if (norm === "compact") return 320;

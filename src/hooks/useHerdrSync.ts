@@ -415,7 +415,44 @@ export function useHerdrSync() {
     };
 
     const onWindowBlur = () => markBg(true);
-    const onWindowFocus = () => markBg(false);
+    const onWindowFocus = () => {
+      markBg(false);
+      // Restore keyboard focus to the open right terminal pane when returning to the app via mouse click
+      requestAnimationFrame(() => {
+        if (!active) return;
+        const ui = useUiStore.getState();
+        if (!ui.terminalDrawerOpen || !ui.attachedAddress) return;
+        if (
+          ui.settingsOpen ||
+          ui.commandPaletteOpen ||
+          ui.quickFileOpen ||
+          ui.projectModalProject ||
+          ui.createWorktreeProjectId ||
+          ui.editWorktreeTarget ||
+          ui.launchTarget ||
+          ui.teardownTarget ||
+          ui.diffTarget ||
+          ui.markdownViewerTarget ||
+          ui.codeViewerTarget ||
+          ui.updateModalOpen ||
+          ui.contextMenu
+        ) {
+          return;
+        }
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (
+          activeEl &&
+          (activeEl.tagName === "INPUT" ||
+            activeEl.tagName === "SELECT" ||
+            activeEl.isContentEditable ||
+            (activeEl.tagName === "TEXTAREA" &&
+              !activeEl.classList.contains("xterm-helper-textarea")))
+        ) {
+          return;
+        }
+        ui.requestTerminalFocus();
+      });
+    };
     const onVisibilityChange = () => {
       if (document.hidden) markBg(true);
     };

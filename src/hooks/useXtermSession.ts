@@ -55,18 +55,46 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     const ta = document.createElement("textarea");
     ta.value = text;
+    ta.setAttribute("readonly", "");
     ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
     ta.style.opacity = "0";
     ta.style.pointerEvents = "none";
     document.body.appendChild(ta);
     ta.focus();
     ta.select();
+    ta.setSelectionRange(0, text.length);
     const ok = document.execCommand("copy");
     document.body.removeChild(ta);
     return ok;
   } catch {
     return false;
   }
+}
+
+function decodeOsc52Payload(payload: string): string {
+  const semi = payload.indexOf(";");
+  if (semi === -1) return "";
+  const b64 = payload.slice(semi + 1).trim();
+  if (!b64 || b64 === "?") return "";
+  try {
+    const bytes = decodeBase64ToBytes(b64);
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Detect whether a line buffer represents a genuine prompt submission rather than
+ * a bare Enter or single-key confirmation (`y`/`n`/`1`/`2`) on a Folder Trust prompt.
+ */
+function isRealPromptSubmission(buf: string): boolean {
+  const trimmed = buf.trim();
+  if (!trimmed) return false;
+  if (/^[yYnN123]$/.test(trimmed)) return false;
+  return true;
 }
 
 function isReservedGlobalShortcut(ev: KeyboardEvent): boolean {
@@ -281,21 +309,69 @@ export function useXtermSession(
       // Graceful fallback to canvas/DOM renderer
     }
 
-    const copyCurrentSelection = () => {
-      if (!term.hasSelection()) return false;
-      const text = term.getSelection();
+    // Track latest non-empty selection so Claude CLI redraws or right-click mouse tracking
+    // never wipe the dragged text before `contextmenu` fires.
+    let cachedSelection = "";
+    let cachedSelectionAt = 0;
+    let pendingRightClickCopy = "";
+    let lastOsc52Text = "";
+    let lastOsc52At = 0;
+    let typedLineBuf = "";
+    let typedLineAddr: string | null = null;
+
+    const rememberSelection = (raw: string) => {
+      if (raw && raw.length > 0) {
+        cachedSelection = raw;
+        cachedSelectionAt = Date.now();
+      }
+    };
+
+    const copyTextWithFeedback = (text: string) => {
       if (!text) return false;
       void copyTextToClipboard(text).then((ok) => {
         if (ok) {
+          cachedSelection = "";
           term.clearSelection();
-          showToast(`클립보드에 복사됨 (${text.length}자)`, "success", 1400);
+          showToast(`Copied to clipboard (${text.length} chars)`, "success", 1400);
         } else {
-          showToast("클립보드 복사에 실패했습니다.", "error", 2000);
+          showToast("Failed to copy to clipboard.", "error", 2000);
         }
         term.focus();
       });
       return true;
     };
+
+    const copyCurrentSelection = (fallbackText = "") => {
+      const liveText = term.hasSelection() ? term.getSelection() : "";
+      const domText = window.getSelection()?.toString() ?? "";
+      const recentCached =
+        cachedSelection && Date.now() - cachedSelectionAt <= 10_000
+          ? cachedSelection
+          : "";
+      const recentOsc52 =
+        lastOsc52Text && Date.now() - lastOsc52At <= 10_000 ? lastOsc52Text : "";
+      const text =
+        liveText || fallbackText || recentCached || domText || recentOsc52;
+      if (!text) return false;
+      return copyTextWithFeedback(text);
+    };
+
+    const selSub = term.onSelectionChange(() => {
+      if (term.hasSelection()) {
+        rememberSelection(term.getSelection());
+      }
+    });
+
+    // Support OSC 52 clipboard writes emitted by Claude CLI / TUI apps in mouse-tracking mode
+    const osc52Sub = term.parser.registerOscHandler(52, (data) => {
+      const decoded = decodeOsc52Payload(data);
+      if (decoded) {
+        lastOsc52Text = decoded;
+        lastOsc52At = Date.now();
+        void copyTextToClipboard(decoded);
+      }
+      return true;
+    });
 
     term.attachCustomKeyEventHandler((ev) => {
       if (isReservedGlobalShortcut(ev)) return false;
@@ -363,17 +439,82 @@ export function useXtermSession(
     };
     hostEl.addEventListener("paste", onPasteCapture, true);
 
-    const onContextMenu = (ev: MouseEvent) => {
-      ev.preventDefault();
-      if (term.hasSelection()) {
-        copyCurrentSelection();
+    // Protect dragged selection on right-click before xterm's mouse tracking / focus handlers run
+    const onMouseDownCapture = (ev: MouseEvent) => {
+      if (ev.button === 0) {
+        // Fresh left-click starts a new gesture: clear stale cached selection
+        cachedSelection = "";
+        cachedSelectionAt = 0;
+        pendingRightClickCopy = "";
+        return;
+      }
+      if (ev.button === 2) {
+        const live = term.hasSelection() ? term.getSelection() : "";
+        const dom = window.getSelection()?.toString() ?? "";
+        const recent =
+          cachedSelection && Date.now() - cachedSelectionAt <= 10_000
+            ? cachedSelection
+            : "";
+        const osc =
+          lastOsc52Text && Date.now() - lastOsc52At <= 10_000
+            ? lastOsc52Text
+            : "";
+        const candidate = live || recent || dom || osc;
+        if (candidate) {
+          pendingRightClickCopy = candidate;
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
       }
     };
-    hostEl.addEventListener("contextmenu", onContextMenu);
+    const onMouseUpCapture = (ev: MouseEvent) => {
+      if (ev.button === 0 && term.hasSelection()) {
+        rememberSelection(term.getSelection());
+      }
+    };
+    hostEl.addEventListener("mousedown", onMouseDownCapture, true);
+    hostEl.addEventListener("mouseup", onMouseUpCapture, true);
+
+    const onContextMenu = (ev: MouseEvent) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const pending = pendingRightClickCopy;
+      pendingRightClickCopy = "";
+      copyCurrentSelection(pending);
+    };
+    hostEl.addEventListener("contextmenu", onContextMenu, true);
 
     const dataSub = term.onData((data) => {
       if (activeChannelRef.current !== null) {
         void writeTerminalInput(activeChannelRef.current, data);
+      }
+      // Track genuine prompt submission (printable text + Enter) for Zen Dispatch guard
+      const addr = activeAddressRef.current;
+      if (!addr || !data) return;
+      if (typedLineAddr !== addr) {
+        typedLineAddr = addr;
+        typedLineBuf = "";
+      }
+      // Ignore ANSI escape sequences (arrows, mouse tracking reports, focus in/out)
+      if (data.startsWith("\x1b")) return;
+
+      for (let i = 0; i < data.length; i++) {
+        const ch = data[i];
+        const code = data.charCodeAt(i);
+        if (ch === "\r" || ch === "\n") {
+          if (isRealPromptSubmission(typedLineBuf)) {
+            useUiStore.getState().recordTerminalSubmit(addr);
+          }
+          typedLineBuf = "";
+        } else if (code === 0x7f || code === 0x08) {
+          typedLineBuf = typedLineBuf.slice(0, -1);
+        } else if (code === 0x03 || code === 0x15) {
+          typedLineBuf = "";
+        } else if (code >= 0x20) {
+          if (typedLineBuf.length < 256) {
+            typedLineBuf += ch;
+          }
+        }
       }
     });
 
@@ -414,9 +555,13 @@ export function useXtermSession(
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       hostEl.removeEventListener("paste", onPasteCapture, true);
-      hostEl.removeEventListener("contextmenu", onContextMenu);
+      hostEl.removeEventListener("mousedown", onMouseDownCapture, true);
+      hostEl.removeEventListener("mouseup", onMouseUpCapture, true);
+      hostEl.removeEventListener("contextmenu", onContextMenu, true);
       hostEl.removeEventListener("focusin", onFocusIn);
       hostEl.removeEventListener("focusout", onFocusOut);
+      selSub.dispose();
+      osc52Sub.dispose();
       dataSub.dispose();
       if (activeChannelRef.current !== null) {
         const ch = activeChannelRef.current;

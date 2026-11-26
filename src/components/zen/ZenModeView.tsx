@@ -56,6 +56,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const returnToZenInbox = useUiStore((s) => s.returnToZenInbox);
   const recordZenAcked = useUiStore((s) => s.recordZenAcked);
   const zenSkipNonce = useUiStore((s) => s.zenSkipNonce);
+  const zenPrevNonce = useUiStore((s) => s.zenPrevNonce);
   const zenApproveNonce = useUiStore((s) => s.zenApproveNonce);
   const dismissedStamps = useUiStore((s) => s.zenDismissedStamps);
   const dismissZenCardStamp = useUiStore((s) => s.dismissZenCardStamp);
@@ -104,6 +105,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
 
   const animatingRef = useRef(false);
   const prevSkipNonceRef = useRef(zenSkipNonce);
+  const prevPrevNonceRef = useRef(zenPrevNonce);
   const prevApproveNonceRef = useRef(zenApproveNonce);
   const lastAttachedKeyRef = useRef<string | null>(null);
   const lastLockedSessionRef = useRef<EnrichedSession | null>(null);
@@ -482,25 +484,6 @@ export const ZenModeView = React.memo(function ZenModeView() {
     triggerFloat,
   ]);
 
-  // React to global Ctrl+N (skip) & Ctrl+Enter (stamp approve/done) triggers in Inbox tab only
-  useEffect(() => {
-    if (zenSkipNonce !== prevSkipNonceRef.current) {
-      prevSkipNonceRef.current = zenSkipNonce;
-      if (!isDispatchTab) {
-        handleManualNext();
-      }
-    }
-  }, [zenSkipNonce, isDispatchTab, handleManualNext]);
-
-  useEffect(() => {
-    if (zenApproveNonce !== prevApproveNonceRef.current) {
-      prevApproveNonceRef.current = zenApproveNonce;
-      if (!isDispatchTab) {
-        handlePrimaryAction();
-      }
-    }
-  }, [zenApproveNonce, isDispatchTab, handlePrimaryAction]);
-
   const handlePeekRunning = useCallback(
     (session: EnrichedSession) => {
       setPeekingAddr(session.address);
@@ -513,6 +496,89 @@ export const ZenModeView = React.memo(function ZenModeView() {
     },
     [setSelectedCardKey, setSelectedAddress, setAttachedAddress, requestTerminalFocus]
   );
+
+  // Clear peek highlight when user closes the right terminal drawer
+  useEffect(() => {
+    if (!terminalDrawerOpen && !attachedAddress && peekingAddr !== null) {
+      setPeekingAddr(null);
+    }
+  }, [terminalDrawerOpen, attachedAddress, peekingAddr]);
+
+  // Cycle through Running sessions in "Time to chill" state via Ctrl+N / Ctrl+Arrow
+  const handleCycleRunningPeek = useCallback(
+    (delta: 1 | -1) => {
+      const running = byBucket.running;
+      if (running.length === 0) return;
+      const drawerOpen = terminalDrawerOpen || Boolean(attachedAddress);
+      const curIdx =
+        drawerOpen && peekingAddr
+          ? running.findIndex((s) => s.address === peekingAddr)
+          : -1;
+      const nextIdx =
+        curIdx === -1
+          ? delta > 0
+            ? 0
+            : running.length - 1
+          : (curIdx + delta + running.length) % running.length;
+      playZenLeverSfx(sfxEnabled);
+      handlePeekRunning(running[nextIdx]);
+    },
+    [
+      byBucket.running,
+      terminalDrawerOpen,
+      attachedAddress,
+      peekingAddr,
+      sfxEnabled,
+      handlePeekRunning,
+    ]
+  );
+
+  // React to global Ctrl+N (skip / chill running cycle), Ctrl+Arrow prev, & Ctrl+Enter triggers in Inbox tab
+  useEffect(() => {
+    if (zenSkipNonce !== prevSkipNonceRef.current) {
+      prevSkipNonceRef.current = zenSkipNonce;
+      if (!isDispatchTab) {
+        if (!activeCard && !exitingCard && byBucket.running.length > 0) {
+          handleCycleRunningPeek(1);
+        } else {
+          handleManualNext();
+        }
+      }
+    }
+  }, [
+    zenSkipNonce,
+    isDispatchTab,
+    activeCard,
+    exitingCard,
+    byBucket.running.length,
+    handleCycleRunningPeek,
+    handleManualNext,
+  ]);
+
+  useEffect(() => {
+    if (zenPrevNonce !== prevPrevNonceRef.current) {
+      prevPrevNonceRef.current = zenPrevNonce;
+      if (!isDispatchTab && !activeCard && !exitingCard && byBucket.running.length > 0) {
+        handleCycleRunningPeek(-1);
+      }
+    }
+  }, [
+    zenPrevNonce,
+    isDispatchTab,
+    activeCard,
+    exitingCard,
+    byBucket.running.length,
+    handleCycleRunningPeek,
+  ]);
+
+  useEffect(() => {
+    if (zenApproveNonce !== prevApproveNonceRef.current) {
+      prevApproveNonceRef.current = zenApproveNonce;
+      if (!isDispatchTab) {
+        handlePrimaryAction();
+      }
+    }
+  }, [zenApproveNonce, isDispatchTab, handlePrimaryAction]);
 
   const displayCard = exitingCard ?? activeCard;
   const displayKey = displayCard ? cardKeyForSession(displayCard) : null;
@@ -654,6 +720,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
           idleCount={byBucket.idle.length}
           clearedToday={clearedToday}
           celebrateNonce={celebrateNonce}
+          peekingAddress={terminalDrawerOpen || attachedAddress ? peekingAddr : null}
           projectSummaries={projectSummaries}
           onPeekSession={handlePeekRunning}
           onStartDispatch={(pid) => openZenDispatch(pid ?? null)}

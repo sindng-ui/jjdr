@@ -1,0 +1,18 @@
+# Test & Build Verification Results — 2026-11-27 (6-Item UX & Focus Polish + CI Fix)
+
+## 1. Vitest Unit Tests (`npm run test`)
+- Result: PASS — 19 test files passed, 76 / 76 tests passed (1.43s)
+- Key Verified Suites:
+  - `scripts/generate-release-notes.test.mjs` (4 tests): CI shebang SyntaxError fixed & passing.
+  - `src/utils/zenQueue.test.ts` (4 tests): Sticky Lock, skip rotation, All Clear, and `computeRunningProgressVisual` asymptotic growth & 4-stage color shift (`fresh`/`steady`/`deep`/`long` + explicit progress override).
+  - `src/utils/radarLayout.test.ts` (5 tests): `clampRadarColumnWidthPx` (`210px-560px`), `localStorage` width persistence, and overview/focus custom width mapping.
+
+## 2. TypeScript + Vite Production Build (`npm run build`)
+- Command: `tsc && vite build`
+- Result: PASS — 0 TypeScript errors, 1689 modules transformed, built in 3.73s.
+
+## 3. Performance & Quality Audits
+- Zero-Blur CSS Check: 0 matches across `src/`.
+- File Line-Count Limit (<900 lines): PASS — largest files `RadarBoardView.tsx` (820 lines), `SettingsModal.tsx` (805 lines), `ZenModeView.tsx` (803 lines).
+- Timer Overhead Audit: `ZenEmptyBriefing` uses a single lightweight 15-second `setInterval` active ONLY when `runningCards.length > 0`.
+- Right-Click Copy Audit: `mousedown(button === 2)` capture guard + `onSelectionChange` cache + `OSC 52` clipboard handler + `contextmenu` capture copy prevents Claude CLI mouse-tracking / redraw selection wipes.

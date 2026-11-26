@@ -53,6 +53,7 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
   const step = useUiStore((s) => s.zenDispatchStep);
   const projectId = useUiStore((s) => s.zenDispatchProjectId);
   const attachedAddress = useUiStore((s) => s.attachedAddress);
+  const lastTerminalSubmit = useUiStore((s) => s.lastTerminalSubmit);
   const zenSkipNonce = useUiStore((s) => s.zenSkipNonce);
   const zenPrevNonce = useUiStore((s) => s.zenPrevNonce);
   const zenApproveNonce = useUiStore((s) => s.zenApproveNonce);
@@ -205,6 +206,7 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
       effectiveWorker,
       hiredSolo,
       attachedAddress,
+      lastTerminalSubmit,
       terminals,
       previews,
     });

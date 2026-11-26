@@ -5,6 +5,7 @@ import type { ZenDispatchProjectSummary } from "../../utils/zenDispatch";
 import { getWorkerPersona } from "../../utils/workerPersona";
 import { WorkerMonsterAvatar } from "./WorkerMonsterAvatar";
 import { formatElapsed } from "../../utils/format";
+import { computeRunningProgressVisual } from "../../utils/zenQueue";
 import { useAppStore } from "../../store/useAppStore";
 import { normalizePath } from "../../workers/dashboardLogic";
 
@@ -29,6 +30,7 @@ interface ZenEmptyBriefingProps {
   idleCount: number;
   clearedToday: number;
   celebrateNonce: number;
+  peekingAddress?: string | null;
   projectSummaries: ZenDispatchProjectSummary[];
   onPeekSession: (session: EnrichedSession) => void;
   onStartDispatch: (projectId?: string | null) => void;
@@ -45,6 +47,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   idleCount,
   clearedToday,
   celebrateNonce,
+  peekingAddress = null,
   projectSummaries,
   onPeekSession,
   onStartDispatch,
@@ -55,6 +58,15 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   const runningCount = runningCards.length;
   const hasRunning = runningCount > 0;
   const [celebrating, setCelebrating] = useState(false);
+  // Lightweight 15s tick only while workers are actively running so progress bars & color stages advance cleanly
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!hasRunning) return;
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, [hasRunning]);
 
   useEffect(() => {
     if (celebrateNonce <= 0) return;
@@ -264,21 +276,38 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
           </button>
         </div>
 
-        {/* Live Running Mini Briefing Cards (click to peek right terminal) */}
+        {/* Live Running Mini Briefing Cards (click or Ctrl+N to peek right terminal) */}
         {hasRunning && (
           <div className="space-y-2 text-left">
-            <div
-              className="text-[11px] font-semibold px-1"
-              style={{ color: "var(--text-faint)" }}
-            >
-              Active Missions (Click to peek terminal)
+            <div className="flex items-center justify-between gap-2 px-1">
+              <span
+                className="text-[11px] font-semibold"
+                style={{ color: "var(--text-faint)" }}
+              >
+                Active Missions (Click or Ctrl+N to peek terminal)
+              </span>
+              <span
+                className="text-[10px] font-mono-code"
+                style={{ color: "var(--text-faint)" }}
+              >
+                Ctrl+N · Cycle
+              </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {runningCards.slice(0, 6).map((s) => {
-                const progress =
+                const explicitProgress =
                   typeof s.terminal.status?.progress === "number"
-                    ? Math.max(4, Math.min(100, s.terminal.status.progress))
+                    ? s.terminal.status.progress
                     : null;
+                const statusBaseMs = s.terminal.status_ms || s.terminal.created_ms;
+                const liveElapsedMs = statusBaseMs
+                  ? Math.max(s.elapsedMs, Math.max(0, nowMs - statusBaseMs))
+                  : s.elapsedMs;
+                const progressVis = computeRunningProgressVisual(
+                  liveElapsedMs,
+                  explicitProgress
+                );
+                const isPeeking = peekingAddress === s.address;
                 const normPath = normalizePath(s.worktreePath);
                 const cardMeta = worktreeMeta[normPath];
                 const persona = getWorkerPersona(normPath);
@@ -297,7 +326,12 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                     className="jjdr-card-lift text-left rounded-2xl p-3 space-y-1.5 cursor-pointer"
                     style={{
                       background: "var(--run-bg)",
-                      border: "1px solid var(--run-border)",
+                      border: `1px solid ${
+                        isPeeking ? "var(--accent-border)" : "var(--run-border)"
+                      }`,
+                      boxShadow: isPeeking
+                        ? "var(--card-selected-shadow)"
+                        : undefined,
                     }}
                   >
                     <div className="flex items-center justify-between gap-2 text-xs">
@@ -335,22 +369,39 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                           </div>
                         </div>
                       </div>
-                      <span
-                        className="font-mono-code text-[11px] shrink-0"
-                        style={{ color: "var(--run-fg)" }}
-                      >
-                        {progress !== null ? `${progress}%` : formatElapsed(s.elapsedMs)}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isPeeking && (
+                          <span
+                            className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono-code uppercase"
+                            style={{
+                              background: "var(--accent-soft)",
+                              color: "var(--accent)",
+                            }}
+                          >
+                            Viewing
+                          </span>
+                        )}
+                        <span
+                          className="font-mono-code text-[11px] font-semibold tabular-nums"
+                          style={{ color: progressVis.color }}
+                        >
+                          {explicitProgress !== null
+                            ? `${progressVis.percent}%`
+                            : formatElapsed(liveElapsedMs)}
+                        </span>
+                      </div>
                     </div>
                     <div
                       className="h-1.5 rounded-full overflow-hidden"
-                      style={{ background: "var(--run-soft)" }}
+                      style={{ background: "var(--input-bg)" }}
                     >
                       <div
-                        className="h-full rounded-full transition-all"
+                        className="h-full rounded-full"
                         style={{
-                          width: `${progress ?? 38}%`,
-                          background: "var(--run-fg)",
+                          width: `${progressVis.percent}%`,
+                          backgroundColor: progressVis.color,
+                          transition:
+                            "width 600ms ease, background-color 600ms ease",
                         }}
                       />
                     </div>
@@ -361,7 +412,13 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
                       <span className="truncate">
                         {s.agentLabel} · {s.terminal.status?.msg || "Working..."}
                       </span>
-                      <Terminal className="w-3 h-3 shrink-0 ml-1 opacity-75" />
+                      <Terminal
+                        className="w-3 h-3 shrink-0 ml-1"
+                        style={{
+                          color: isPeeking ? "var(--accent)" : undefined,
+                          opacity: isPeeking ? 1 : 0.75,
+                        }}
+                      />
                     </div>
                   </button>
                 );

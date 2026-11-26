@@ -19,6 +19,12 @@ import {
 } from "../../services/tauriBridge";
 import { RADAR_DENSITY_PRESETS, THEME_PRESETS } from "../../utils/themes";
 import {
+  getRadarColumnWidthPx,
+  MAX_RADAR_COLUMN_WIDTH_PX,
+  MIN_RADAR_COLUMN_WIDTH_PX,
+  RADAR_COLUMN_WIDTH_STEP_PX,
+} from "../../utils/radarLayout";
+import {
   BG_OVERLAY_POSITION_PRESETS,
   buildPreviewBgOverlayPayload,
   normalizeBgOverlayPosition,
@@ -36,6 +42,8 @@ import type {
 export const SettingsModal = React.memo(function SettingsModal() {
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
+  const radarColumnWidthPx = useUiStore((s) => s.radarColumnWidthPx);
+  const setRadarColumnWidthPx = useUiStore((s) => s.setRadarColumnWidthPx);
   const showToast = useUiStore((s) => s.showToast);
   const current = useAppStore((s) => s.settings);
 
@@ -370,6 +378,80 @@ export const SettingsModal = React.memo(function SettingsModal() {
                   </button>
                 );
               })}
+            </div>
+
+            {/* Radar Columns Mode Custom Width Slider (210px - 560px) */}
+            <div
+              className="rounded-2xl p-3 space-y-2"
+              style={{
+                background: "var(--input-bg)",
+                border: "1px solid var(--input-border)",
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div
+                    className="text-xs font-bold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Columns Mode Column Width
+                  </div>
+                  <div
+                    className="text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Wide range ({MIN_RADAR_COLUMN_WIDTH_PX}px –{" "}
+                    {MAX_RADAR_COLUMN_WIDTH_PX}px) for any monitor resolution
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className="text-xs font-mono-code font-bold tabular-nums px-2 py-0.5 rounded-full"
+                    style={{
+                      background: "var(--pill-bg)",
+                      color: "var(--accent)",
+                    }}
+                  >
+                    {getRadarColumnWidthPx(
+                      draft.radar_density,
+                      radarColumnWidthPx
+                    )}
+                    px
+                  </span>
+                  {radarColumnWidthPx !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setRadarColumnWidthPx(null)}
+                      className="text-[11px] font-semibold hover:underline cursor-pointer"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      Auto
+                    </button>
+                  )}
+                </div>
+              </div>
+              <input
+                type="range"
+                min={MIN_RADAR_COLUMN_WIDTH_PX}
+                max={MAX_RADAR_COLUMN_WIDTH_PX}
+                step={RADAR_COLUMN_WIDTH_STEP_PX}
+                value={getRadarColumnWidthPx(
+                  draft.radar_density,
+                  radarColumnWidthPx
+                )}
+                onChange={(e) => setRadarColumnWidthPx(Number(e.target.value))}
+                aria-label="Radar columns width"
+                className="w-full h-1.5 cursor-pointer accent-[var(--accent)]"
+              />
+              <div
+                className="flex items-center justify-between text-[10px] font-mono-code tabular-nums"
+                style={{ color: "var(--text-faint)" }}
+              >
+                <span>{MIN_RADAR_COLUMN_WIDTH_PX}px</span>
+                <span>340px</span>
+                <span>450px</span>
+                <span>{MAX_RADAR_COLUMN_WIDTH_PX}px</span>
+              </div>
             </div>
           </div>
 

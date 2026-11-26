@@ -21,6 +21,7 @@ interface UseZenDispatchMonitorParams {
   effectiveWorker: ZenDispatchWorker | null;
   hiredSolo: ZenHiredSoloState | null;
   attachedAddress: string | null;
+  lastTerminalSubmit: { address: string; atMs: number } | null;
   terminals: Record<string, TerminalInfo>;
   previews: Record<string, TerminalPreview>;
 }
@@ -46,10 +47,13 @@ export function useZenDispatchMonitor({
   effectiveWorker,
   hiredSolo,
   attachedAddress,
+  lastTerminalSubmit,
   terminals,
   previews,
 }: UseZenDispatchMonitorParams): ZenDispatchMonitorResult {
   const lastViewedWorkerRef = useRef<ZenDispatchWorker | null>(null);
+  const workerReadyAtRef = useRef<number>(Date.now());
+  const trackedCardKeyRef = useRef<string | null>(null);
   const initialTurnsRef = useRef<{
     cardKey: string;
     turns: Record<string, number>;
@@ -68,15 +72,35 @@ export function useZenDispatchMonitor({
   useEffect(() => {
     const confirmed = Boolean(hiredSolo?.confirmed);
     if (confirmed && !prevSoloConfirmedRef.current) {
+      const now = Date.now();
+      workerReadyAtRef.current = now;
       trustCooldownUntilRef.current = Math.max(
         trustCooldownUntilRef.current,
-        Date.now() + 1200
+        now + 1200
       );
       initialTurnsRef.current = null;
       setWorkingConfirmedKey(null);
     }
     prevSoloConfirmedRef.current = confirmed;
   }, [hiredSolo?.confirmed]);
+
+  // Reset the prompt-submission baseline whenever the user switches to a different worker in Dispatch
+  const activeWorkerKey = effectiveWorker?.cardKey ?? null;
+  useEffect(() => {
+    if (
+      step !== "browse_worker" ||
+      hasHiringState ||
+      isAwaitingHireConfirm ||
+      !activeWorkerKey
+    ) {
+      trackedCardKeyRef.current = null;
+      return;
+    }
+    if (trackedCardKeyRef.current !== activeWorkerKey) {
+      trackedCardKeyRef.current = activeWorkerKey;
+      workerReadyAtRef.current = Date.now();
+    }
+  }, [step, hasHiringState, isAwaitingHireConfirm, activeWorkerKey]);
 
   // Detect folder-trust / permission setup prompts on any live session of this worktree
   const isAwaitingTrustSetup = useMemo(() => {
@@ -127,11 +151,52 @@ export function useZenDispatchMonitor({
 
     if (seenTrustPromptRef.current) {
       seenTrustPromptRef.current = false;
-      trustCooldownUntilRef.current = Date.now() + 3000;
+      const now = Date.now();
+      workerReadyAtRef.current = now;
+      trustCooldownUntilRef.current = now + 3000;
       initialTurnsRef.current = null;
       setWorkingConfirmedKey(null);
     }
   }, [step, hasHiringState, isAwaitingHireConfirm, isAwaitingTrustSetup]);
+
+  // Require an actual prompt submission from the user in the attached terminal before
+  // allowing DISPATCHED! to fire and return to Inbox (prevents startup/boot noise from
+  // pulling up another worker's approval card while the user is still composing a task).
+  const hasUserSubmittedPrompt = useMemo(() => {
+    if (
+      step !== "browse_worker" ||
+      hasHiringState ||
+      isAwaitingHireConfirm ||
+      isAwaitingTrustSetup ||
+      !lastTerminalSubmit
+    ) {
+      return false;
+    }
+    if (lastTerminalSubmit.atMs < workerReadyAtRef.current) {
+      return false;
+    }
+    const cur = lastViewedWorkerRef.current ?? effectiveWorker;
+    if (!cur) return false;
+    const addrs = new Set<string>(cur.sessions.map((s) => s.address));
+    if (hiredSolo?.address) addrs.add(hiredSolo.address);
+    if (attachedAddress) {
+      const att = terminals[attachedAddress];
+      if (att && normalizePath(att.cwd || "").startsWith(cur.normWtPath)) {
+        addrs.add(attachedAddress);
+      }
+    }
+    return addrs.has(lastTerminalSubmit.address);
+  }, [
+    step,
+    hasHiringState,
+    isAwaitingHireConfirm,
+    isAwaitingTrustSetup,
+    lastTerminalSubmit,
+    effectiveWorker,
+    hiredSolo,
+    attachedAddress,
+    terminals,
+  ]);
 
   // Check whether any live AI session in the active worktree is currently `working`
   const isCurrentlyWorkingRaw = useMemo(() => {
@@ -140,7 +205,8 @@ export function useZenDispatchMonitor({
       hasHiringState ||
       isAwaitingHireConfirm ||
       isAwaitingTrustSetup ||
-      isAnimatingOrLaunching
+      isAnimatingOrLaunching ||
+      !hasUserSubmittedPrompt
     ) {
       return null;
     }
@@ -172,6 +238,7 @@ export function useZenDispatchMonitor({
     isAwaitingHireConfirm,
     isAwaitingTrustSetup,
     isAnimatingOrLaunching,
+    hasUserSubmittedPrompt,
     effectiveWorker,
     hiredSolo,
     attachedAddress,
@@ -212,7 +279,8 @@ export function useZenDispatchMonitor({
       hasHiringState ||
       isAwaitingHireConfirm ||
       isAwaitingTrustSetup ||
-      isAnimatingOrLaunching
+      isAnimatingOrLaunching ||
+      !hasUserSubmittedPrompt
     ) {
       return null;
     }
@@ -272,6 +340,7 @@ export function useZenDispatchMonitor({
     isAwaitingHireConfirm,
     isAwaitingTrustSetup,
     isAnimatingOrLaunching,
+    hasUserSubmittedPrompt,
     selectedLane,
     workingConfirmedKey,
     hiredSolo,
@@ -342,6 +411,8 @@ export function useZenDispatchMonitor({
 
   const resetTracking = (nextWorker: ZenDispatchWorker | null = null) => {
     lastViewedWorkerRef.current = nextWorker;
+    trackedCardKeyRef.current = nextWorker?.cardKey ?? null;
+    workerReadyAtRef.current = Date.now();
     initialTurnsRef.current = null;
     seenTrustPromptRef.current = false;
     setWorkingConfirmedKey(null);

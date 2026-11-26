@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeNextSkippedOrder, selectZenTopCard } from "./zenQueue";
+import {
+  computeNextSkippedOrder,
+  computeRunningProgressVisual,
+  selectZenTopCard,
+} from "./zenQueue";
 import type { EnrichedSession, TerminalInfo } from "../types/domain";
 
 function mkSession(
@@ -90,5 +94,30 @@ describe("zenQueue", () => {
     expect(res.activeCard).toBeNull();
     expect(res.remainingCount).toBe(0);
     expect(res.lockedCardResolved).toBe(true);
+  });
+
+  it("grows running progress bar smoothly and shifts color stages by elapsed duration", () => {
+    const fresh = computeRunningProgressVisual(30_000, null);
+    const steady = computeRunningProgressVisual(3 * 60_000, null);
+    const deep = computeRunningProgressVisual(7 * 60_000, null);
+    const long = computeRunningProgressVisual(15 * 60_000, null);
+
+    expect(fresh.stage).toBe("fresh");
+    expect(steady.stage).toBe("steady");
+    expect(deep.stage).toBe("deep");
+    expect(long.stage).toBe("long");
+
+    expect(fresh.color).not.toBe(steady.color);
+    expect(steady.color).not.toBe(deep.color);
+    expect(deep.color).not.toBe(long.color);
+
+    expect(fresh.percent).toBeLessThan(steady.percent);
+    expect(steady.percent).toBeLessThan(deep.percent);
+    expect(deep.percent).toBeLessThan(long.percent);
+    expect(long.percent).toBeLessThanOrEqual(92);
+
+    // Explicit progress takes priority over asymptotic estimate
+    const explicit = computeRunningProgressVisual(30_000, 77);
+    expect(explicit.percent).toBe(77);
   });
 });
