@@ -1,7 +1,7 @@
 {
   "name": "jjdr",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.4.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:update-mock": "node scripts/mock-update-server.mjs",
+    "release:notes": "node scripts/generate-release-notes.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

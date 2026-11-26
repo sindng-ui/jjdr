@@ -5,8 +5,8 @@
 ---
 
 ## 1. 아키텍처 핵심 원칙 & 스크립트
-- **실행/빌드 스크립트 (`package.json`)**: `npm run tauri:dev` (개발 실행), `npm run tauri:build` (프로덕션 릴리스 + MSI/NSIS 인스톨러 번들 빌드), `npm run test` (Vitest), `npm run test:update-mock` (로컬 E2E 업데이트 Mock 서버), `npm run build` (TypeScript + Vite 빌드).
-- **자동 릴리즈 CI/CD (`.github/workflows/release.yml`)**: `master`/`main` 푸시 시 `package.json` 버전 변경을 감지(또는 수동 `workflow_dispatch`)해 `tauri.conf.json` 버전 동기화 → 테스트/빌드 → Windows 인스톨러(`.exe`/`.msi`)를 GitHub Release(`v<version>`)로 자동 배포.
+- **실행/빌드 스크립트 (`package.json`)**: `npm run tauri:dev` (개발 실행), `npm run tauri:build` (프로덕션 릴리스 + MSI/NSIS 인스톨러 번들 빌드), `npm run test` (Vitest), `npm run test:update-mock` (로컬 E2E 업데이트 Mock 서버), `npm run release:notes` (Git 기반 What's New 릴리즈 노트 생성), `npm run build` (TypeScript + Vite 빌드).
+- **자동 릴리즈 CI/CD (`.github/workflows/release.yml`)**: `master`/`main` 푸시 시 `package.json` 버전 변경을 감지(또는 수동 `workflow_dispatch`)해 `tauri.conf.json` 버전 동기화 → 테스트/빌드 → `scripts/generate-release-notes.mjs`로 직전 태그 이후 실제 커밋·`CHANGELOG.md` 기반 What's New 릴리즈 노트 자동 생성 → Windows 인스톨러(`.exe`/`.msi`)를 GitHub Release(`v<version>`)로 자동 배포.
 - **외부 `herdr-core` / `hc` 연동**: `hc connect` 프로세스의 `stdin/stdout` 위에서 공식 바이너리 Framed 프로토콜(`[channel u32 LE][kind u8][len u32 LE][payload]`)로 통신.
 - **세션 영속성**: 모든 AI CLI는 `outlive_parent: true`, `no_parent: true`, `keep: true`로 기동하며, 앱 종료 시 `hc connect`만 Detach하여 백그라운드 세션을 유지. 재실행 시 `events.subscribe` 스냅샷 + `labels` + `cwd` 경로 매칭 + `doc.get("jjdr.*")`로 자동 복원.
 - **방식 C+ (재사용 하이브리드 터미널)**: 평소 관제는 DOM에 `xterm.js` 0개 + 경량 상태 카드/프리뷰로 유지하고, 드로어가 열리면 `React.lazy` 단일 `xterm.js` + WebGL 인스턴스를 유지하며 세션 전환 시 `term.reset()` + 110ms 디바운스 + 세대 토큰으로 GPU 재생성 지연(0ms 전환)과 Gemini CLI 고속 출력 프리징을 원천 차단.
@@ -129,3 +129,4 @@
 | `src/components/modals/UpdateModal.tsx` | `React.lazy` 업데이트 팝업: 버전 비교 배지, What's New GFM 마크다운 렌더링, 실시간 다운로드 진행률 바, 업데이트/Skip/나중에 버튼 및 GitHub 웹페이지 폴백 | `UpdateModal` |
 | `src/App.tsx` | 외곽 쉘(`h-full overflow-hidden`) + 22px 플로팅 라운드 캔버스 레이아웃, `useUpdateChecker`, `Suspense` 지연 로드 터미널 드로어·MD 뷰어·코드 뷰어·`UpdateModal` 및 전체 모달 & 토스트 | `App` |
 | `scripts/mock-update-server.mjs` | 로컬 E2E 업데이트 테스트용 Mock GitHub Releases API + 청크 스트리밍 인스톨러 서버 (`npm run test:update-mock`) | CLI (`--port`, `--version`, `--size-mb`, `--fail-download`, `--status`) |
+| `scripts/generate-release-notes.mjs` | 직전 `v*` 태그~`HEAD` 커밋 자동 분류(`feat`/`fix`/`perf`/일반) + 커밋 본문 불릿 + `CHANGELOG.md` 우선 반영 + `GITHUB_OUTPUT` 멀티라인 안전 기록 릴리즈 노트 생성기 (`npm run release:notes`) | `extractChangelogSection`, `parseGitLogOutput`, `classifyCommit`, `buildReleaseNotesMarkdown`, `findPreviousReleaseTag`, `collectCommitsSinceTag` |

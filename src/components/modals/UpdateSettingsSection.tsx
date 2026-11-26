@@ -14,7 +14,7 @@ export const UpdateSettingsSection = React.memo(function UpdateSettingsSection()
   const openUpdateModal = useUiStore((s) => s.openUpdateModal);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
 
-  const [appVersion, setAppVersion] = useState<string>("0.4.3");
+  const [appVersion, setAppVersion] = useState<string>("0.4.4");
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {

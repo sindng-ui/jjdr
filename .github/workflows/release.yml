@@ -6,6 +6,11 @@ on:
       - master
       - main
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Optional highlight notes to prepend to What's New"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -65,6 +70,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -104,6 +111,17 @@ jobs:
       - name: Build Frontend
         run: npm run build
 
+      - name: Generate Release Notes (What's New)
+        id: release_notes
+        shell: bash
+        env:
+          CUSTOM_NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          node scripts/generate-release-notes.mjs \
+            --version="${{ needs.check-version.outputs.version }}" \
+            --repo="${{ github.repository }}" \
+            --github-output="body"
+
       - name: Build Tauri Desktop (.exe / .msi)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -111,10 +129,6 @@ jobs:
         with:
           tagName: v${{ needs.check-version.outputs.version }}
           releaseName: 'jjdr v${{ needs.check-version.outputs.version }}'
-          releaseBody: |
-            ## jjdr — Mission Control v${{ needs.check-version.outputs.version }}
-            - Automated Build by GitHub Actions
-            - Low-cognitive-load AI worktree mission control on `herdr-core` (Tauri 2.0)
-            - Release Assets below include the Windows Standalone Installer (`.msi` / `.exe`).
+          releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: false
           prerelease: false
