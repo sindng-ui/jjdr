@@ -113,9 +113,14 @@ describe("teamReviews utilities (Phase 4)", () => {
     ]);
     expect(sorted[0].hasRepo).toBe(true);
     expect(sorted[0].isOnline).toBe(true);
+    expect(sorted[0].selectable).toBe(true);
     expect(sorted[1].alreadyRequested).toBe(true);
     expect(sorted[1].isPaused).toBe(true);
+    expect(sorted[1].selectable).toBe(false);
+    expect(sorted[2].isOffline).toBe(true);
+    expect(sorted[2].selectable).toBe(false);
     expect(sorted[3].hasRepo).toBe(false);
+    expect(sorted[3].selectable).toBe(true);
   });
 
   it("matches latest authored review request for card and patches WS status immutably", () => {

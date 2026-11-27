@@ -24,6 +24,12 @@
 - **도장 쾅 결재 & 물리 컨트롤**: `Ctrl+Enter` 버튼이나 우측 아케이드 볼 레버 / 가챠 다이얼로 카드를 시원하게 결재하고 다음 카드로 전환 *(보류 순환은 `Ctrl+N`)*
 - **All Clear 브리핑**: 쌓인 확인 요청이 0건이 되면 우측 터미널을 자동으로 접고, 현재 진행 중인 작업(카드명 · 프로젝트 · 브랜치)과 오늘 클리어 현황을 한눈에 표시
 
+## 팀 자동 PR 리뷰 (`Team Orchestration`)
+
+![jjdr 팀 자동 PR 리뷰 전체 흐름](docs/assets/team_auto_review_flow.svg)
+
+👉 **[3분 세팅 & 사용 가이드](./docs/team_auto_review_guide_2026-11-27.md)** · **[공용 PC Relay 서버 가이드](./relay/README.md)**
+
 ## 설치 및 실행 방법
 
 ### 1. `herdr` 설치 (필수)

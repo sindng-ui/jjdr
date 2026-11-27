@@ -130,7 +130,7 @@ async fn tc02_happy_path_two_reviewers_realtime_status_flow() {
 }
 
 #[tokio::test]
-async fn tc03_offline_store_and_forward_survives_server_restart() {
+async fn tc03_offline_reviewer_is_rejected_and_never_delivered_on_later_reconnect() {
     let srv = TestServer::start().await;
     let repo = "https://github.corp.company.com/team/jjdr.git";
 
@@ -151,7 +151,11 @@ async fn tc03_offline_store_and_forward_survives_server_restart() {
         let created: CreateReviewRequestResponse = resp.json().await.unwrap();
         assert_eq!(
             created.assignments[0].status,
-            ReviewAssignmentStatus::PendingOffline
+            ReviewAssignmentStatus::Rejected
+        );
+        assert_eq!(
+            created.assignments[0].reject_reason,
+            Some(RejectReason::ReviewerOffline)
         );
     }
 
@@ -160,7 +164,7 @@ async fn tc03_offline_store_and_forward_survives_server_restart() {
         bind_addr: "127.0.0.1:0".to_string(),
         db_path,
         team_key: "test-secret-key".to_string(),
-        ttl_hours: 48,
+        ttl_hours: 2,
         ttl_sweep_interval_secs: 3600,
         rate_limit_per_min: 100,
         max_reviewers_per_request: 5,
@@ -169,54 +173,12 @@ async fn tc03_offline_store_and_forward_survives_server_restart() {
     };
     let srv2 = TestServer::start_with_config(cfg, temp_dir).await;
 
-    let mut ws_author = hello_peer(&srv2, "author", PresenceStatus::Online, &[repo]).await;
     let mut ws_rev2 = hello_peer(&srv2, "offline_dev", PresenceStatus::Online, &[repo]).await;
-
-    let first = recv_until(&mut ws_rev2, 2000, |m| {
-        matches!(m, ServerMessage::ReviewAssigned { .. })
-    })
-    .await;
-    let second = recv_until(&mut ws_rev2, 2000, |m| {
-        matches!(m, ServerMessage::ReviewAssigned { .. })
-    })
-    .await;
-
-    let req1_id = match (first, second) {
-        (
-            ServerMessage::ReviewAssigned { request: r1, .. },
-            ServerMessage::ReviewAssigned { request: r2, .. },
-        ) => {
-            assert_eq!(r1.pr_number, 101);
-            assert_eq!(r2.pr_number, 102);
-            r1.request_id
-        }
-        _ => panic!("expected two ReviewAssigned messages"),
-    };
-
-    // Reviewer ACKs delivery -> Author gets live Delivered notification
-    send_ws(
-        &mut ws_rev2,
-        &ClientMessage::AckDelivery {
-            request_id: req1_id,
-        },
-    )
-    .await;
-
-    let delivered_evt = recv_until(&mut ws_author, 2000, |m| {
-        matches!(
-            m,
-            ServerMessage::AssignmentStatusChanged {
-                pr_number: 101,
-                status: ReviewAssignmentStatus::Delivered,
-                ..
-            }
-        )
-    })
-    .await;
-    assert!(matches!(
-        delivered_evt,
-        ServerMessage::AssignmentStatusChanged { .. }
-    ));
+    let maybe_stale = common::recv_ws_timeout(&mut ws_rev2, 250).await;
+    assert!(
+        !matches!(maybe_stale, Some(ServerMessage::ReviewAssigned { .. })),
+        "offline-rejected requests must never be pushed when reviewer comes back online later"
+    );
 }
 
 #[tokio::test]
@@ -261,7 +223,7 @@ async fn tc11_dual_socket_reconnect_overlap_never_drops_presence() {
 }
 
 #[tokio::test]
-async fn tc14_unknown_peer_offline_mailbox_and_first_join_delivery() {
+async fn tc14_unknown_offline_peer_is_rejected_and_never_queued() {
     let srv = TestServer::start().await;
     let repo = "https://github.corp.company.com/team/jjdr.git";
     let client = reqwest::Client::new();
@@ -278,7 +240,11 @@ async fn tc14_unknown_peer_offline_mailbox_and_first_join_delivery() {
         .unwrap();
     assert_eq!(
         created.assignments[0].status,
-        ReviewAssignmentStatus::PendingOffline
+        ReviewAssignmentStatus::Rejected
+    );
+    assert_eq!(
+        created.assignments[0].reject_reason,
+        Some(RejectReason::ReviewerOffline)
     );
     assert!(!created.assignments[0].known_peer);
 
@@ -291,17 +257,14 @@ async fn tc14_unknown_peer_offline_mailbox_and_first_join_delivery() {
         .json()
         .await
         .unwrap();
-    assert_eq!(inbox.len(), 1);
+    assert!(inbox.is_empty());
 
     let mut ws_newbie = hello_peer(&srv, "brand_new_dev", PresenceStatus::Online, &[repo]).await;
-    let msg = recv_until(&mut ws_newbie, 2000, |m| {
-        matches!(m, ServerMessage::ReviewAssigned { .. })
-    })
-    .await;
-    assert!(matches!(
-        msg,
-        ServerMessage::ReviewAssigned { request, .. } if request.pr_number == 444
-    ));
+    let maybe_stale = common::recv_ws_timeout(&mut ws_newbie, 250).await;
+    assert!(
+        !matches!(maybe_stale, Some(ServerMessage::ReviewAssigned { .. })),
+        "offline-rejected request must not be delivered when unknown peer joins later"
+    );
 }
 
 #[tokio::test]

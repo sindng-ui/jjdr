@@ -132,6 +132,7 @@ impl ReviewAssignmentStatus {
 pub enum RejectReason {
     // Layer-1 (Relay)
     DuplicateSha,
+    ReviewerOffline,
     ReviewerPaused,
     RepoNotRegistered,
     ExpiredTtl,
@@ -154,6 +155,7 @@ impl RejectReason {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::DuplicateSha => "duplicate_sha",
+            Self::ReviewerOffline => "reviewer_offline",
             Self::ReviewerPaused => "reviewer_paused",
             Self::RepoNotRegistered => "repo_not_registered",
             Self::ExpiredTtl => "expired_ttl",
@@ -175,6 +177,7 @@ impl RejectReason {
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "duplicate_sha" => Some(Self::DuplicateSha),
+            "reviewer_offline" => Some(Self::ReviewerOffline),
             "reviewer_paused" => Some(Self::ReviewerPaused),
             "repo_not_registered" => Some(Self::RepoNotRegistered),
             "expired_ttl" => Some(Self::ExpiredTtl),

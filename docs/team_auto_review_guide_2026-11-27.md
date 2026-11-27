@@ -66,5 +66,5 @@ $env:JJDR_RELAY_TEAM_KEY = "우리팀-비밀키"
 ## 4. 장애·예외 대응 요약
 - **리뷰 중 PC 재부팅**: 재실행 8초 후 `auto_review_jobs.json` + Relay `sync-active` + `herdr-core` 3자 대조로 자동 복구 (`claude`/`agy`는 `--continue`, `gemini`/`codex`는 Fresh 재시작).
 - **1순위 AI 한도 초과(429)**: 자동 감지 후 2순위 Fallback AI로 1회 자동 전환.
-- **Relay 일시 다운**: 로컬 `relay_outbox.json`에 보관했다가 재연결 즉시 자동 전송 (`jjdr` 기존 기능은 100% 정상 동작).
-- **오프라인 리뷰어**: Relay가 48시간 보관 후 재접속 시 자동 배달(At-Least-Once + `device_id` 다중 기기 중복 차단).
+- **오프라인 리뷰어 차단**: 오프라인이거나 일시정지(Paused)된 팀원은 리뷰어 선택 목록에서 비활성화되며, Relay 서버에서도 즉시 거절(`reviewer_offline`)되어 뒤늦게 켰을 때 옛날 PR이 쏟아지는 일을 방지합니다.
+- **Relay 일시 다운**: 오프라인 상태에서는 신규 리뷰 요청을 차단해 헛발송을 막으며, 이미 진행 중이던 리뷰의 완료 보고는 로컬 `relay_outbox.json`에서 재연결 시 안전하게 전송됩니다. (`jjdr` 기존 기능은 100% 정상 동작)

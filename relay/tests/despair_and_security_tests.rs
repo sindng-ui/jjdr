@@ -244,6 +244,7 @@ async fn tc07_layer1_expired_ttl_sweeps_and_never_delivers_on_late_reconnect() {
     let repo = "https://github.corp.company.com/team/jjdr.git";
 
     let mut ws_author = hello_peer(&srv, "author", PresenceStatus::Online, &[repo]).await;
+    let ws_ghost_initial = hello_peer(&srv, "ghost_rev", PresenceStatus::Online, &[repo]).await;
     let client = reqwest::Client::new();
 
     let created: CreateReviewRequestResponse = client
@@ -258,8 +259,12 @@ async fn tc07_layer1_expired_ttl_sweeps_and_never_delivers_on_late_reconnect() {
         .unwrap();
     assert_eq!(
         created.assignments[0].status,
-        ReviewAssignmentStatus::PendingOffline
+        ReviewAssignmentStatus::Dispatched
     );
+
+    // Ghost drops before ACKing delivery
+    drop(ws_ghost_initial);
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
 
     let req_id = created.request.request_id.clone();
     srv.app

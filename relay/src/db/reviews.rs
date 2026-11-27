@@ -72,6 +72,15 @@ impl RelayDb {
                             request.pr_number, request.head_sha, reviewer_id
                         )),
                     )
+                } else if !online_set.contains(&reviewer_id) {
+                    (
+                        ReviewAssignmentStatus::Rejected,
+                        Some(RejectReason::ReviewerOffline),
+                        Some(format!(
+                            "@{} is currently offline (only online reviewers can be assigned)",
+                            reviewer_id
+                        )),
+                    )
                 } else if let Some(ref p) = peer {
                     if p.desired_paused {
                         (
@@ -90,13 +99,15 @@ impl RelayDb {
                                 reviewer_id, request.repo_url
                             )),
                         )
-                    } else if online_set.contains(&reviewer_id) {
-                        (ReviewAssignmentStatus::Dispatched, None, None)
                     } else {
-                        (ReviewAssignmentStatus::PendingOffline, None, None)
+                        (ReviewAssignmentStatus::Dispatched, None, None)
                     }
                 } else {
-                    (ReviewAssignmentStatus::PendingOffline, None, None)
+                    (
+                        ReviewAssignmentStatus::Rejected,
+                        Some(RejectReason::ReviewerOffline),
+                        Some(format!("@{} is currently offline", reviewer_id)),
+                    )
                 };
 
                 tx.execute(

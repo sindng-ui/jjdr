@@ -1,9 +1,10 @@
 # jjdr-relay — Windows 공용 PC 초경량 팀 Relay 서버
 
-`jjdr` 팀원 간 PR 자동 리뷰 요청·오프라인 보관(Store-and-Forward)·실시간 미니 상태바 중계를 담당하는 단일 실행 파일(`jjdr-relay.exe`) + SQLite 1파일 서버입니다.
+`jjdr` 팀원 간 온라인 PR 자동 리뷰 요청·실시간 미니 상태바 중계를 담당하는 단일 실행 파일(`jjdr-relay.exe`) + SQLite 1파일 서버입니다.
 
 - **Zero-Git / Zero-AI**: 공용 PC에 GitHub 토큰이나 AI 키를 절대 저장하지 않습니다.
 - **Zero-DLL**: SQLite(`rusqlite bundled`)가 실행 파일 안에 내장되어 있어 별도 런타임 설치가 필요 없습니다.
+- **Online-Only 안전 정책**: 오프라인·일시정지(Paused) 상태의 팀원에게는 리뷰 요청이 즉시 차단(`reviewer_offline` / `reviewer_paused`)되어, 퇴근·휴가 뒤 복귀 시 오래된 PR이 한꺼번에 실행되는 사고를 방지합니다.
 
 ---
 
@@ -22,7 +23,7 @@ cargo build --release --manifest-path relay/Cargo.toml
 bind_addr = "0.0.0.0:8787"
 db_path = "jjdr-relay.db"
 team_key = "replace-with-your-team-shared-secret"
-ttl_hours = 48
+ttl_hours = 2
 rate_limit_per_min = 30
 max_reviewers_per_request = 5
 ```

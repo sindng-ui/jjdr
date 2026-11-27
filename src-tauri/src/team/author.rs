@@ -2,7 +2,9 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use chrono::DateTime;
-use relay_protocol::{normalize_github_id, normalize_repo_url, ReviewRequestWithAssignments};
+use relay_protocol::{
+    normalize_github_id, normalize_repo_url, PeerInfo, PresenceStatus, ReviewRequestWithAssignments,
+};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
@@ -260,6 +262,26 @@ pub fn normalize_selected_reviewers(
         }
     }
     out
+}
+
+/// Return any selected reviewer IDs that are NOT currently `PresenceStatus::Online` in `peers`.
+/// Offline or paused teammates cannot be assigned new auto-review requests.
+pub fn find_unavailable_reviewers(reviewers: &[String], peers: &[PeerInfo]) -> Vec<String> {
+    let mut unavailable = Vec::new();
+    for id in reviewers {
+        let Some(norm) = normalize_github_id(id) else {
+            unavailable.push(id.clone());
+            continue;
+        };
+        let is_online = peers.iter().any(|p| {
+            normalize_github_id(&p.github_id).as_deref() == Some(norm.as_str())
+                && p.status == PresenceStatus::Online
+        });
+        if !is_online {
+            unavailable.push(norm);
+        }
+    }
+    unavailable
 }
 
 /// Resolve canonical normalized `origin` URL for a local Git repository path.
@@ -556,6 +578,46 @@ mod tests {
             MAX_REVIEWERS_PER_REQUEST,
         );
         assert_eq!(picked, vec!["bob".to_string(), "charlie".to_string()]);
+    }
+
+    #[test]
+    fn find_unavailable_reviewers_flags_offline_paused_and_unknown_users() {
+        let peers = vec![
+            PeerInfo {
+                github_id: "minsu".to_string(),
+                display_name: "Minsu".to_string(),
+                status: PresenceStatus::Online,
+                repo_urls: vec![],
+                last_seen_ms: 1,
+            },
+            PeerInfo {
+                github_id: "bob".to_string(),
+                display_name: "Bob".to_string(),
+                status: PresenceStatus::Paused,
+                repo_urls: vec![],
+                last_seen_ms: 1,
+            },
+            PeerInfo {
+                github_id: "charlie".to_string(),
+                display_name: "Charlie".to_string(),
+                status: PresenceStatus::Offline,
+                repo_urls: vec![],
+                last_seen_ms: 1,
+            },
+        ];
+        assert!(find_unavailable_reviewers(&["minsu".to_string()], &peers).is_empty());
+        assert_eq!(
+            find_unavailable_reviewers(
+                &[
+                    "minsu".to_string(),
+                    "bob".to_string(),
+                    "charlie".to_string(),
+                    "ghost".to_string()
+                ],
+                &peers
+            ),
+            vec!["bob".to_string(), "charlie".to_string(), "ghost".to_string()]
+        );
     }
 
     #[test]

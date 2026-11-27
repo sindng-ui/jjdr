@@ -17,6 +17,7 @@ export interface AnnotatedReviewerPeer {
   isOnline: boolean;
   isPaused: boolean;
   isOffline: boolean;
+  selectable: boolean;
   alreadyRequested: boolean;
   priorityRank: number;
 }
@@ -142,6 +143,7 @@ export function sortPeersForReviewPicker(
       isOnline,
       isPaused,
       isOffline,
+      selectable: isOnline,
       alreadyRequested,
       priorityRank,
     });
@@ -241,6 +243,8 @@ export function applyStatusEventToAuthoredReviews(
 
 export function formatRejectReasonShort(reason?: string | null): string {
   switch (reason) {
+    case "reviewer_offline":
+      return "offline";
     case "reviewer_paused":
       return "paused";
     case "repo_not_registered":

@@ -36,18 +36,17 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
-  const [manualInput, setManualInput] = useState("");
   const [assignOnGithub, setAssignOnGithub] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const maxReviewers = target?.maxReviewers ?? (target?.replaceReviewerId ? 1 : 2);
   const isReplaceMode = Boolean(target?.replaceRequestId && target?.replaceReviewerId);
+  const relayConnected = Boolean(teamSnapshot?.connected);
 
   useEffect(() => {
     if (!target) return;
     setSelectedIds([]);
     setQuery("");
-    setManualInput("");
     setAssignOnGithub(true);
     setSubmitting(false);
   }, [target]);
@@ -85,10 +84,25 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
     );
   }, [peers, target, myGithubId, query]);
 
+  // Auto-deselect any reviewer who goes offline or pauses while the modal is open
+  useEffect(() => {
+    if (!target) return;
+    const onlineSet = new Set(
+      peers
+        .filter((p) => p.status === "online")
+        .map((p) => p.github_id.toLowerCase())
+    );
+    setSelectedIds((prev) => {
+      const next = prev.filter((id) => onlineSet.has(id.toLowerCase()));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [target, peers]);
+
   if (!target) return null;
   const { candidate } = target;
 
-  const toggleReviewer = (githubId: string) => {
+  const toggleReviewer = (githubId: string, selectable: boolean) => {
+    if (!selectable || !relayConnected) return;
     setSelectedIds((prev) => {
       if (prev.includes(githubId)) {
         return prev.filter((id) => id !== githubId);
@@ -101,23 +115,8 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
     });
   };
 
-  const handleAddManualHandle = () => {
-    const cleaned = manualInput.trim().replace(/^@/, "").toLowerCase();
-    if (!cleaned) return;
-    if (selectedIds.includes(cleaned)) {
-      setManualInput("");
-      return;
-    }
-    if (selectedIds.length >= maxReviewers) {
-      showToast(`Select at most ${maxReviewers} reviewer(s).`, "info");
-      return;
-    }
-    setSelectedIds((prev) => [...prev, cleaned]);
-    setManualInput("");
-  };
-
   const handleSubmit = async () => {
-    if (selectedIds.length === 0 || submitting) return;
+    if (!relayConnected || selectedIds.length === 0 || submitting) return;
     setSubmitting(true);
     try {
       if (isReplaceMode && target.replaceRequestId && target.replaceReviewerId) {
@@ -255,6 +254,23 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
           </button>
         </div>
 
+        {/* Offline Banner */}
+        {!relayConnected && (
+          <div
+            className="mx-5 mt-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2"
+            style={{
+              background: "var(--action-soft)",
+              border: "1px solid var(--action-border)",
+              color: "var(--action-fg)",
+            }}
+          >
+            <WifiOff className="w-4 h-4 shrink-0" />
+            <span>
+              Relay server is offline — review requests are disabled while disconnected.
+            </span>
+          </div>
+        )}
+
         {/* Search & Selected Chips */}
         <div className="px-5 pt-3.5 pb-2 space-y-2.5">
           <div className="flex items-center gap-2">
@@ -301,7 +317,7 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
                 <button
                   key={id}
                   type="button"
-                  onClick={() => toggleReviewer(id)}
+                  onClick={() => toggleReviewer(id, true)}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer"
                   style={{
                     background: "var(--accent-soft)",
@@ -330,11 +346,11 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
               <Users className="w-5 h-5 mx-auto opacity-60" />
               <p className="font-semibold">
                 {peers.length === 0
-                  ? "No teammates discovered on Relay yet."
+                  ? "No teammates connected to Relay yet."
                   : "No teammates match your filter."}
               </p>
               <p className="text-[11px]">
-                You can still type an offline teammate&apos;s GHE ID below (Relay stores for 48h).
+                Only online teammates can be selected for auto-review.
               </p>
             </div>
           ) : (
@@ -342,12 +358,21 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
               const id = item.peer.github_id;
               const isSelected = selectedIds.includes(id);
               const atCap = !isSelected && selectedIds.length >= maxReviewers && maxReviewers > 1;
+              const isDisabled = !relayConnected || !item.selectable || atCap;
+              const disabledTitle = !relayConnected
+                ? "Relay is offline"
+                : item.isOffline
+                ? "Offline teammate — cannot select as reviewer"
+                : item.isPaused
+                ? "Auto-review is paused on teammate's PC — cannot select"
+                : undefined;
               return (
                 <button
                   key={id}
                   type="button"
-                  disabled={atCap}
-                  onClick={() => toggleReviewer(id)}
+                  disabled={isDisabled}
+                  title={disabledTitle}
+                  onClick={() => toggleReviewer(id, item.selectable)}
                   className="w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2 transition-opacity cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
                   style={{
                     background: isSelected
@@ -462,43 +487,6 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
           )}
         </div>
 
-        {/* Manual Offline Handle Entry */}
-        <div
-          className="px-5 py-2.5 flex items-center gap-2"
-          style={{ borderTop: "1px solid var(--divider)" }}
-        >
-          <input
-            type="text"
-            value={manualInput}
-            onChange={(e) => setManualInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleAddManualHandle();
-              }
-            }}
-            placeholder="Or enter GHE ID manually (e.g. minsu)..."
-            className="flex-1 px-3 py-1.5 rounded-xl text-xs outline-none font-mono-code"
-            style={{
-              background: "var(--input-bg)",
-              border: "1px solid var(--input-border)",
-              color: "var(--text-primary)",
-            }}
-          />
-          <button
-            type="button"
-            onClick={handleAddManualHandle}
-            disabled={!manualInput.trim()}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-40"
-            style={{
-              background: "var(--pill-bg)",
-              color: "var(--text-primary)",
-            }}
-          >
-            Add
-          </button>
-        </div>
-
         {/* Footer */}
         <div
           className="px-5 py-3.5 flex items-center justify-between gap-3"
@@ -531,7 +519,7 @@ export const ReviewerPickerModal = React.memo(function ReviewerPickerModal() {
             </button>
             <button
               type="button"
-              disabled={selectedIds.length === 0 || submitting}
+              disabled={!relayConnected || selectedIds.length === 0 || submitting}
               onClick={() => void handleSubmit()}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer disabled:opacity-45 transition-opacity hover:opacity-90"
               style={{

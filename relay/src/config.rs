@@ -34,7 +34,7 @@ impl Default for RelayConfig {
             bind_addr: "0.0.0.0:8787".to_string(),
             db_path: PathBuf::from("jjdr-relay.db"),
             team_key: String::new(),
-            ttl_hours: 48,
+            ttl_hours: 2,
             ttl_sweep_interval_secs: 300,
             rate_limit_per_min: 30,
             max_reviewers_per_request: 5,

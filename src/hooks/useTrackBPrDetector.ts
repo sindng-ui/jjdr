@@ -17,6 +17,7 @@ import { normalizePath } from "../workers/dashboardLogic";
  */
 export function useTrackBPrDetector() {
   const teamEnabled = useAppStore((s) => s.settings.team?.enabled ?? false);
+  const relayConnected = useAppStore((s) => s.teamSnapshot?.connected ?? false);
   const hydrated = useAppStore((s) => s.hydrated);
   const allSessions = useAppStore((s) => s.computed.allSessions);
   const autoReviewJobsByWorktree = useAppStore(
@@ -28,7 +29,7 @@ export function useTrackBPrDetector() {
   const inFlightRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!isTauriRuntime() || !hydrated || !teamEnabled) return;
+    if (!isTauriRuntime() || !hydrated || !teamEnabled || !relayConnected) return;
     if (allSessions.length === 0) return;
 
     let cancelled = false;
@@ -87,5 +88,5 @@ export function useTrackBPrDetector() {
     return () => {
       cancelled = true;
     };
-  }, [teamEnabled, hydrated, allSessions, autoReviewJobsByWorktree]);
+  }, [teamEnabled, relayConnected, hydrated, allSessions, autoReviewJobsByWorktree]);
 }

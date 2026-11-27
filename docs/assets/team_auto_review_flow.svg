@@ -29,7 +29,7 @@
   <!-- Column 2: Relay -->
   <rect x="365" y="54" width="230" height="58" rx="14" fill="#1e293b" stroke="#f59e0b" stroke-width="1.8"/>
   <text x="480" y="79" text-anchor="middle" fill="#fcd34d" font-size="14" font-weight="800">jjdr-relay.exe</text>
-  <text x="480" y="99" text-anchor="middle" fill="#94a3b8" font-size="11.5">사내 공용 PC (SQLite 우체통)</text>
+  <text x="480" y="99" text-anchor="middle" fill="#94a3b8" font-size="11.5">사내 공용 PC (실시간 중계 허브)</text>
   <line x1="480" y1="112" x2="480" y2="425" stroke="#334155" stroke-width="2" stroke-dasharray="5,5"/>
 
   <!-- Column 3: Reviewer -->
@@ -55,7 +55,7 @@
   <line x1="490" y1="228" x2="793" y2="228" stroke="#fbbf24" stroke-width="2.2" marker-end="url(#arrow-amber)"/>
   <circle cx="595" cy="216" r="10" fill="#f59e0b"/>
   <text x="595" y="220" text-anchor="middle" fill="#0f172a" font-size="11" font-weight="800">3</text>
-  <text x="612" y="220" fill="#fde68a" font-size="12" font-weight="700">실시간 푸시 (오프라인 시 48h 보관)</text>
+  <text x="612" y="220" fill="#fde68a" font-size="12" font-weight="700">온라인 리뷰어에게 즉시 푸시</text>
 
   <!-- Step 4: Reviewer runs ephemeral AI review -->
   <rect x="698" y="246" width="214" height="58" rx="10" fill="#064e3b" stroke="#10b981" stroke-width="1.2"/>
@@ -85,6 +85,6 @@
 
   <!-- Footer Note -->
   <text x="480" y="444" text-anchor="middle" fill="#64748b" font-size="11">
-    ※ GitHub 폴링 0% · 공용 PC에 토큰/AI키 저장 0% · 오프라인 팀원은 [Replace]로 즉시 교체 가능
+    ※ 온라인 팀원만 선택 가능 · 오프라인 시 요청 차단 · GitHub 폴링 0% · 공용 PC 토큰/AI키 0%
   </text>
 </svg>

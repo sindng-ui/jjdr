@@ -7,12 +7,12 @@ use tauri::{AppHandle, State};
 
 use crate::team::author::{
     assign_pr_reviewers_via_gh, evaluate_track_b_candidate, fetch_pr_for_author_review,
-    make_prompted_pr_key, normalize_selected_reviewers, resolve_project_repo_url,
-    PrReviewCandidate, SubmitTeamReviewInput, SubmitTeamReviewResult, MAX_REVIEWERS_PER_REQUEST,
+    find_unavailable_reviewers, make_prompted_pr_key, normalize_selected_reviewers,
+    resolve_project_repo_url, PrReviewCandidate, SubmitTeamReviewInput, SubmitTeamReviewResult,
+    MAX_REVIEWERS_PER_REQUEST,
 };
 use crate::team::http::test_relay_connection;
 use crate::team::jobs::AutoReviewJob;
-use crate::team::outbox::OutboxPayload;
 use crate::team::{RelayTestResult, TeamConnectionSnapshot};
 use crate::AppState;
 
@@ -179,7 +179,26 @@ pub async fn submit_team_review_request(
         MAX_REVIEWERS_PER_REQUEST,
     );
     if reviewers.is_empty() {
-        return Err("Select at least one valid reviewer (excluding yourself)".to_string());
+        return Err("Select at least one valid online reviewer (excluding yourself)".to_string());
+    }
+
+    // Enforce online-only policy: never allow review requests while Relay is offline
+    // or for teammates who are currently offline / paused.
+    let snap = state.team_relay.snapshot().await;
+    if !snap.connected {
+        return Err("Relay is offline — review requests cannot be sent while disconnected.".to_string());
+    }
+    let unavailable = find_unavailable_reviewers(&reviewers, &snap.peers);
+    if !unavailable.is_empty() {
+        let handles = unavailable
+            .iter()
+            .map(|id| format!("@{}", id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Offline or paused reviewers cannot be selected: {}",
+            handles
+        ));
     }
 
     let norm_repo = normalize_repo_url(&input.repo_url)
@@ -212,7 +231,7 @@ pub async fn submit_team_review_request(
 
     let key = make_prompted_pr_key(&norm_repo, input.pr_number, &input.head_sha);
 
-    match state.team_relay.rest_submit_review(&team, body.clone()).await {
+    match state.team_relay.rest_submit_review(&team, body).await {
         Ok(resp) => {
             if let Ok(mut guard) = state.prompted_prs.lock() {
                 guard.mark(key);
@@ -229,22 +248,7 @@ pub async fn submit_team_review_request(
                 relay_error: None,
             })
         }
-        Err(err) => {
-            state
-                .team_relay
-                .enqueue_outbox(OutboxPayload::SubmitReview { body });
-            if let Ok(mut guard) = state.prompted_prs.lock() {
-                guard.mark(key);
-            }
-            Ok(SubmitTeamReviewResult {
-                request: None,
-                reviewers_sent: reviewers,
-                gh_assigned,
-                gh_error,
-                queued_offline: true,
-                relay_error: Some(err),
-            })
-        }
+        Err(err) => Err(format!("Relay unreachable — review request aborted: {}", err)),
     }
 }
 
