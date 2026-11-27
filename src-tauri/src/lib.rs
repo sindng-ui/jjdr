@@ -4,6 +4,7 @@ pub mod gemini;
 pub mod git;
 pub mod herdr;
 pub mod store;
+pub mod team;
 pub mod update;
 
 #[cfg(not(test))]
@@ -32,12 +33,15 @@ use store::file_index::FileIndexStore;
 use store::overlay::BgOverlayPayload;
 #[cfg(not(test))]
 use store::projects::PersistenceStore;
+#[cfg(not(test))]
+use team::client::TeamRelayRuntime;
 
 #[cfg(not(test))]
 pub struct AppState {
     pub herdr: Arc<HerdrClient>,
     pub hub: Arc<TerminalStateHub>,
     pub gemini_bridge: Arc<GeminiBridgeRuntime>,
+    pub team_relay: Arc<TeamRelayRuntime>,
     pub store: Arc<PersistenceStore>,
     pub attach: Arc<AttachManager>,
     pub file_index: Arc<FileIndexStore>,
@@ -59,6 +63,7 @@ pub fn run() {
     let hub = TerminalStateHub::new();
     let gemini_bridge = GeminiBridgeRuntime::new();
     let store = Arc::new(PersistenceStore::new());
+    let team_relay = TeamRelayRuntime::new(store.local_dir());
     let attach = Arc::new(AttachManager::new());
     let file_index = Arc::new(FileIndexStore::new());
 
@@ -66,7 +71,8 @@ pub fn run() {
         herdr: herdr.clone(),
         hub: hub.clone(),
         gemini_bridge: gemini_bridge.clone(),
-        store,
+        team_relay: team_relay.clone(),
+        store: store.clone(),
         attach: attach.clone(),
         file_index,
         bg_overlay_payload: Mutex::new(None),
@@ -109,6 +115,7 @@ pub fn run() {
             }
             spawn_herdr_supervisor(app.handle().clone(), herdr.clone(), hub.clone());
             gemini_bridge.start(hub.clone());
+            team_relay.spawn_supervisor(app.handle().clone(), store.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -167,6 +174,12 @@ pub fn run() {
             commands::gemini_bridge::install_gemini_bridge_hooks,
             commands::gemini_bridge::uninstall_gemini_bridge_hooks,
             commands::gemini_bridge::test_gemini_bridge_event,
+            commands::team::get_team_status,
+            commands::team::test_team_relay_connection,
+            commands::team::detect_team_github_id,
+            commands::team::reconnect_team_relay,
+            commands::team::list_team_peers,
+            commands::team::flush_team_outbox,
         ])
         .build(tauri::generate_context!())
         .expect("error while building jjdr tauri application");

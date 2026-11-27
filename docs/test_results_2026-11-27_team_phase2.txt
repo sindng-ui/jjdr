@@ -1,0 +1,58 @@
+jjdr Team Orchestration Phase 2 — Test & Verification Report
+Date: 2026-11-27
+Scope: Wide 2-column SettingsModal (max-w-[940px]) + Team Orchestration tab + src-tauri TeamRelayRuntime (no_proxy, device_id, relay_outbox.json, WS supervisor & AckDelivery)
+
+================================================================================
+1. Frontend Unit Tests (`npm run test`)
+================================================================================
+Result: 25 test files passed, 108 tests passed, 0 failed (2.47s)
+New tests included:
+- src/utils/teamSettings.test.ts (3 tests):
+  - normalizes missing or legacy partial team settings safely ... ok
+  - parses and deduplicates CSV tokens case-insensitively ... ok
+  - validates enabled settings require relay_url and team_key ... ok
+
+================================================================================
+2. Frontend Typecheck & Production Build (`npm run build`)
+================================================================================
+Result: tsc + vite build succeeded in 6.30s (0 errors)
+
+================================================================================
+3. Backend Rust Unit Tests (`cargo test --offline --lib --manifest-path src-tauri/Cargo.toml`)
+================================================================================
+Result: 81 passed, 0 failed (6.32s)
+New Phase 2 tests included:
+- store::team_settings::tests::legacy_settings_json_without_team_deserializes_with_safe_defaults ... ok
+- store::team_settings::tests::normalizes_relay_url_with_and_without_scheme ... ok
+- team::http::tests::builds_ws_and_wss_urls_with_encoded_keys ... ok
+- team::identity::tests::device_id_is_created_once_and_persisted ... ok
+- team::identity::tests::extracts_enterprise_host_from_normalized_repo ... ok
+- team::outbox::tests::persists_across_reload_and_applies_outcomes ... ok
+- team::outbox::tests::prunes_entries_past_ttl_and_classifies_http_codes ... ok
+
+================================================================================
+4. Backend Full Tauri Compilation Check (`cargo check --offline --manifest-path src-tauri/Cargo.toml`)
+================================================================================
+Result: Finished dev profile in 7.72s (0 errors, 0 code warnings)
+
+================================================================================
+5. File Size & Performance / Zero-Blur Check
+================================================================================
+- All files strictly under 900 lines (refactored `team/client.rs` 1026 -> `http.rs` 448 + `client.rs` 581; `SettingsModal.tsx` 808 -> 320):
+  - src-tauri/src/store/team_settings.rs: 184 lines
+  - src-tauri/src/team/mod.rs: 75 lines
+  - src-tauri/src/team/identity.rs: 124 lines
+  - src-tauri/src/team/outbox.rs: 208 lines
+  - src-tauri/src/team/http.rs: 448 lines
+  - src-tauri/src/team/client.rs: 581 lines
+  - src-tauri/src/commands/team.rs: 44 lines
+  - src/utils/teamSettings.ts: 156 lines
+  - src/components/modals/SettingsModal.tsx: 320 lines
+  - src/components/modals/settings/AppearanceSettingsTab.tsx: 359 lines
+  - src/components/modals/settings/GeneralSettingsTab.tsx: 289 lines
+  - src/components/modals/settings/TeamOrchestrationSettingsTab.tsx: 849 lines
+  - src/components/modals/settings/IntegrationsSettingsTab.tsx: 14 lines
+- Performance:
+  - Zero-Blur maintained across all new settings UI components.
+  - All tab components wrapped in `React.memo`; Zustand atomic selector for `teamSnapshot`.
+  - Relay WS supervisor, HTTP calls, and `gh api user` detection run exclusively on Tokio background tasks (`no_proxy` default).

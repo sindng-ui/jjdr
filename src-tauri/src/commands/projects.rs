@@ -58,7 +58,9 @@ pub async fn upsert_project(
         group: input.group.unwrap_or_else(|| "Default".into()),
     };
 
-    Ok(state.store.upsert_project(&state.herdr, project).await)
+    let list = state.store.upsert_project(&state.herdr, project).await;
+    state.team_relay.notify_config_changed();
+    Ok(list)
 }
 
 #[tauri::command]
@@ -66,10 +68,12 @@ pub async fn delete_project(
     state: State<'_, AppState>,
     project_id: String,
 ) -> Result<Vec<ProjectConfig>, String> {
-    Ok(state
+    let list = state
         .store
         .delete_project(&state.herdr, &project_id)
-        .await)
+        .await;
+    state.team_relay.notify_config_changed();
+    Ok(list)
 }
 
 #[tauri::command]

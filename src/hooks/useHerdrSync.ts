@@ -6,6 +6,7 @@ import {
 } from "@tauri-apps/plugin-notification";
 import {
   getInitialState,
+  getTeamStatus,
   hideBgOverlay,
   isMainVisibleOnScreen,
   isTauriRuntime,
@@ -15,6 +16,7 @@ import {
   listenOverlayDismissed,
   listenOverlayOpenCard,
   listenStateBatch,
+  listenTeamStateChanged,
   listenWorktreeTeardownResult,
   loadPersistedBundle,
   saveUiState,
@@ -258,14 +260,18 @@ export function useHerdrSync() {
           }, 800);
         }
 
-        const [wts, templates] = await Promise.all([
+        const [wts, templates, teamSnap] = await Promise.all([
           listAllWorktrees().catch(() => ({})),
           listTemplates().catch(() => []),
+          getTeamStatus().catch(() => null),
         ]);
         if (!active) return;
         worktreesLoadedRef.current = true;
         useAppStore.getState().setWorktreesByProject(wts);
         useAppStore.getState().setTemplates(templates);
+        if (teamSnap) {
+          useAppStore.getState().setTeamSnapshot(teamSnap);
+        }
       } catch (err) {
         console.error("Failed to bootstrap jjdr state:", err);
       }
@@ -293,6 +299,24 @@ export function useHerdrSync() {
       clearTimeout(splashFallbackTimer);
       clearInterval(gitTimer);
       if (unlisten) unlisten();
+    };
+  }, []);
+
+  // 2.5 Subscribe to live Team Relay connection & peer directory snapshots
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let active = true;
+    let unlistenTeam: (() => void) | null = null;
+    void listenTeamStateChanged((snapshot) => {
+      if (!active) return;
+      useAppStore.getState().setTeamSnapshot(snapshot);
+    }).then((fn) => {
+      if (active) unlistenTeam = fn;
+      else fn();
+    });
+    return () => {
+      active = false;
+      if (unlistenTeam) unlistenTeam();
     };
   }, []);
 

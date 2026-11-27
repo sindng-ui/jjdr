@@ -1,13 +1,10 @@
 import React, { useEffect, useState } from "react";
 import {
-  BellRing,
-  Check,
-  LayoutGrid,
   Palette,
-  Play,
-  Plus,
+  Plug,
   Settings,
-  Trash2,
+  SlidersHorizontal,
+  Users,
   X,
 } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
@@ -17,28 +14,59 @@ import {
   saveSettings,
   showBgOverlay,
 } from "../../services/tauriBridge";
-import { RADAR_DENSITY_PRESETS, THEME_PRESETS } from "../../utils/themes";
 import {
-  getRadarColumnWidthPx,
-  MAX_RADAR_COLUMN_WIDTH_PX,
-  MIN_RADAR_COLUMN_WIDTH_PX,
-  RADAR_COLUMN_WIDTH_STEP_PX,
-} from "../../utils/radarLayout";
-import {
-  BG_OVERLAY_POSITION_PRESETS,
   buildPreviewBgOverlayPayload,
   normalizeBgOverlayPosition,
 } from "../../utils/bgOverlay";
-import { GeminiBridgeSettingsSection } from "./GeminiBridgeSettingsSection";
-import { UpdateSettingsSection } from "./UpdateSettingsSection";
+import {
+  normalizeTeamSettings,
+  validateTeamSettings,
+} from "../../utils/teamSettings";
+import { AppearanceSettingsTab } from "./settings/AppearanceSettingsTab";
+import { GeneralSettingsTab } from "./settings/GeneralSettingsTab";
+import { TeamOrchestrationSettingsTab } from "./settings/TeamOrchestrationSettingsTab";
+import { IntegrationsSettingsTab } from "./settings/IntegrationsSettingsTab";
 import type {
   AppSettings,
   BgOverlayPosition,
-  PromptPreset,
   RadarDensity,
   RootCardMode,
   ThemeId,
 } from "../../types/domain";
+
+type SettingsTabId = "appearance" | "general" | "team" | "integrations";
+
+const SETTINGS_TABS: Array<{
+  id: SettingsTabId;
+  label: string;
+  desc: string;
+  Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+}> = [
+  {
+    id: "appearance",
+    label: "Appearance",
+    desc: "테마 · 레이더 · ROOT",
+    Icon: Palette,
+  },
+  {
+    id: "general",
+    label: "General & HUD",
+    desc: "알림 · HUD · 프리셋",
+    Icon: SlidersHorizontal,
+  },
+  {
+    id: "team",
+    label: "Team Orchestration",
+    desc: "Relay · 자동 리뷰 · Reject",
+    Icon: Users,
+  },
+  {
+    id: "integrations",
+    label: "Bridges & Updates",
+    desc: "Gemini 훅 · 업데이트",
+    Icon: Plug,
+  },
+];
 
 export const SettingsModal = React.memo(function SettingsModal() {
   const open = useUiStore((s) => s.settingsOpen);
@@ -47,52 +75,50 @@ export const SettingsModal = React.memo(function SettingsModal() {
   const setRadarColumnWidthPx = useUiStore((s) => s.setRadarColumnWidthPx);
   const showToast = useUiStore((s) => s.showToast);
   const current = useAppStore((s) => s.settings);
+  const teamSnapshot = useAppStore((s) => s.teamSnapshot);
 
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("appearance");
   const [draft, setDraft] = useState<AppSettings>(current);
 
   useEffect(() => {
-    if (open) setDraft(current);
+    if (open) {
+      setDraft({
+        ...current,
+        team: normalizeTeamSettings(current.team),
+      });
+    }
   }, [open, current]);
 
   if (!open) return null;
 
-  const handleSelectTheme = (themeId: ThemeId) => {
-    const next: AppSettings = { ...draft, theme: themeId };
+  const persistImmediate = (next: AppSettings) => {
     setDraft(next);
     useAppStore.getState().setSettings(next);
     void saveSettings(next).catch(() => {});
+  };
+
+  const handleSelectTheme = (themeId: ThemeId) => {
+    persistImmediate({ ...draft, theme: themeId });
   };
 
   const handleSelectDensity = (density: RadarDensity) => {
-    const next: AppSettings = { ...draft, radar_density: density };
-    setDraft(next);
-    useAppStore.getState().setSettings(next);
-    void saveSettings(next).catch(() => {});
+    persistImmediate({ ...draft, radar_density: density });
   };
 
   const handleSelectRootMode = (mode: RootCardMode) => {
-    const next: AppSettings = { ...draft, root_card_mode: mode };
-    setDraft(next);
-    useAppStore.getState().setSettings(next);
-    void saveSettings(next).catch(() => {});
+    persistImmediate({ ...draft, root_card_mode: mode });
   };
 
   const handleToggleBgOverlay = () => {
     const nextEnabled = !(draft.bg_overlay_enabled ?? false);
-    const next: AppSettings = { ...draft, bg_overlay_enabled: nextEnabled };
-    setDraft(next);
-    useAppStore.getState().setSettings(next);
-    void saveSettings(next).catch(() => {});
+    persistImmediate({ ...draft, bg_overlay_enabled: nextEnabled });
     if (!nextEnabled) {
       void hideBgOverlay(true).catch(() => {});
     }
   };
 
   const handleSelectBgOverlayPosition = (position: BgOverlayPosition) => {
-    const next: AppSettings = { ...draft, bg_overlay_position: position };
-    setDraft(next);
-    useAppStore.getState().setSettings(next);
-    void saveSettings(next).catch(() => {});
+    persistImmediate({ ...draft, bg_overlay_position: position });
   };
 
   const handlePreviewBgOverlay = () => {
@@ -107,37 +133,20 @@ export const SettingsModal = React.memo(function SettingsModal() {
     void showBgOverlay(payload, true).catch(() => {});
   };
 
-  const updatePreset = (idx: number, patch: Partial<PromptPreset>) => {
-    setDraft((prev) => ({
-      ...prev,
-      prompt_presets: prev.prompt_presets.map((p, i) =>
-        i === idx ? { ...p, ...patch } : p
-      ),
-    }));
-  };
-
-  const addPreset = () => {
-    setDraft((prev) => ({
-      ...prev,
-      prompt_presets: [
-        ...prev.prompt_presets,
-        { id: `p-${Date.now()}`, label: "New Preset", prompt: "" },
-      ],
-    }));
-  };
-
-  const removePreset = (idx: number) => {
-    setDraft((prev) => ({
-      ...prev,
-      prompt_presets: prev.prompt_presets.filter((_, i) => i !== idx),
-    }));
-  };
-
   const handleSave = async () => {
+    const normalizedTeam = normalizeTeamSettings(draft.team);
+    const validationErr = validateTeamSettings(normalizedTeam);
+    if (validationErr) {
+      setActiveTab("team");
+      showToast(validationErr, "error");
+      return;
+    }
+
     const latestSkipped =
       useAppStore.getState().settings.skipped_update_version ?? null;
     const toSave: AppSettings = {
       ...draft,
+      team: normalizedTeam,
       skipped_update_version: latestSkipped,
     };
     useAppStore.getState().setSettings(toSave);
@@ -145,6 +154,15 @@ export const SettingsModal = React.memo(function SettingsModal() {
     showToast("설정이 저장되었습니다", "success");
     setOpen(false);
   };
+
+  const teamDotColor =
+    teamSnapshot?.state === "connected"
+      ? "var(--ready-fg)"
+      : teamSnapshot?.state === "paused"
+      ? "var(--warn-fg)"
+      : teamSnapshot?.state === "error"
+      ? "var(--action-fg)"
+      : "var(--text-faint)";
 
   return (
     <div
@@ -154,10 +172,11 @@ export const SettingsModal = React.memo(function SettingsModal() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="jjdr-modal w-full max-w-xl rounded-[22px] overflow-hidden"
+        className="jjdr-modal w-[94vw] max-w-[940px] h-[min(84vh,760px)] rounded-[22px] overflow-hidden flex flex-col"
       >
+        {/* Header */}
         <div
-          className="px-5 py-4 flex items-center justify-between"
+          className="px-5 py-3.5 flex items-center justify-between shrink-0"
           style={{ borderBottom: "1px solid var(--divider)" }}
         >
           <div className="flex items-center gap-2.5">
@@ -170,6 +189,7 @@ export const SettingsModal = React.memo(function SettingsModal() {
             </h3>
           </div>
           <button
+            type="button"
             onClick={() => setOpen(false)}
             className="p-1.5 rounded-full hover:bg-black/10 cursor-pointer"
             style={{ color: "var(--text-muted)" }}
@@ -178,617 +198,108 @@ export const SettingsModal = React.memo(function SettingsModal() {
           </button>
         </div>
 
-        <div className="p-5 space-y-5 text-xs max-h-[72vh] overflow-y-auto">
-          {/* 4-Theme One-Click Visual Switcher */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Palette
-                  className="w-3.5 h-3.5"
-                  style={{ color: "var(--accent)" }}
-                />
-                <span
-                  className="font-bold text-xs"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  테마 선택 (원클릭 즉시 적용)
-                </span>
-              </div>
-              <span
-                className="text-[11px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Zero-Blur · 4종 내장
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              {THEME_PRESETS.map((preset) => {
-                const active = draft.theme === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => handleSelectTheme(preset.id)}
-                    className="jjdr-card-lift text-left rounded-2xl p-3 cursor-pointer flex flex-col gap-2.5"
-                    style={{
-                      background: active
-                        ? "var(--accent-soft)"
-                        : "var(--input-bg)",
-                      border: `1.5px solid ${
-                        active ? "var(--accent)" : "var(--input-border)"
-                      }`,
-                    }}
-                  >
-                    {/* Miniature Theme Swatch Preview */}
-                    <div
-                      className="h-11 rounded-xl p-1.5 flex items-center gap-1.5"
-                      style={{
-                        background: preset.swatches.shell,
-                        border: "1px solid rgba(128,128,128,0.18)",
-                      }}
-                    >
-                      <div
-                        className="w-4 h-full rounded-lg opacity-80"
-                        style={{ background: preset.swatches.card }}
-                      />
-                      <div
-                        className="flex-1 h-full rounded-lg p-1.5 flex items-center justify-between"
-                        style={{ background: preset.swatches.stage }}
-                      >
-                        <div
-                          className="w-10 h-full rounded-md"
-                          style={{ background: preset.swatches.card }}
-                        />
-                        <div className="flex items-center gap-1">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{ background: preset.swatches.accent }}
-                          />
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{ background: preset.swatches.ready }}
-                          />
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{ background: preset.swatches.action }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="font-bold text-xs truncate"
-                            style={{ color: "var(--text-primary)" }}
-                          >
-                            {preset.name}
-                          </span>
-                          <span
-                            className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
-                            style={{
-                              background: "var(--pill-bg)",
-                              color: "var(--text-muted)",
-                            }}
-                          >
-                            {preset.tagline}
-                          </span>
-                        </div>
-                        <p
-                          className="mt-1 text-[11px] leading-snug truncate"
-                          style={{ color: "var(--text-muted)" }}
-                        >
-                          {preset.description}
-                        </p>
-                      </div>
-                      {active && (
-                        <span
-                          className="w-5 h-5 rounded-full inline-flex items-center justify-center shrink-0"
-                          style={{
-                            background: "var(--accent)",
-                            color: "#ffffff",
-                          }}
-                        >
-                          <Check className="w-3 h-3" />
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Radar Row Density Switcher (3/2, 4/2 Default, 5/3) */}
-          <div
-            className="pt-4 space-y-2.5"
-            style={{ borderTop: "1px solid var(--divider)" }}
+        {/* 2-Column Body: Left Sidebar Tabs + Wide Right Content */}
+        <div className="flex-1 min-h-0 flex">
+          <nav
+            className="w-[212px] shrink-0 p-3 space-y-1.5 overflow-y-auto"
+            style={{
+              background: "var(--sidebar-bg, var(--input-bg))",
+              borderRight: "1px solid var(--divider)",
+            }}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <LayoutGrid
-                  className="w-3.5 h-3.5"
-                  style={{ color: "var(--accent)" }}
-                />
-                <span
-                  className="font-bold text-xs"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  레이더 한 줄 카드 수 (기본 / 터미널 열림)
-                </span>
-              </div>
-              <span
-                className="text-[11px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                원클릭 즉시 적용
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              {RADAR_DENSITY_PRESETS.map((opt) => {
-                const active = draft.radar_density === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => handleSelectDensity(opt.id)}
-                    className="jjdr-card-lift text-left rounded-2xl p-3 cursor-pointer flex flex-col gap-1.5"
-                    style={{
-                      background: active
-                        ? "var(--accent-soft)"
-                        : "var(--input-bg)",
-                      border: `1.5px solid ${
-                        active ? "var(--accent)" : "var(--input-border)"
-                      }`,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span
-                        className="font-bold text-xs"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {opt.label}
-                      </span>
-                      {active && (
-                        <span
-                          className="w-4 h-4 rounded-full inline-flex items-center justify-center shrink-0"
-                          style={{
-                            background: "var(--accent)",
-                            color: "#ffffff",
-                          }}
-                        >
-                          <Check className="w-2.5 h-2.5" />
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className="text-[10px] font-medium"
-                      style={{ color: "var(--accent)" }}
-                    >
-                      {opt.tagline}
-                    </span>
-                    <span
-                      className="text-[11px] leading-snug"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      {opt.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Radar Columns Mode Custom Width Slider (210px - 560px) */}
-            <div
-              className="rounded-2xl p-3 space-y-2"
-              style={{
-                background: "var(--input-bg)",
-                border: "1px solid var(--input-border)",
-              }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div
-                    className="text-xs font-bold"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    Columns Mode Column Width
-                  </div>
-                  <div
-                    className="text-[11px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Wide range ({MIN_RADAR_COLUMN_WIDTH_PX}px –{" "}
-                    {MAX_RADAR_COLUMN_WIDTH_PX}px) for any monitor resolution
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className="text-xs font-mono-code font-bold tabular-nums px-2 py-0.5 rounded-full"
-                    style={{
-                      background: "var(--pill-bg)",
-                      color: "var(--accent)",
-                    }}
-                  >
-                    {getRadarColumnWidthPx(
-                      draft.radar_density,
-                      radarColumnWidthPx
-                    )}
-                    px
-                  </span>
-                  {radarColumnWidthPx !== null && (
-                    <button
-                      type="button"
-                      onClick={() => setRadarColumnWidthPx(null)}
-                      className="text-[11px] font-semibold hover:underline cursor-pointer"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      Auto
-                    </button>
-                  )}
-                </div>
-              </div>
-              <input
-                type="range"
-                min={MIN_RADAR_COLUMN_WIDTH_PX}
-                max={MAX_RADAR_COLUMN_WIDTH_PX}
-                step={RADAR_COLUMN_WIDTH_STEP_PX}
-                value={getRadarColumnWidthPx(
-                  draft.radar_density,
-                  radarColumnWidthPx
-                )}
-                onChange={(e) => setRadarColumnWidthPx(Number(e.target.value))}
-                aria-label="Radar columns width"
-                className="w-full h-1.5 cursor-pointer accent-[var(--accent)]"
-              />
-              <div
-                className="flex items-center justify-between text-[10px] font-mono-code tabular-nums"
-                style={{ color: "var(--text-faint)" }}
-              >
-                <span>{MIN_RADAR_COLUMN_WIDTH_PX}px</span>
-                <span>340px</span>
-                <span>450px</span>
-                <span>{MAX_RADAR_COLUMN_WIDTH_PX}px</span>
-              </div>
-            </div>
-          </div>
-
-          {/* ROOT Card Display Mode */}
-          <div
-            className="pt-4 space-y-2.5"
-            style={{ borderTop: "1px solid var(--divider)" }}
-          >
-            <div className="flex items-center justify-between">
-              <span
-                className="font-bold text-xs"
-                style={{ color: "var(--text-primary)" }}
-              >
-                프로젝트 ROOT 카드 표시 방식
-              </span>
-              <span
-                className="text-[11px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                원클릭 즉시 적용
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  {
-                    id: "header_chip",
-                    label: "헤더 칩 (추천)",
-                    desc: "Worktree가 있으면 헤더에 컴팩트 칩으로 접기",
-                  },
-                  {
-                    id: "card",
-                    label: "그리드 카드",
-                    desc: "기존처럼 일반 Worktree 카드로 표시",
-                  },
-                  {
-                    id: "hidden",
-                    label: "숨기기",
-                    desc: "Worktree가 있을 때 ROOT 표시 안 함",
-                  },
-                ] as const
-              ).map((opt) => {
-                const active = (draft.root_card_mode ?? "header_chip") === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => handleSelectRootMode(opt.id)}
-                    className="jjdr-card-lift text-left rounded-2xl p-2.5 cursor-pointer flex flex-col gap-1"
-                    style={{
-                      background: active
-                        ? "var(--accent-soft)"
-                        : "var(--input-bg)",
-                      border: `1.5px solid ${
-                        active ? "var(--accent)" : "var(--input-border)"
-                      }`,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span
-                        className="font-bold text-xs"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {opt.label}
-                      </span>
-                      {active && (
-                        <span
-                          className="w-4 h-4 rounded-full inline-flex items-center justify-center shrink-0"
-                          style={{
-                            background: "var(--accent)",
-                            color: "#ffffff",
-                          }}
-                        >
-                          <Check className="w-2.5 h-2.5" />
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className="text-[11px] leading-snug"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      {opt.desc}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Background Top-Priority Card Overlay HUD */}
-          <div
-            className="pt-4 space-y-2.5"
-            style={{ borderTop: "1px solid var(--divider)" }}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <BellRing
-                  className="w-3.5 h-3.5"
-                  style={{ color: "var(--accent)" }}
-                />
-                <span
-                  className="font-bold text-xs"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  백그라운드 최우선 카드 알림 (HUD)
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
+            {SETTINGS_TABS.map(({ id, label, desc, Icon }) => {
+              const active = activeTab === id;
+              return (
                 <button
+                  key={id}
                   type="button"
-                  onClick={handlePreviewBgOverlay}
-                  className="jjdr-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
-                  style={{ color: "var(--accent)" }}
-                >
-                  <Play className="w-3 h-3" />
-                  미리보기
-                </button>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={draft.bg_overlay_enabled ?? false}
-                  onClick={handleToggleBgOverlay}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-colors"
+                  onClick={() => setActiveTab(id)}
+                  className="w-full text-left rounded-2xl px-3 py-2.5 cursor-pointer flex items-start gap-2.5 transition-colors"
                   style={{
-                    background:
-                      draft.bg_overlay_enabled ?? false
-                        ? "var(--accent)"
-                        : "var(--pill-bg)",
-                    color:
-                      draft.bg_overlay_enabled ?? false
-                        ? "#ffffff"
-                        : "var(--text-muted)",
-                    border: "1px solid var(--pill-border)",
+                    background: active ? "var(--accent-soft)" : "transparent",
+                    border: `1px solid ${
+                      active ? "var(--accent)" : "transparent"
+                    }`,
                   }}
                 >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
+                  <Icon
+                    className="w-4 h-4 mt-0.5 shrink-0"
                     style={{
-                      background:
-                        draft.bg_overlay_enabled ?? false
-                          ? "#ffffff"
-                          : "var(--text-faint)",
+                      color: active ? "var(--accent)" : "var(--text-muted)",
                     }}
                   />
-                  {draft.bg_overlay_enabled ?? false ? "ON" : "OFF"}
-                </button>
-              </div>
-            </div>
-
-            <p
-              className="text-[11px] leading-snug"
-              style={{ color: "var(--text-muted)" }}
-            >
-              jjdr이 백그라운드에 있을 때 가장 급한 카드(Needs You → Ready)를 포커스 방해 없이 화면에 크게 띄워줍니다. 클릭하면 해당 카드로 즉시 이동합니다.
-            </p>
-
-            <div
-              className="grid grid-cols-3 gap-2"
-              style={{
-                opacity: draft.bg_overlay_enabled ?? false ? 1 : 0.48,
-              }}
-            >
-              {BG_OVERLAY_POSITION_PRESETS.map((opt) => {
-                const active =
-                  normalizeBgOverlayPosition(draft.bg_overlay_position) ===
-                  opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    disabled={!(draft.bg_overlay_enabled ?? false)}
-                    onClick={() => handleSelectBgOverlayPosition(opt.id)}
-                    className="jjdr-card-lift text-left rounded-2xl p-2.5 cursor-pointer disabled:cursor-not-allowed flex flex-col gap-1"
-                    style={{
-                      background: active
-                        ? "var(--accent-soft)"
-                        : "var(--input-bg)",
-                      border: `1.5px solid ${
-                        active ? "var(--accent)" : "var(--input-border)"
-                      }`,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-1">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span
-                        className="font-bold text-xs"
-                        style={{ color: "var(--text-primary)" }}
+                        className="text-xs font-bold truncate"
+                        style={{
+                          color: active
+                            ? "var(--text-primary)"
+                            : "var(--text-secondary)",
+                        }}
                       >
-                        {opt.label}
+                        {label}
                       </span>
-                      {active && (
+                      {id === "team" && (
                         <span
-                          className="w-4 h-4 rounded-full inline-flex items-center justify-center shrink-0"
-                          style={{
-                            background: "var(--accent)",
-                            color: "#ffffff",
-                          }}
-                        >
-                          <Check className="w-2.5 h-2.5" />
-                        </span>
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: teamDotColor }}
+                          title={`Relay: ${teamSnapshot?.state ?? "disabled"}`}
+                        />
                       )}
                     </div>
-                    <span
-                      className="text-[11px] leading-snug"
+                    <div
+                      className="text-[10px] mt-0.5 truncate"
                       style={{ color: "var(--text-muted)" }}
                     >
-                      {opt.desc}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                      {desc}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
 
-          {/* General Behavior Settings */}
-          <div
-            className="pt-4 space-y-2.5"
-            style={{ borderTop: "1px solid var(--divider)" }}
-          >
-            <label className="flex items-center justify-between gap-3">
-              <span style={{ color: "var(--text-secondary)" }}>
-                Stuck warning threshold (minutes in Working state)
-              </span>
-              <input
-                type="number"
-                min={0}
-                max={60}
-                value={draft.stuck_minutes}
-                onChange={(e) =>
-                  setDraft({ ...draft, stuck_minutes: Number(e.target.value) })
-                }
-                className="jjdr-input w-20 px-3 py-1.5 rounded-full text-right font-mono-code"
+          <div className="flex-1 min-w-0 p-5 text-xs overflow-y-auto">
+            {activeTab === "appearance" && (
+              <AppearanceSettingsTab
+                draft={draft}
+                radarColumnWidthPx={radarColumnWidthPx}
+                onSelectTheme={handleSelectTheme}
+                onSelectDensity={handleSelectDensity}
+                onSelectRootMode={handleSelectRootMode}
+                onChangeRadarColumnWidth={setRadarColumnWidthPx}
               />
-            </label>
-
-            <label
-              className="flex items-center gap-2.5 cursor-pointer"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <input
-                type="checkbox"
-                checked={draft.notify_on_blocked}
-                onChange={(e) =>
-                  setDraft({ ...draft, notify_on_blocked: e.target.checked })
-                }
+            )}
+            {activeTab === "general" && (
+              <GeneralSettingsTab
+                draft={draft}
+                onChangeDraft={setDraft}
+                onToggleBgOverlay={handleToggleBgOverlay}
+                onSelectBgOverlayPosition={handleSelectBgOverlayPosition}
+                onPreviewBgOverlay={handlePreviewBgOverlay}
               />
-              Calm OS notification when an AI session is Blocked / Error
-            </label>
-
-            <label
-              className="flex items-center gap-2.5 cursor-pointer"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <input
-                type="checkbox"
-                checked={draft.show_merge_overlap}
-                onChange={(e) =>
-                  setDraft({ ...draft, show_merge_overlap: e.target.checked })
-                }
+            )}
+            {activeTab === "team" && (
+              <TeamOrchestrationSettingsTab
+                draft={draft}
+                onChangeDraft={setDraft}
               />
-              Show Merge Overlap Radar badge (same relative file modified in 2+
-              worktrees)
-            </label>
+            )}
+            {activeTab === "integrations" && <IntegrationsSettingsTab />}
           </div>
-
-          {/* Prompt Presets */}
-          <div
-            className="pt-4 space-y-2.5"
-            style={{ borderTop: "1px solid var(--divider)" }}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <span
-                  className="font-bold"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  터미널 상단 원클릭 프롬프트 프리셋
-                </span>
-                <p
-                  className="text-[11px] mt-0.5"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  버튼 이름과 보낼 프롬프트를 자유롭게 추가·수정·삭제할 수 있습니다.
-                </p>
-              </div>
-              <button
-                onClick={addPreset}
-                className="jjdr-pill inline-flex items-center gap-1 px-3 py-1 rounded-full font-semibold shrink-0 cursor-pointer"
-                style={{ color: "var(--accent)" }}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                추가
-              </button>
-            </div>
-            <div className="space-y-2">
-              {draft.prompt_presets.map((p, i) => (
-                <div key={p.id} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={p.label}
-                    placeholder="버튼 이름"
-                    onChange={(e) => updatePreset(i, { label: e.target.value })}
-                    className="jjdr-input w-32 px-3 py-1.5 rounded-full"
-                  />
-                  <input
-                    type="text"
-                    value={p.prompt}
-                    placeholder="AI에게 보낼 프롬프트 내용..."
-                    onChange={(e) => updatePreset(i, { prompt: e.target.value })}
-                    className="jjdr-input flex-1 px-3 py-1.5 rounded-full"
-                  />
-                  <button
-                    onClick={() => removePreset(i)}
-                    title="삭제"
-                    className="p-1.5 rounded-full hover:bg-black/10 cursor-pointer"
-                    style={{ color: "var(--action-fg)" }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <GeminiBridgeSettingsSection />
-
-          <UpdateSettingsSection />
         </div>
 
+        {/* Footer */}
         <div
-          className="px-5 py-3.5 flex justify-end gap-2"
+          className="px-5 py-3.5 flex justify-end gap-2 shrink-0"
           style={{
             background: "var(--modal-footer)",
             borderTop: "1px solid var(--divider)",
           }}
         >
           <button
+            type="button"
             onClick={() => setOpen(false)}
             className="px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer"
             style={{ color: "var(--text-muted)" }}
@@ -796,6 +307,7 @@ export const SettingsModal = React.memo(function SettingsModal() {
             Close
           </button>
           <button
+            type="button"
             onClick={() => void handleSave()}
             className="jjdr-primary-btn px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer"
           >

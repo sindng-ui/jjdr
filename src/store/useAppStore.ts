@@ -7,12 +7,17 @@ import type {
   HerdrHealth,
   ProjectConfig,
   StateBatchPayload,
+  TeamConnectionSnapshot,
   TemplateInfo,
   TerminalInfo,
   TerminalPreview,
   WorktreeCardMeta,
   WorktreeInfo,
 } from "../types/domain";
+import {
+  createDefaultTeamSettings,
+  normalizeTeamSettings,
+} from "../utils/teamSettings";
 import {
   mergeAutoMission,
   normalizeMissionKind,
@@ -49,6 +54,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     { id: "commit", label: "Commit Msg", prompt: "Summarize all changes concisely and propose a clean commit message." },
   ],
   skipped_update_version: null,
+  team: createDefaultTeamSettings(),
 };
 
 const EMPTY_COMPUTED: DashboardWorkerResult = {
@@ -79,11 +85,13 @@ interface AppStoreState {
   worktreeOrderByProject: Record<string, string[]>;
   removingWorktreePaths: Record<string, true>;
   computed: DashboardWorkerResult;
+  teamSnapshot: TeamConnectionSnapshot | null;
   hydrated: boolean;
   seq: number;
 
   applyBatch: (batch: StateBatchPayload) => void;
   setHealth: (health: HerdrHealth) => void;
+  setTeamSnapshot: (snapshot: TeamConnectionSnapshot | null) => void;
   setProjects: (projects: ProjectConfig[]) => void;
   setWorktreesByProject: (map: Record<string, WorktreeInfo[]>) => void;
   setProjectWorktrees: (projectId: string, list: WorktreeInfo[]) => void;
@@ -142,6 +150,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   worktreeOrderByProject: {},
   removingWorktreePaths: {},
   computed: EMPTY_COMPUTED,
+  teamSnapshot: null,
   hydrated: false,
   seq: 0,
 
@@ -276,6 +285,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       };
     }),
   setTemplates: (templates) => set({ templates }),
+  setTeamSnapshot: (teamSnapshot) => set({ teamSnapshot }),
   setSettings: (settings) => {
     const normalized: AppSettings = {
       ...settings,
@@ -294,6 +304,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         settings.bg_overlay_position === "top_center"
           ? settings.bg_overlay_position
           : "top_center",
+      team: normalizeTeamSettings(settings.team),
     };
     applyThemeToDom(normalized.theme);
     set({ settings: normalized });
@@ -325,6 +336,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         settings?.bg_overlay_position === "top_center"
           ? settings.bg_overlay_position
           : "top_center",
+      team: normalizeTeamSettings(settings?.team),
     };
     applyThemeToDom(normalizedSettings.theme);
     set({

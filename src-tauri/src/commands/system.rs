@@ -57,6 +57,7 @@ pub async fn save_settings(
     settings: AppSettings,
 ) -> Result<(), String> {
     state.store.save_settings(&state.herdr, settings).await;
+    state.team_relay.notify_config_changed();
     Ok(())
 }
 

@@ -13,8 +13,11 @@ import type {
   PersistedBundle,
   PersistedUiState,
   ProjectConfig,
+  RelayTestResult,
   RepoInspectInfo,
   StateBatchPayload,
+  TeamConnectionSnapshot,
+  TeamPeerInfo,
   TemplateInfo,
   TermClosedEvent,
   TermDataEvent,
@@ -512,4 +515,44 @@ export async function testGeminiBridgeEvent(
   return invoke<GeminiBridgeStatus>("test_gemini_bridge_event", {
     eventName: eventName ?? null,
   });
+}
+
+export async function getTeamStatus(): Promise<TeamConnectionSnapshot> {
+  return invoke<TeamConnectionSnapshot>("get_team_status");
+}
+
+export async function testTeamRelayConnection(
+  relayUrl: string,
+  teamKey: string,
+  bypassProxy: boolean
+): Promise<RelayTestResult> {
+  return invoke<RelayTestResult>("test_team_relay_connection", {
+    relayUrl,
+    teamKey,
+    bypassProxy,
+  });
+}
+
+export async function detectTeamGithubId(): Promise<string> {
+  return invoke<string>("detect_team_github_id");
+}
+
+export async function reconnectTeamRelay(): Promise<TeamConnectionSnapshot> {
+  return invoke<TeamConnectionSnapshot>("reconnect_team_relay");
+}
+
+export async function listTeamPeers(): Promise<TeamPeerInfo[]> {
+  return invoke<TeamPeerInfo[]>("list_team_peers");
+}
+
+export async function flushTeamOutbox(): Promise<number> {
+  return invoke<number>("flush_team_outbox");
+}
+
+export async function listenTeamStateChanged(
+  cb: (payload: TeamConnectionSnapshot) => void
+): Promise<UnlistenFn> {
+  return listen<TeamConnectionSnapshot>("jjdr:team-state-changed", (e) =>
+    cb(e.payload)
+  );
 }

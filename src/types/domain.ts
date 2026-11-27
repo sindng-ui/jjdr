@@ -131,6 +131,68 @@ export type RadarDensity = "comfortable" | "balanced" | "compact";
 export type RootCardMode = "header_chip" | "card" | "hidden";
 export type BgOverlayPosition = "top_center" | "bottom_center" | "bottom_right";
 
+export interface TeamOrchestrationSettings {
+  enabled: boolean;
+  relay_url: string;
+  team_key: string;
+  bypass_proxy: boolean;
+  github_id_override: string;
+  display_name: string;
+  auto_review_paused: boolean;
+  primary_agent: string;
+  primary_model: string;
+  fallback_agent: string;
+  fallback_model: string;
+  global_max_auto_review_workers: number;
+  per_project_max_workers: number;
+  ack_teardown_mode: "on_ack" | "immediate" | string;
+  review_prompt_template: string;
+  reject_excluded_labels: string[];
+  reject_excluded_branches: string[];
+  reject_disabled_project_ids: string[];
+  reject_allowed_authors: string[];
+  reject_blocked_authors: string[];
+  reject_max_queue_size: number;
+}
+
+export type TeamPresenceStatus = "online" | "paused" | "offline";
+
+export interface TeamPeerInfo {
+  github_id: string;
+  display_name: string;
+  status: TeamPresenceStatus;
+  repo_urls: string[];
+  last_seen_ms: number;
+}
+
+export interface TeamConnectionSnapshot {
+  enabled: boolean;
+  connected: boolean;
+  state: "disabled" | "connecting" | "connected" | "paused" | "error" | string;
+  relay_url: string;
+  device_id: string;
+  github_id?: string | null;
+  effective_status: TeamPresenceStatus;
+  registered_repos: string[];
+  peers: TeamPeerInfo[];
+  outbox_pending: number;
+  server_version?: string | null;
+  last_error?: string | null;
+  last_connected_ms?: number | null;
+}
+
+export interface RelayTestResult {
+  ok: boolean;
+  health_ok: boolean;
+  auth_ok: boolean;
+  latency_ms: number;
+  server_version?: string | null;
+  protocol_version?: number | null;
+  online_peers: number;
+  total_peers: number;
+  error?: string | null;
+}
+
 export interface AppSettings {
   theme: ThemeId;
   radar_density: RadarDensity;
@@ -143,6 +205,7 @@ export interface AppSettings {
   bg_overlay_position?: BgOverlayPosition;
   prompt_presets: PromptPreset[];
   skipped_update_version?: string | null;
+  team?: TeamOrchestrationSettings;
 }
 
 export interface UpdateCheckResult {

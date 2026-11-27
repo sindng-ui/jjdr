@@ -10,6 +10,7 @@ use tracing::warn;
 use crate::git::bootstrap::BootstrapConfig;
 use crate::herdr::client::HerdrClient;
 use crate::herdr::types::DocGetResult;
+use crate::store::team_settings::TeamOrchestrationSettings;
 
 const DOC_PROJECTS_KEY: &str = "jjdr.projects.v1";
 const DOC_UI_STATE_KEY: &str = "jjdr.ui_state.v1";
@@ -108,6 +109,8 @@ pub struct AppSettings {
     pub prompt_presets: Vec<PromptPreset>,
     #[serde(default)]
     pub skipped_update_version: Option<String>,
+    #[serde(default)]
+    pub team: TeamOrchestrationSettings,
 }
 
 fn default_theme() -> String {
@@ -167,6 +170,7 @@ impl Default for AppSettings {
             bg_overlay_position: default_bg_overlay_position(),
             prompt_presets: default_presets(),
             skipped_update_version: None,
+            team: TeamOrchestrationSettings::default(),
         }
     }
 }
@@ -228,8 +232,16 @@ impl PersistenceStore {
         }
     }
 
+    pub fn local_dir(&self) -> &PathBuf {
+        &self.local_dir
+    }
+
     pub async fn list_projects(&self) -> Vec<ProjectConfig> {
         self.projects.read().await.clone()
+    }
+
+    pub async fn get_settings(&self) -> AppSettings {
+        self.settings.read().await.clone()
     }
 
     pub async fn upsert_project(
