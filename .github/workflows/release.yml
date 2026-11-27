@@ -55,11 +55,12 @@ jobs:
           echo "Previous version: ${PREV_VER}"
 
           CURRENT_VER="${{ steps.pkg_version.outputs.version }}"
-          if [ -n "$CURRENT_VER" ] && [ "$CURRENT_VER" != "$PREV_VER" ]; then
-            echo "Version changed from '$PREV_VER' to '$CURRENT_VER'. Triggering release!"
+          EXISTING_TAG=$(git ls-remote --tags origin "refs/tags/v${CURRENT_VER}" || true)
+          if [ -n "$CURRENT_VER" ] && { [ "$CURRENT_VER" != "$PREV_VER" ] || [ -z "$EXISTING_TAG" ]; }; then
+            echo "Triggering release for v${CURRENT_VER} (prev='$PREV_VER', tag_exists=$([ -n "$EXISTING_TAG" ] && echo yes || echo no))"
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Version has not changed ($CURRENT_VER == $PREV_VER). Skipping build/release."
+            echo "Version v${CURRENT_VER} is already released ($CURRENT_VER == $PREV_VER). Skipping build/release."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
           fi
 

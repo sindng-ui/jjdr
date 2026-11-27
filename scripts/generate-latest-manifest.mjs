@@ -1,6 +1,10 @@
-#!/usr/bin/env node
+/**
+ * Generate Rate-Limit-Free `latest.json` release manifest from built Windows installers.
+ */
+
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Recursively collect Windows installer files (.exe / .msi) under a Tauri bundle directory.
@@ -85,12 +89,7 @@ function parseCliArgs(argv) {
   return out;
 }
 
-if (
-  import.meta.url === `file://${process.argv[1]}` ||
-  import.meta.url.endsWith(
-    `/${path.basename(process.argv[1] || "").replace(/\\/g, "/")}`
-  )
-) {
+function main() {
   const args = parseCliArgs(process.argv.slice(2));
   const version = args.version || "";
   const repo = args.repo || "sindng-ui/jjdr";
@@ -120,4 +119,12 @@ if (
   console.log(
     `Generated ${outPath} for ${manifest.tag_name} with ${assets.length} installer asset(s).`
   );
+}
+
+const isDirectExecution =
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (isDirectExecution) {
+  main();
 }
