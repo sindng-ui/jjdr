@@ -7,6 +7,7 @@ import {
 import {
   getInitialState,
   hideBgOverlay,
+  isMainVisibleOnScreen,
   isTauriRuntime,
   listAllWorktrees,
   listTemplates,
@@ -409,6 +410,10 @@ export function useHerdrSync() {
       bgDebounceTimer = setTimeout(() => {
         bgDebounceTimer = null;
         if (!active) return;
+        // Re-verify live focus so transient WebView2 blur glitches never flip us to background
+        if (!document.hidden && document.hasFocus()) {
+          return;
+        }
         isMainInBackgroundRef.current = true;
         setIsMainInBackground(true);
       }, 300);
@@ -454,11 +459,22 @@ export function useHerdrSync() {
       });
     };
     const onVisibilityChange = () => {
-      if (document.hidden) markBg(true);
+      if (document.hidden) {
+        markBg(true);
+      } else if (document.hasFocus()) {
+        markBg(false);
+      }
+    };
+    const onUserActivityInMain = () => {
+      if (isMainInBackgroundRef.current) {
+        markBg(false);
+      }
     };
 
     window.addEventListener("blur", onWindowBlur);
     window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("pointerdown", onUserActivityInMain, true);
+    window.addEventListener("keydown", onUserActivityInMain, true);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     void Promise.all([
@@ -512,6 +528,8 @@ export function useHerdrSync() {
       if (bgDebounceTimer) clearTimeout(bgDebounceTimer);
       window.removeEventListener("blur", onWindowBlur);
       window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("pointerdown", onUserActivityInMain, true);
+      window.removeEventListener("keydown", onUserActivityInMain, true);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       unlisteners.forEach((fn) => fn());
     };
@@ -568,7 +586,19 @@ export function useHerdrSync() {
     }
     lastOverlaySignatureRef.current = sig;
 
-    void showBgOverlay(payload, false).catch(() => {});
+    void showBgOverlay(payload, false)
+      .then((shown) => {
+        // If suppressed because main window is visible on screen (e.g. dual monitor / split-screen),
+        // clear signature so hiding/minimizing main later can still display this alert cleanly.
+        if (!shown && lastOverlaySignatureRef.current === sig) {
+          lastOverlaySignatureRef.current = null;
+        }
+      })
+      .catch(() => {
+        if (lastOverlaySignatureRef.current === sig) {
+          lastOverlaySignatureRef.current = null;
+        }
+      });
   }, [
     allSessions,
     worktreeMeta,
@@ -620,6 +650,11 @@ export function useHerdrSync() {
 
 async function triggerCalmNotification(title: string, body: string) {
   try {
+    // Double-check live OS visibility (including dual monitor / split-screen Z-order)
+    // so notifications never fire while jjdr is visibly open on screen.
+    if (!document.hidden && document.hasFocus()) return;
+    if (await isMainVisibleOnScreen()) return;
+
     let granted = await isPermissionGranted();
     if (!granted) {
       const perm = await requestPermission();

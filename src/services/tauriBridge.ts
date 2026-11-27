@@ -400,6 +400,13 @@ export async function focusMainFromOverlay(
   return invoke<void>("focus_main_from_overlay", { cardKey, address });
 }
 
+export async function isMainVisibleOnScreen(): Promise<boolean> {
+  if (!isTauriRuntime()) return !document.hidden && document.hasFocus();
+  return invoke<boolean>("is_main_visible_on_screen").catch(
+    () => !document.hidden && document.hasFocus()
+  );
+}
+
 export async function listenBgOverlayUpdate(
   cb: (payload: BgOverlayPayload) => void
 ): Promise<UnlistenFn> {

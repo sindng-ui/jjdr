@@ -158,6 +158,7 @@ pub fn run() {
             commands::overlay::dismiss_bg_overlay,
             commands::overlay::get_bg_overlay_payload,
             commands::overlay::focus_main_from_overlay,
+            commands::overlay::is_main_visible_on_screen,
             commands::update::get_app_version,
             commands::update::check_for_update,
             commands::update::download_and_install_update,

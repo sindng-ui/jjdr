@@ -7,21 +7,166 @@ use tauri::{
 };
 
 use crate::store::overlay::{
-    compute_overlay_position, BgOverlayPayload, OverlayOpenCardEvent, OVERLAY_HEIGHT_LOGICAL,
-    OVERLAY_MARGIN_LOGICAL, OVERLAY_WIDTH_LOGICAL, OVERLAY_WINDOW_LABEL,
+    compute_overlay_position, is_window_obscured_by_occluders, BgOverlayPayload,
+    OverlayOpenCardEvent, ScreenRect, OVERLAY_HEIGHT_LOGICAL, OVERLAY_MARGIN_LOGICAL,
+    OVERLAY_WIDTH_LOGICAL, OVERLAY_WINDOW_LABEL,
 };
 use crate::AppState;
 
 const OVERLAY_AUTO_HIDE_MS: u64 = 7_000;
 
-fn is_main_in_foreground(app: &AppHandle) -> bool {
+#[cfg(windows)]
+mod win_vis {
+    use std::ffi::c_void;
+
+    use crate::store::overlay::{is_window_obscured_by_occluders, ScreenRect};
+
+    type Hwnd = *mut c_void;
+    type Bool = i32;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    const GW_HWNDPREV: u32 = 3;
+    const GWL_EXSTYLE: i32 = -20;
+    const WS_EX_TRANSPARENT: i32 = 0x0000_0020;
+    const WS_EX_TOOLWINDOW: i32 = 0x0000_0080;
+    const DWMWA_CLOAKED: u32 = 14;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn IsWindowVisible(hwnd: Hwnd) -> Bool;
+        fn IsIconic(hwnd: Hwnd) -> Bool;
+        fn GetForegroundWindow() -> Hwnd;
+        fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
+        fn GetWindow(hwnd: Hwnd, cmd: u32) -> Hwnd;
+        fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
+    }
+
+    #[link(name = "dwmapi")]
+    extern "system" {
+        fn DwmGetWindowAttribute(
+            hwnd: Hwnd,
+            attr: u32,
+            pv_attr: *mut c_void,
+            cb_attr: u32,
+        ) -> i32;
+    }
+
+    unsafe fn is_cloaked(hwnd: Hwnd) -> bool {
+        let mut cloaked: u32 = 0;
+        let hr = DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            (&mut cloaked as *mut u32).cast::<c_void>(),
+            std::mem::size_of::<u32>() as u32,
+        );
+        hr == 0 && cloaked != 0
+    }
+
+    /// Returns `true` when `main_hwnd` is visible on screen to the user:
+    /// not hidden, not minimized, not cloaked, and either focused or not covered by other windows
+    /// stacked above it (e.g. visible on a secondary monitor or split-screen layout).
+    pub fn is_hwnd_visible_to_user(main_hwnd: Hwnd, overlay_hwnd: Option<Hwnd>) -> bool {
+        if main_hwnd.is_null() {
+            return false;
+        }
+        unsafe {
+            if IsWindowVisible(main_hwnd) == 0 || IsIconic(main_hwnd) != 0 || is_cloaked(main_hwnd)
+            {
+                return false;
+            }
+            if GetForegroundWindow() == main_hwnd {
+                return true;
+            }
+
+            let mut target = Rect::default();
+            if GetWindowRect(main_hwnd, &mut target) == 0 {
+                return false;
+            }
+            let target_rect = ScreenRect {
+                left: target.left,
+                top: target.top,
+                right: target.right,
+                bottom: target.bottom,
+            };
+
+            let mut occluders: Vec<ScreenRect> = Vec::new();
+            let mut cur = GetWindow(main_hwnd, GW_HWNDPREV);
+            let mut steps = 0usize;
+            while !cur.is_null() && steps < 128 {
+                steps += 1;
+                if Some(cur) != overlay_hwnd
+                    && IsWindowVisible(cur) != 0
+                    && IsIconic(cur) == 0
+                    && !is_cloaked(cur)
+                {
+                    let ex = GetWindowLongW(cur, GWL_EXSTYLE);
+                    let is_passthrough_overlay =
+                        (ex & WS_EX_TRANSPARENT) != 0 || (ex & WS_EX_TOOLWINDOW) != 0;
+                    if !is_passthrough_overlay {
+                        let mut r = Rect::default();
+                        if GetWindowRect(cur, &mut r) != 0 {
+                            let sr = ScreenRect {
+                                left: r.left,
+                                top: r.top,
+                                right: r.right,
+                                bottom: r.bottom,
+                            };
+                            if sr.width() >= 40 && sr.height() >= 40 {
+                                occluders.push(sr);
+                            }
+                        }
+                    }
+                }
+                cur = GetWindow(cur, GW_HWNDPREV);
+            }
+
+            !is_window_obscured_by_occluders(target_rect, &occluders)
+        }
+    }
+}
+
+/// True when the main jjdr window is currently visible to the user (focused OR unobscured on screen,
+/// such as on a secondary monitor or split-screen). Notifications are suppressed while `true`.
+pub fn is_main_visible_to_user(app: &AppHandle) -> bool {
     let Some(main) = app.get_webview_window("main") else {
         return false;
     };
     let visible = main.is_visible().unwrap_or(false);
     let minimized = main.is_minimized().unwrap_or(false);
-    let focused = main.is_focused().unwrap_or(false);
-    visible && !minimized && focused
+    if !visible || minimized {
+        return false;
+    }
+    if main.is_focused().unwrap_or(false) {
+        return true;
+    }
+
+    #[cfg(windows)]
+    {
+        if let Ok(hwnd) = main.hwnd() {
+            let overlay_hwnd = app
+                .get_webview_window(OVERLAY_WINDOW_LABEL)
+                .and_then(|w| w.hwnd().ok())
+                .map(|h| h.0);
+            return win_vis::is_hwnd_visible_to_user(hwnd.0, overlay_hwnd);
+        }
+    }
+
+    let _ = is_window_obscured_by_occluders;
+    let _ = ScreenRect { left: 0, top: 0, right: 0, bottom: 0 };
+    false
+}
+
+#[tauri::command]
+pub fn is_main_visible_on_screen(app: AppHandle) -> bool {
+    is_main_visible_to_user(&app)
 }
 
 fn position_overlay_window(app: &AppHandle, overlay: &tauri::WebviewWindow, position: &str) {
@@ -84,8 +229,8 @@ pub async fn show_bg_overlay(
     let _op_guard = state.bg_overlay_op_lock.lock().await;
     let preview = force_preview.unwrap_or(false) || payload.is_preview;
 
-    // Never show notifications while main app is active in foreground (unless explicit settings preview)
-    if !preview && is_main_in_foreground(&app) {
+    // Never show notifications while main app is visible on screen (unless explicit settings preview)
+    if !preview && is_main_visible_to_user(&app) {
         hide_overlay_window(&app);
         return Ok(false);
     }
@@ -117,8 +262,8 @@ pub async fn show_bg_overlay(
         .map_err(|e| format!("Failed to create bg overlay window: {}", e))?,
     };
 
-    // Re-check foreground state after async WebView2 creation so returning to main never flashes overlay
-    if !preview && is_main_in_foreground(&app) {
+    // Re-check visibility after async WebView2 creation so returning to main never flashes overlay
+    if !preview && is_main_visible_to_user(&app) {
         hide_overlay_window(&app);
         return Ok(false);
     }
