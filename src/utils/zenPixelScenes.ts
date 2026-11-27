@@ -21,13 +21,54 @@ import {
   WINTER_PALETTES,
 } from "./zenPixelCommon";
 
+export type PixelBackdropScene = Exclude<
+  ChillBackdropScene,
+  "none" | "custom_photo"
+>;
+
 export interface PixelSceneRenderOptions {
   monsters: boolean;
   snow: boolean;
 }
 
+/**
+ * Single-slot offscreen cache holding pre-baked static mountain & terrain layers
+ * (<= 320x180 RGBA = ~0.23 MB) so animated frames blit static peaks in 1 drawImage()
+ * instead of ~11,500 fillRect() calls per frame. Freed immediately on unmount.
+ */
+export interface ChillStaticLayerCache {
+  key: string;
+  canvas: HTMLCanvasElement;
+  ridgeHeights?: Int16Array;
+}
+
+export interface ChillStaticCacheHolder {
+  current: ChillStaticLayerCache | null;
+}
+
+function getOrBakeStaticLayer(
+  holder: ChillStaticCacheHolder | undefined,
+  key: string,
+  width: number,
+  height: number,
+  bake: (ctx: CanvasRenderingContext2D) => Int16Array | undefined
+): ChillStaticLayerCache | null {
+  if (!holder || typeof document === "undefined") return null;
+  if (holder.current && holder.current.key === key) {
+    return holder.current;
+  }
+  const off = document.createElement("canvas");
+  off.width = width;
+  off.height = height;
+  const offCtx = off.getContext("2d");
+  if (!offCtx) return null;
+  const ridgeHeights = bake(offCtx);
+  holder.current = { key, canvas: off, ridgeHeights };
+  return holder.current;
+}
+
 export function getScenePixelDimensions(
-  scene: Exclude<ChillBackdropScene, "none">
+  scene: PixelBackdropScene
 ): { width: number; height: number } {
   if (scene === "resort_beach") {
     return { width: 240, height: 135 };
@@ -414,7 +455,8 @@ function drawAlpineChaletScene(
   ctx: CanvasRenderingContext2D,
   mood: ResolvedChillMood,
   t: number,
-  opts: PixelSceneRenderOptions
+  opts: PixelSceneRenderOptions,
+  cacheHolder?: ChillStaticCacheHolder
 ): void {
   const m = WINTER_PALETTES[mood];
   const isNight = mood === "night";
@@ -427,65 +469,111 @@ function drawAlpineChaletScene(
     drawFluffyCloud(ctx, ((175 + t * 0.7) % (PIXEL_W + 70)) - 45, 16, 1.25, m.cloud, m.cloudShade);
   }
 
-  drawNaturalMassif(
-    ctx,
-    [
-      [0, 74], [48, 56], [108, 66], [176, 48], [228, 64], [278, 52], [320, 68],
-    ],
-    126,
-    m,
-    { cragAmp: 4, seed: 11, sunFromRight: sunRight, isFar: true }
-  );
+  const drawStaticTerrain = (target: CanvasRenderingContext2D) => {
+    drawNaturalMassif(
+      target,
+      [
+        [0, 74], [48, 56], [108, 66], [176, 48], [228, 64], [278, 52], [320, 68],
+      ],
+      126,
+      m,
+      { cragAmp: 4, seed: 11, sunFromRight: sunRight, isFar: true }
+    );
 
-  drawNaturalMassif(
-    ctx,
-    [
-      [0, 62], [28, 54], [56, 36], [82, 24], [102, 46], [134, 58],
-      [168, 44], [196, 52], [230, 78], [274, 86], [320, 64],
-    ],
-    126,
-    m,
-    { cragAmp: 5.5, seed: 23, sunFromRight: sunRight, snowBias: 0.56 }
-  );
-  drawValleyMist(ctx, 102, 22, m.mist);
+    drawNaturalMassif(
+      target,
+      [
+        [0, 62], [28, 54], [56, 36], [82, 24], [102, 46], [134, 58],
+        [168, 44], [196, 52], [230, 78], [274, 86], [320, 64],
+      ],
+      126,
+      m,
+      { cragAmp: 5.5, seed: 23, sunFromRight: sunRight, snowBias: 0.56 }
+    );
+    drawValleyMist(target, 102, 22, m.mist);
 
-  // Diagonal gondola cable & 2 moving red cabins
-  const x0 = 0;
-  const y0 = 64;
-  const x1 = PIXEL_W;
-  const y1 = 114;
-  for (let x = 0; x < PIXEL_W; x += 2) {
-    const p = x / PIXEL_W;
-    const y = y0 + (y1 - y0) * p + Math.sin(p * Math.PI) * 9;
-    px(ctx, x, y, 2, 1, "rgba(30, 41, 59, 0.5)");
+    // Gondola cable line
+    for (let x = 0; x < PIXEL_W; x += 2) {
+      const p = x / PIXEL_W;
+      const y = 64 + 50 * p + Math.sin(p * Math.PI) * 9;
+      px(target, x, y, 2, 1, "rgba(30, 41, 59, 0.5)");
+    }
+
+    // Rolling snowy alpine meadow & pines
+    px(target, 0, 122, PIXEL_W, 58, m.snowGround[1]);
+    for (let x = 0; x < PIXEL_W; x += 4) {
+      const slope = Math.round(118 + Math.sin(x * 0.015) * 6 - (x / PIXEL_W) * 6);
+      px(target, x, slope, 4, 22, m.snowGround[0]);
+    }
+    px(target, 0, 154, PIXEL_W, 26, m.snowGround[2]);
+
+    const backPines = [16, 34, 52, 70, 134, 152, 276, 296];
+    backPines.forEach((bx, i) =>
+      drawSnowPine(target, bx, 134 + (i % 3) * 5, 14 + (i % 3) * 3, m)
+    );
+
+    // Chalet structure & snowman
+    const cx = 190;
+    const cy = 112;
+    px(target, cx + 42, cy - 12, 7, 16, "#7c2d12");
+    px(target, cx, cy + 8, 56, 26, "#8a5230");
+    for (let ly = cy + 11; ly < cy + 34; ly += 4) px(target, cx, ly, 56, 1, "#6b3d22");
+    px(target, cx - 2, cy + 31, 60, 5, "#64748b");
+    px(target, cx - 4, cy + 35, 64, 7, "rgba(253, 224, 71, 0.22)");
+    px(target, cx + 7, cy + 13, 11, 10, "#fde047");
+    px(target, cx + 7, cy + 17, 11, 1, "#78350f");
+    px(target, cx + 12, cy + 13, 1, 10, "#78350f");
+    px(target, cx + 38, cy + 13, 11, 10, "#fde047");
+    px(target, cx + 38, cy + 17, 11, 1, "#78350f");
+    px(target, cx + 43, cy + 13, 1, 10, "#78350f");
+    px(target, cx + 23, cy + 18, 10, 15, "#5c3018");
+    px(target, cx + 25, cy + 20, 6, 5, "#fbbf24");
+    for (let r = 0; r < 15; r++) {
+      const rw = 70 - r * 4;
+      px(target, cx + 28 - rw / 2, cy + 9 - r, rw, 2, "#5c3420");
+      px(target, cx + 28 - rw / 2 + 1, cy + 7 - r, Math.max(4, rw - 2), 2, "#ffffff");
+    }
+
+    px(target, 90, 147, 12, 10, "#ffffff");
+    px(target, 92, 139, 8, 8, "#ffffff");
+    px(target, 91, 146, 10, 2, "#ef4444");
+    px(target, 94, 141, 1, 1, "#0f172a");
+    px(target, 97, 141, 1, 1, "#0f172a");
+    px(target, 96, 142, 3, 1, "#f97316");
+    px(target, 92, 136, 8, 3, "#1e293b");
+    px(target, 90, 138, 12, 1, "#1e293b");
+
+    drawSnowPine(target, 14, 170, 22, m);
+    drawSnowPine(target, 306, 170, 22, m);
+    return undefined;
+  };
+
+  const cached = getOrBakeStaticLayer(
+    cacheHolder,
+    `alpine_chalet:${mood}`,
+    PIXEL_W,
+    PIXEL_H,
+    drawStaticTerrain
+  );
+  if (cached) {
+    ctx.drawImage(cached.canvas, 0, 0);
+  } else {
+    drawStaticTerrain(ctx);
   }
+
+  // Animated overlay elements only (~150 fillRects): gondolas, chimney smoke, fairy lights, monsters, snow
   for (const offset of [0.12, 0.62]) {
     const p = (t * 0.04 + offset) % 1;
-    const gx = x0 + (x1 - x0) * p;
-    const gy = y0 + (y1 - y0) * p + Math.sin(p * Math.PI) * 9;
+    const gx = PIXEL_W * p;
+    const gy = 64 + 50 * p + Math.sin(p * Math.PI) * 9;
     px(ctx, gx, gy, 1, 6, "#334155");
     px(ctx, gx - 5, gy + 5, 11, 7, "#dc2626");
     px(ctx, gx - 4, gy + 6, 9, 3, "#fef08a");
     px(ctx, gx - 5, gy + 4, 11, 2, "#f8fafc");
   }
 
-  // Rolling snowy alpine meadow
-  px(ctx, 0, 122, PIXEL_W, 58, m.snowGround[1]);
-  for (let x = 0; x < PIXEL_W; x += 4) {
-    const slope = Math.round(118 + Math.sin(x * 0.015) * 6 - (x / PIXEL_W) * 6);
-    px(ctx, x, slope, 4, 22, m.snowGround[0]);
-  }
-  px(ctx, 0, 154, PIXEL_W, 26, m.snowGround[2]);
-
-  const backPines = [16, 34, 52, 70, 134, 152, 276, 296];
-  backPines.forEach((bx, i) =>
-    drawSnowPine(ctx, bx, 134 + (i % 3) * 5, 14 + (i % 3) * 3, m)
-  );
-
-  // Warm timber chalet with chimney smoke & fairy lights
   const cx = 190;
   const cy = 112;
-  px(ctx, cx + 42, cy - 12, 7, 16, "#7c2d12");
   for (let i = 0; i < 6; i++) {
     const prog = (t * 0.42 + i * 0.17) % 1;
     const smX = cx + 44 + Math.sin(prog * 5 + t) * 5 + prog * 12;
@@ -493,37 +581,8 @@ function drawAlpineChaletScene(
     const sz = Math.round(3 + prog * 4);
     px(ctx, smX, smY, sz, sz - 1, `rgba(255, 255, 255, ${(0.65 * (1 - prog)).toFixed(2)})`);
   }
-  px(ctx, cx, cy + 8, 56, 26, "#8a5230");
-  for (let ly = cy + 11; ly < cy + 34; ly += 4) px(ctx, cx, ly, 56, 1, "#6b3d22");
-  px(ctx, cx - 2, cy + 31, 60, 5, "#64748b");
-  px(ctx, cx - 4, cy + 35, 64, 7, "rgba(253, 224, 71, 0.22)");
-  px(ctx, cx + 7, cy + 13, 11, 10, "#fde047");
-  px(ctx, cx + 7, cy + 17, 11, 1, "#78350f");
-  px(ctx, cx + 12, cy + 13, 1, 10, "#78350f");
-  px(ctx, cx + 38, cy + 13, 11, 10, "#fde047");
-  px(ctx, cx + 38, cy + 17, 11, 1, "#78350f");
-  px(ctx, cx + 43, cy + 13, 1, 10, "#78350f");
-  px(ctx, cx + 23, cy + 18, 10, 15, "#5c3018");
-  px(ctx, cx + 25, cy + 20, 6, 5, "#fbbf24");
-  for (let r = 0; r < 15; r++) {
-    const rw = 70 - r * 4;
-    px(ctx, cx + 28 - rw / 2, cy + 9 - r, rw, 2, "#5c3420");
-    px(ctx, cx + 28 - rw / 2 + 1, cy + 7 - r, Math.max(4, rw - 2), 2, "#ffffff");
-  }
   drawStringLights(ctx, cx - 5, cy + 10, cx + 61, cy + 10, 3, 9, t, true);
 
-  // Snowman on left
-  px(ctx, 90, 147, 12, 10, "#ffffff");
-  px(ctx, 92, 139, 8, 8, "#ffffff");
-  px(ctx, 91, 146, 10, 2, "#ef4444");
-  px(ctx, 94, 141, 1, 1, "#0f172a");
-  px(ctx, 97, 141, 1, 1, "#0f172a");
-  px(ctx, 96, 142, 3, 1, "#f97316");
-  px(ctx, 92, 136, 8, 3, "#1e293b");
-  px(ctx, 90, 138, 12, 1, "#1e293b");
-
-  drawSnowPine(ctx, 14, 170, 22, m);
-  drawSnowPine(ctx, 306, 170, 22, m);
   if (opts.monsters) {
     drawWinterMonster(ctx, 112, 148, "#38bdf8", "#e0f2fe", "#f43f5e", t);
     drawWinterMonster(ctx, 164, 149, "#34d399", "#d1fae5", "#f59e0b", t + 1.2);
@@ -541,7 +600,8 @@ function drawGlacierExpressScene(
   ctx: CanvasRenderingContext2D,
   mood: ResolvedChillMood,
   t: number,
-  opts: PixelSceneRenderOptions
+  opts: PixelSceneRenderOptions,
+  cacheHolder?: ChillStaticCacheHolder
 ): void {
   const m = WINTER_PALETTES[mood];
   const isNight = mood === "night";
@@ -556,37 +616,65 @@ function drawGlacierExpressScene(
     drawFluffyCloud(ctx, ((185 + t * 0.7) % (PIXEL_W + 70)) - 45, 16, 1.2, m.cloud, m.cloudShade);
   }
 
-  drawNaturalMassif(
-    ctx,
-    [
-      [0, 62], [58, 48], [116, 62], [178, 38], [218, 50], [274, 44], [320, 60],
-    ],
-    lakeTop + 2,
-    m,
-    { cragAmp: 4.5, seed: 71, sunFromRight: sunRight, isFar: true }
+  const drawStaticPeaksAndLake = (target: CanvasRenderingContext2D) => {
+    drawNaturalMassif(
+      target,
+      [
+        [0, 62], [58, 48], [116, 62], [178, 38], [218, 50], [274, 44], [320, 60],
+      ],
+      lakeTop + 2,
+      m,
+      { cragAmp: 4.5, seed: 71, sunFromRight: sunRight, isFar: true }
+    );
+
+    drawNaturalMassif(target, EXPRESS_MAIN_RIDGE, lakeTop + 2, m, {
+      cragAmp: 6.5,
+      seed: 83,
+      sunFromRight: sunRight,
+      snowBias: 0.48,
+    });
+    drawValleyMist(target, 86, 18, m.mist);
+
+    // Base glacial lake bands
+    const bands = m.lake.length;
+    for (let i = 0; i < bands; i++) {
+      const y0 = lakeTop + Math.floor((i * (lakeBot - lakeTop)) / bands);
+      const y1 = lakeTop + Math.ceil(((i + 1) * (lakeBot - lakeTop)) / bands);
+      px(target, 0, y0, PIXEL_W, y1 - y0, m.lake[i]);
+    }
+
+    // Precompute ridge heights once for O(1) animated lake reflections
+    const ridgeHeights = new Int16Array(PIXEL_W);
+    for (let x = 0; x < PIXEL_W; x++) {
+      ridgeHeights[x] = sampleRidgeProfile(EXPRESS_MAIN_RIDGE, x, 5, 83);
+    }
+    return ridgeHeights;
+  };
+
+  const cached = getOrBakeStaticLayer(
+    cacheHolder,
+    `glacier_express:${mood}`,
+    PIXEL_W,
+    PIXEL_H,
+    drawStaticPeaksAndLake
   );
-
-  drawNaturalMassif(ctx, EXPRESS_MAIN_RIDGE, lakeTop + 2, m, {
-    cragAmp: 6.5,
-    seed: 83,
-    sunFromRight: sunRight,
-    snowBias: 0.48,
-  });
-  drawValleyMist(ctx, 86, 18, m.mist);
-
-  // Mirror-like glacial lake
-  const bands = m.lake.length;
-  for (let i = 0; i < bands; i++) {
-    const y0 = lakeTop + Math.floor((i * (lakeBot - lakeTop)) / bands);
-    const y1 = lakeTop + Math.ceil(((i + 1) * (lakeBot - lakeTop)) / bands);
-    px(ctx, 0, y0, PIXEL_W, y1 - y0, m.lake[i]);
+  let ridgeHeights: Int16Array | undefined;
+  if (cached) {
+    ctx.drawImage(cached.canvas, 0, 0);
+    ridgeHeights = cached.ridgeHeights;
+  } else {
+    ridgeHeights = drawStaticPeaksAndLake(ctx);
   }
+
+  // Rippled lake reflection using precomputed ridge heights (zero noise math per frame!)
   for (let y = lakeTop + 2; y < lakeBot - 6; y += 3) {
     const depth = y - lakeTop;
     const mirrorY = lakeTop - depth * 1.4;
     const drift = Math.round(Math.sin(t * 2 + y * 0.45) * 2.5);
     for (let x = 0; x < PIXEL_W; x += 4) {
-      const ridgeY = sampleRidgeProfile(EXPRESS_MAIN_RIDGE, x, 5, 83);
+      const ridgeY = ridgeHeights
+        ? ridgeHeights[x]
+        : sampleRidgeProfile(EXPRESS_MAIN_RIDGE, x, 5, 83);
       if (ridgeY < mirrorY) {
         px(ctx, x + drift, y, 4, 1, "rgba(224, 244, 255, 0.2)");
       }
@@ -654,10 +742,11 @@ function drawGlacierExpressScene(
 
 export function drawChillPixelScene(
   ctx: CanvasRenderingContext2D,
-  scene: Exclude<ChillBackdropScene, "none">,
+  scene: PixelBackdropScene,
   mood: ResolvedChillMood,
   elapsedSec: number,
-  opts: PixelSceneRenderOptions
+  opts: PixelSceneRenderOptions,
+  cacheHolder?: ChillStaticCacheHolder
 ): void {
   switch (scene) {
     case "resort_beach":
@@ -667,10 +756,10 @@ export function drawChillPixelScene(
       drawCoastalTrainScene(ctx, mood, elapsedSec, opts);
       break;
     case "alpine_chalet":
-      drawAlpineChaletScene(ctx, mood, elapsedSec, opts);
+      drawAlpineChaletScene(ctx, mood, elapsedSec, opts, cacheHolder);
       break;
     case "glacier_express":
-      drawGlacierExpressScene(ctx, mood, elapsedSec, opts);
+      drawGlacierExpressScene(ctx, mood, elapsedSec, opts, cacheHolder);
       break;
   }
 }

@@ -3,6 +3,7 @@ import {
   CHILL_BACKDROP_PRESETS,
   clampChillScrim,
   DEFAULT_CHILL_BACKDROP,
+  getPhotoObjectPosition,
   isSnowBackdropScene,
   normalizeChillBackdropConfig,
   resolveEffectiveChillMood,
@@ -12,13 +13,22 @@ describe("zenChillBackdrop", () => {
   it("defaults to classic centered card mode (scene: none)", () => {
     expect(DEFAULT_CHILL_BACKDROP.scene).toBe("none");
     expect(DEFAULT_CHILL_BACKDROP.mood).toBe("auto");
+    expect(DEFAULT_CHILL_BACKDROP.photoPosition).toBe("center");
+    expect(DEFAULT_CHILL_BACKDROP.photoVignette).toBe(true);
     expect(CHILL_BACKDROP_PRESETS.map((p) => p.id)).toEqual([
       "none",
       "resort_beach",
       "coastal_train",
       "alpine_chalet",
       "glacier_express",
+      "custom_photo",
     ]);
+  });
+
+  it("maps photo framing positions cleanly", () => {
+    expect(getPhotoObjectPosition("top")).toBe("center 18%");
+    expect(getPhotoObjectPosition("center")).toBe("center 50%");
+    expect(getPhotoObjectPosition("bottom")).toBe("center 82%");
   });
 
   it("identifies snowy alpine scenes correctly", () => {
@@ -52,6 +62,8 @@ describe("zenChillBackdrop", () => {
       monsters: false,
       snow: false,
       motion: false,
+      photoPosition: "invalid" as never,
+      photoVignette: false,
     });
     expect(sanitized).toEqual({
       scene: "none",
@@ -60,6 +72,8 @@ describe("zenChillBackdrop", () => {
       monsters: false,
       snow: false,
       motion: false,
+      photoPosition: "center",
+      photoVignette: false,
     });
   });
 });

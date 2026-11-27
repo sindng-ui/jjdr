@@ -37,11 +37,7 @@ import { ZenEmptyBriefing } from "./ZenEmptyBriefing";
 import { ZenDispatchView } from "./ZenDispatchView";
 import { ZenRecapModal } from "./ZenRecapModal";
 import { ZenChillBackdropPicker } from "./ZenChillBackdropPicker";
-import {
-  readStoredChillBackdrop,
-  writeStoredChillBackdrop,
-  type ChillBackdropConfig,
-} from "../../utils/zenChillBackdrop";
+import { useZenChillBackdrop } from "../../hooks/useZenChillBackdrop";
 import type { EnrichedSession } from "../../types/domain";
 import "../../styles/zenMode.css";
 
@@ -96,10 +92,14 @@ export const ZenModeView = React.memo(function ZenModeView() {
   );
   const [celebrateNonce, setCelebrateNonce] = useState(0);
   const [recapOpen, setRecapOpen] = useState(false);
-  const [chillConfig, setChillConfig] = useState<ChillBackdropConfig>(() =>
-    readStoredChillBackdrop()
-  );
-  const [peekSceneryOnly, setPeekSceneryOnly] = useState(false);
+  const {
+    chillConfig,
+    peekSceneryOnly,
+    photoVersion,
+    handleChangeChillConfig,
+    handleTogglePeekScenery,
+    handlePhotoChanged,
+  } = useZenChillBackdrop();
   const [lockedCardKey, setLockedCardKey] = useState<string | null>(null);
   const [skippedKeys, setSkippedKeys] = useState<string[]>([]);
 
@@ -182,18 +182,6 @@ export const ZenModeView = React.memo(function ZenModeView() {
       if (next) playZenLeverSfx(true);
       return next;
     });
-  }, []);
-
-  const handleChangeChillConfig = useCallback((next: ChillBackdropConfig) => {
-    setChillConfig(next);
-    writeStoredChillBackdrop(next);
-    if (next.scene === "none") {
-      setPeekSceneryOnly(false);
-    }
-  }, []);
-
-  const handleTogglePeekScenery = useCallback(() => {
-    setPeekSceneryOnly((prev) => !prev);
   }, []);
 
   // Filter out cards the user explicitly stamped "결재 완료" at the exact same turn/status_ms
@@ -646,7 +634,10 @@ export const ZenModeView = React.memo(function ZenModeView() {
       {/* Full-Stage Zero-Blur 2D Pixel Art Backdrop (mounted only on All Clear / Time to Chill when selected) */}
       {showChillBackdrop && (
         <Suspense fallback={null}>
-          <ZenChillBackdropCanvas config={chillConfig} />
+          <ZenChillBackdropCanvas
+            config={chillConfig}
+            photoVersion={photoVersion}
+          />
         </Suspense>
       )}
 
@@ -741,8 +732,10 @@ export const ZenModeView = React.memo(function ZenModeView() {
             <ZenChillBackdropPicker
               config={chillConfig}
               peekSceneryOnly={peekSceneryOnly}
+              photoVersion={photoVersion}
               onChange={handleChangeChillConfig}
               onTogglePeekScenery={handleTogglePeekScenery}
+              onPhotoChanged={handlePhotoChanged}
             />
           )}
 

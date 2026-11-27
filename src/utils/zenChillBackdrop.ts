@@ -3,10 +3,12 @@ export type ChillBackdropScene =
   | "resort_beach"
   | "coastal_train"
   | "alpine_chalet"
-  | "glacier_express";
+  | "glacier_express"
+  | "custom_photo";
 
 export type ChillBackdropMood = "auto" | "day" | "golden" | "sunset" | "night";
 export type ResolvedChillMood = Exclude<ChillBackdropMood, "auto">;
+export type ChillPhotoPosition = "top" | "center" | "bottom";
 
 export interface ChillBackdropConfig {
   scene: ChillBackdropScene;
@@ -15,13 +17,15 @@ export interface ChillBackdropConfig {
   monsters: boolean;
   snow: boolean;
   motion: boolean;
+  photoPosition: ChillPhotoPosition;
+  photoVignette: boolean;
 }
 
 export interface ChillBackdropPresetMeta {
   id: ChillBackdropScene;
   label: string;
   shortLabel: string;
-  category: "classic" | "summer" | "winter";
+  category: "classic" | "summer" | "winter" | "photo";
   description: string;
   swatch: string;
 }
@@ -35,6 +39,8 @@ export const DEFAULT_CHILL_BACKDROP: ChillBackdropConfig = {
   monsters: true,
   snow: true,
   motion: true,
+  photoPosition: "center",
+  photoVignette: true,
 };
 
 export const CHILL_BACKDROP_PRESETS: ReadonlyArray<ChillBackdropPresetMeta> = [
@@ -78,6 +84,23 @@ export const CHILL_BACKDROP_PRESETS: ReadonlyArray<ChillBackdropPresetMeta> = [
     description: "2D pixel alpine gorge, red viaduct train & lake",
     swatch: "linear-gradient(180deg, #3b8fd6 0%, #b8e3fc 52%, #2391c2 100%)",
   },
+  {
+    id: "custom_photo",
+    label: "Custom Photo",
+    shortLabel: "My Photo",
+    category: "photo",
+    description: "Your own photo with Zero-Blur smart scrim & framing",
+    swatch: "linear-gradient(135deg, #6366f1 0%, #38bdf8 52%, #34d399 100%)",
+  },
+];
+
+export const CHILL_PHOTO_POSITIONS: ReadonlyArray<{
+  id: ChillPhotoPosition;
+  label: string;
+}> = [
+  { id: "top", label: "Top" },
+  { id: "center", label: "Center" },
+  { id: "bottom", label: "Bottom" },
 ];
 
 export const CHILL_MOOD_OPTIONS: ReadonlyArray<{
@@ -97,6 +120,7 @@ const VALID_SCENES = new Set<ChillBackdropScene>([
   "coastal_train",
   "alpine_chalet",
   "glacier_express",
+  "custom_photo",
 ]);
 
 const VALID_MOODS = new Set<ChillBackdropMood>([
@@ -106,6 +130,18 @@ const VALID_MOODS = new Set<ChillBackdropMood>([
   "sunset",
   "night",
 ]);
+
+const VALID_PHOTO_POSITIONS = new Set<ChillPhotoPosition>([
+  "top",
+  "center",
+  "bottom",
+]);
+
+export function getPhotoObjectPosition(pos: ChillPhotoPosition): string {
+  if (pos === "top") return "center 18%";
+  if (pos === "bottom") return "center 82%";
+  return "center 50%";
+}
 
 export function isSnowBackdropScene(scene: ChillBackdropScene): boolean {
   return scene === "alpine_chalet" || scene === "glacier_express";
@@ -152,6 +188,12 @@ export function normalizeChillBackdropConfig(
       ? (raw.mood as ChillBackdropMood)
       : DEFAULT_CHILL_BACKDROP.mood;
 
+  const photoPosition =
+    typeof raw.photoPosition === "string" &&
+    VALID_PHOTO_POSITIONS.has(raw.photoPosition as ChillPhotoPosition)
+      ? (raw.photoPosition as ChillPhotoPosition)
+      : DEFAULT_CHILL_BACKDROP.photoPosition;
+
   return {
     scene,
     mood,
@@ -168,6 +210,11 @@ export function normalizeChillBackdropConfig(
       typeof raw.motion === "boolean"
         ? raw.motion
         : DEFAULT_CHILL_BACKDROP.motion,
+    photoPosition,
+    photoVignette:
+      typeof raw.photoVignette === "boolean"
+        ? raw.photoVignette
+        : DEFAULT_CHILL_BACKDROP.photoVignette,
   };
 }
 

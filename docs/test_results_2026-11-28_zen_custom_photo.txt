@@ -1,0 +1,41 @@
+jjdr Test Results — 2026-11-28 (Zen Chill Custom Photo Upload Backdrop)
+=======================================================================
+
+1. Summary of Changes
+---------------------
+- Added `custom_photo` preset to Zen Chill / All Clear Backdrop picker (automatically activates Open Scenic 3-col HUD).
+- Built async IndexedDB binary Blob store (`src/utils/zenPhotoStore.ts`) with automatic client-side optimization:
+  - Uses `createImageBitmap` + offscreen canvas downscale to max 1920x1080 (never upscales)
+  - Re-encodes to HD WebP (0.86) / JPEG fallback (0.88), validates image MIME & 30MB input guard
+  - Renders via `URL.createObjectURL` with strict `URL.revokeObjectURL` cleanup (zero leak, zero localStorage bloat)
+- Added Drag & Drop + File Picker upload, live thumbnail & size readout, Change/Remove controls, Framing (`Top` / `Center` / `Bottom`), Readability Scrim (0..55%), and Zero-Blur Edge Vignette toggle in `ZenChillBackdropPicker`.
+- Extracted `useZenChillBackdrop` hook so `ZenModeView.tsx` shrank from 874 -> 867 lines.
+- Added single-slot offscreen static layer caching (`320x180`, ~0.23 MB, freed on unmount) + precomputed `Int16Array` ridge heights for snowy peaks `S-1` (`alpine_chalet`) and `S-3` (`glacier_express`), cutting per-frame `fillRect` calls from ~11,500 down to ~150-350 (~95%+ CPU reduction).
+
+2. Vitest (`npm run test`)
+--------------------------
+Test Files  29 passed (29)
+     Tests  124 passed (124)
+  Duration  2.79s
+
+Added / Updated Unit Tests:
+- src/utils/zenPhotoStore.test.ts (3 tests) — PASS
+- src/utils/zenChillBackdrop.test.ts (5 tests) — PASS
+
+3. TypeScript & Production Build (`npm run build`)
+--------------------------------------------------
+- `tsc`: 0 errors
+- `vite build`: 1714 modules transformed, built in 4.49s
+- Lazy-loaded chunk: `ZenChillBackdropCanvas` = 22.48 kB (gzip 9.10 kB)
+
+4. Performance & Quality Checks
+-------------------------------
+- Zero-Blur check (`backdrop-blur`, `filter: blur`): 0 matches
+- 900-line file limit check: All touched files <= 867 lines
+  - src/hooks/useZenChillBackdrop.ts: 43 lines
+  - src/components/zen/ZenChillBackdropCanvas.tsx: 175 lines
+  - src/utils/zenPhotoStore.ts: 239 lines
+  - src/utils/zenChillBackdrop.ts: 240 lines
+  - src/components/zen/ZenChillBackdropPicker.tsx: 660 lines
+  - src/components/zen/ZenModeView.tsx: 867 lines
+- APP_MAP.md updated with all added/modified files and interfaces.
