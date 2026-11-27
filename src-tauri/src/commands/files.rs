@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 use tauri::State;
@@ -248,6 +249,11 @@ pub struct WorkspaceTextSearchResult {
 const MAX_WORKSPACE_SEARCH_MATCHES: usize = 400;
 const MAX_MATCHES_PER_FILE: usize = 40;
 const MAX_LINE_PREVIEW_CHARS: usize = 220;
+const MAX_UNTRACKED_SCAN_FILES: usize = 200;
+
+/// Monotonic search generation token: whenever a newer Ctrl+Shift+F query arrives,
+/// any still-running older `git grep` child process is killed immediately.
+static WORKSPACE_SEARCH_GEN: AtomicU64 = AtomicU64::new(0);
 
 fn truncate_preview_line(raw: &str) -> String {
     let trimmed = raw.trim_end_matches(['\r', '\n']);
@@ -259,10 +265,113 @@ fn truncate_preview_line(raw: &str) -> String {
     out
 }
 
-fn find_match_col(line: &str, re: &regex::Regex) -> u16 {
-    re.find(line)
-        .map(|m| line[..m.start()].chars().count().min(u16::MAX as usize) as u16)
-        .unwrap_or(0)
+fn parse_git_grep_line(line_str: &str) -> Option<(String, u32, u16, &str)> {
+    // Format with `--column`: relative/path:line:col:content
+    let first_colon = line_str.find(':')?;
+    let rest1 = &line_str[first_colon + 1..];
+    let second_colon = rest1.find(':')?;
+    let line_no = rest1[..second_colon].parse::<u32>().ok()?;
+    let rest2 = &rest1[second_colon + 1..];
+    let (col, content) = if let Some(third_colon) = rest2.find(':') {
+        if let Ok(col_1based) = rest2[..third_colon].parse::<u32>() {
+            (
+                col_1based.saturating_sub(1).min(u16::MAX as u32) as u16,
+                &rest2[third_colon + 1..],
+            )
+        } else {
+            (0, rest2)
+        }
+    } else {
+        (0, rest2)
+    };
+    Some((line_str[..first_colon].replace('\\', "/"), line_no, col, content))
+}
+
+fn scan_untracked_files_for_search(
+    root: &str,
+    re: &regex::Regex,
+    matches: &mut Vec<WorkspaceTextMatch>,
+    max_matches: usize,
+    my_gen: u64,
+    started: std::time::Instant,
+    timeout: std::time::Duration,
+) -> bool {
+    if matches.len() >= max_matches
+        || started.elapsed() > timeout
+        || WORKSPACE_SEARCH_GEN.load(Ordering::Relaxed) != my_gen
+    {
+        return matches.len() >= max_matches;
+    }
+
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["-C", root, "ls-files", "--others", "--exclude-standard"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let Ok(out) = cmd.output() else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+
+    let root_path = std::path::Path::new(root);
+    let mut truncated = false;
+    for rel_raw in String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .take(MAX_UNTRACKED_SCAN_FILES)
+    {
+        if started.elapsed() > timeout
+            || WORKSPACE_SEARCH_GEN.load(Ordering::Relaxed) != my_gen
+        {
+            break;
+        }
+        if matches.len() >= max_matches {
+            truncated = true;
+            break;
+        }
+        let rel = rel_raw.trim_end_matches('\r').replace('\\', "/");
+        if rel.is_empty() {
+            continue;
+        }
+        let full = root_path.join(&rel);
+        let Ok(meta) = std::fs::metadata(&full) else {
+            continue;
+        };
+        if !meta.is_file() || meta.len() > 512 * 1024 {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&full) else {
+            continue;
+        };
+        if looks_binary(&bytes) {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let mut per_file = 0usize;
+        for (idx, line) in text.lines().enumerate() {
+            if let Some(m) = re.find(line) {
+                let col = line[..m.start()].chars().count().min(u16::MAX as usize) as u16;
+                matches.push(WorkspaceTextMatch {
+                    relative_path: rel.clone(),
+                    line: (idx + 1) as u32,
+                    col,
+                    line_text: truncate_preview_line(line),
+                });
+                per_file += 1;
+                if matches.len() >= max_matches {
+                    truncated = true;
+                    break;
+                }
+                if per_file >= MAX_MATCHES_PER_FILE {
+                    break;
+                }
+            }
+        }
+    }
+    truncated
 }
 
 fn run_git_grep_search(
@@ -273,20 +382,26 @@ fn run_git_grep_search(
     whole_word: bool,
     max_matches: usize,
     re: &regex::Regex,
+    my_gen: u64,
 ) -> Option<(Vec<WorkspaceTextMatch>, bool)> {
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
     use std::time::{Duration, Instant};
+
+    if WORKSPACE_SEARCH_GEN.load(Ordering::Relaxed) != my_gen {
+        return Some((Vec::new(), false));
+    }
 
     let mut cmd = std::process::Command::new("git");
     cmd.args([
         "-C",
         root,
         "grep",
+        "--threads=4",
         "-n",
+        "--column",
         "-I",
         "--no-color",
-        "--untracked",
         "--max-count",
         &MAX_MATCHES_PER_FILE.to_string(),
     ]);
@@ -314,11 +429,17 @@ fn run_git_grep_search(
     let mut reader = BufReader::new(stdout);
     let mut matches = Vec::with_capacity(max_matches.min(128));
     let mut truncated = false;
+    let mut cancelled = false;
     let started = Instant::now();
     let timeout = Duration::from_secs(6);
     let mut buf = Vec::with_capacity(512);
 
     loop {
+        if WORKSPACE_SEARCH_GEN.load(Ordering::Relaxed) != my_gen {
+            cancelled = true;
+            let _ = child.kill();
+            break;
+        }
         if started.elapsed() > timeout {
             truncated = true;
             let _ = child.kill();
@@ -329,20 +450,9 @@ fn run_git_grep_search(
             Ok(0) => break,
             Ok(_) => {
                 let line_str = String::from_utf8_lossy(&buf);
-                // Format: relative/path:line_no:line_content
-                let Some(first_colon) = line_str.find(':') else {
+                let Some((rel_path, line_no, col, content)) = parse_git_grep_line(&line_str) else {
                     continue;
                 };
-                let rest = &line_str[first_colon + 1..];
-                let Some(second_colon) = rest.find(':') else {
-                    continue;
-                };
-                let Ok(line_no) = rest[..second_colon].parse::<u32>() else {
-                    continue;
-                };
-                let content = &rest[second_colon + 1..];
-                let rel_path = line_str[..first_colon].replace('\\', "/");
-                let col = find_match_col(content, re);
                 matches.push(WorkspaceTextMatch {
                     relative_path: rel_path,
                     line: line_no,
@@ -360,12 +470,31 @@ fn run_git_grep_search(
     }
 
     let status = child.wait().ok();
+    if cancelled {
+        return Some((Vec::new(), false));
+    }
     // git grep exits 0 (matches), 1 (no matches), >1 (not a git repo or error)
     if let Some(st) = status {
         if !truncated && !matches!(st.code(), Some(0) | Some(1)) {
             return None;
         }
     }
+
+    // Fast supplemental scan of untracked files only when tracked results did not fill cap
+    if !truncated && matches.len() < max_matches {
+        if scan_untracked_files_for_search(
+            root,
+            re,
+            &mut matches,
+            max_matches,
+            my_gen,
+            started,
+            timeout,
+        ) {
+            truncated = true;
+        }
+    }
+
     Some((matches, truncated))
 }
 
@@ -374,6 +503,7 @@ fn run_fallback_text_search(
     files: Vec<String>,
     re: &regex::Regex,
     max_matches: usize,
+    my_gen: u64,
 ) -> (Vec<WorkspaceTextMatch>, bool) {
     use std::path::Path;
     use std::time::{Duration, Instant};
@@ -385,6 +515,9 @@ fn run_fallback_text_search(
     let timeout = Duration::from_secs(6);
 
     for rel in files {
+        if WORKSPACE_SEARCH_GEN.load(Ordering::Relaxed) != my_gen {
+            return (Vec::new(), false);
+        }
         if started.elapsed() > timeout || matches.len() >= max_matches {
             truncated = true;
             break;
@@ -494,6 +627,7 @@ pub async fn search_workspace_text(
         }
     };
 
+    let my_gen = WORKSPACE_SEARCH_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let started = std::time::Instant::now();
     let root_clone = trimmed_root.clone();
     let compiled_clone = compiled.clone();
@@ -506,6 +640,7 @@ pub async fn search_workspace_text(
             is_word,
             limit,
             &compiled_clone,
+            my_gen,
         )
     })
     .await
@@ -519,7 +654,7 @@ pub async fn search_workspace_text(
                 .unwrap_or_default();
             let root_fb = trimmed_root.clone();
             tokio::task::spawn_blocking(move || {
-                run_fallback_text_search(&root_fb, files, &compiled, limit)
+                run_fallback_text_search(&root_fb, files, &compiled, limit, my_gen)
             })
             .await
             .map_err(|e| format!("Workspace fallback search worker failed: {}", e))?

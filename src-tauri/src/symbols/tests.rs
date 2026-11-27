@@ -370,10 +370,17 @@ namespace Engine {
 
     assert_eq!(cs_index.symbols.len(), 300_000);
     assert_eq!(cpp_index.symbols.len(), 120_000);
-    assert!(cs_ram_mb < 60.0, "C# 20k RAM too high: {:.2} MB", cs_ram_mb);
+    // Verify freeze_for_lookup dropped file paths from reverse map while preserving symbol lookup
+    assert!(cs_index.interner.lookup("Service0").is_some());
+    assert!(cs_index.interner.lookup("Update").is_some());
+    assert!(cs_index
+        .interner
+        .lookup("Assets/Scripts/Module0/Service0.cs")
+        .is_none());
+    assert!(cs_ram_mb < 25.0, "C# 20k RAM too high after freeze: {:.2} MB", cs_ram_mb);
     assert!(
-        cpp_ram_mb < 35.0,
-        "C++ 10k RAM too high: {:.2} MB",
+        cpp_ram_mb < 15.0,
+        "C++ 10k RAM too high after freeze: {:.2} MB",
         cpp_ram_mb
     );
 }

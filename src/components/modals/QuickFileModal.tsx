@@ -206,10 +206,7 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
     return () => clearTimeout(timer);
   }, [open, activeScope, query, useRegex, showToast]);
 
-  // Lazy per-project symbol indexing:
-  // - Only starts when Settings opt-in is ON AND user opens Ctrl+P.
-  // - Reads cached status immediately, but debounces warm start by 800ms (or immediately once query is typed)
-  //   so switching the scope dropdown right after opening Ctrl+P never accidentally warms an unwanted project.
+  // 1) Subscribe to symbol index status & progress events (no churn when typing query)
   useEffect(() => {
     if (!open || !activeScope || !symbolIndexEnabled) {
       setSymbolStatus(null);
@@ -217,7 +214,6 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
     }
     let cancelled = false;
     const pid = activeScope.projectId;
-    const wtPath = activeScope.worktreePath;
 
     void getSymbolIndexStatus(pid)
       .then((st) => {
@@ -237,7 +233,22 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
       })
       .catch(() => {});
 
-    const delayMs = query.trim().length > 0 ? 0 : 800;
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [open, activeScope, symbolIndexEnabled]);
+
+  // 2) Lazy per-project symbol warm trigger: 800ms debounce on initial open/scope switch,
+  //    or immediate once user starts typing a query.
+  const hasTypedQuery = query.trim().length > 0;
+  useEffect(() => {
+    if (!open || !activeScope || !symbolIndexEnabled) return;
+    let cancelled = false;
+    const pid = activeScope.projectId;
+    const wtPath = activeScope.worktreePath;
+    const delayMs = hasTypedQuery ? 0 : 800;
+
     const warmTimer = setTimeout(() => {
       if (cancelled) return;
       void warmProjectSymbolIndex(pid, wtPath)
@@ -250,9 +261,8 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
     return () => {
       cancelled = true;
       clearTimeout(warmTimer);
-      unlisten?.();
     };
-  }, [open, activeScope, symbolIndexEnabled, query.trim().length > 0]);
+  }, [open, activeScope, symbolIndexEnabled, hasTypedQuery]);
 
   // Keep active row scrolled into view
   useEffect(() => {

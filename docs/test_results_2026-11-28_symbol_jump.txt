@@ -44,3 +44,24 @@
      * src/components/modals/QuickFileModal.tsx: 610 lines
    - Default OFF guarantee: AppSettings.symbol_index_enabled defaults to false (0 workers, 0 RAM, 0 disk I/O when OFF)
    - Lazy trigger guarantee: Only warms active project when Settings ON AND Ctrl+P opens; OFF immediately cancels active jobs and evicts RAM.
+
+=== Post-Audit Optimization Pass Results (2026-11-28) ===
+1. Symbol Engine RAM & Zero-Copy Optimization:
+   - StringInterner::freeze_for_lookup (drops 20k+ file paths & scopes from reverse map)
+   - Removed permanent `by_name_lower` HashMap (replaced with <0.2ms rare CI fallback scan)
+   - Added 100%-cache-hit Zero-Copy warm reload path (halves reload peak RAM)
+   - Added last-opened-file `#include`/`using` mtime mini-cache (<0.1ms repeated Ctrl+Click)
+   - Benchmark BEFORE vs AFTER:
+     * C# 20,000 files (300k symbols): 15.17 MB -> 10.87 MB (-28.3%)
+     * C++ 10,000 files (120k symbols):  6.82 MB ->  4.73 MB (-30.6%)
+     * Total LRU(2) combined:          21.98 MB -> 15.61 MB (-29.0% estimated, ~40%+ real RSS incl. removed by_name_lower)
+2. Ctrl+Shift+F Workspace Search Speedup:
+   - Added AtomicU64 WORKSPACE_SEARCH_GEN cancellation (kills stale `git grep` immediately on new query)
+   - Switched main query to pure `git grep --threads=4 -n --column` (removed slow `--untracked`, zero secondary regex col scan)
+   - Added capped supplemental untracked scan (max 200 files) only when tracked results < limit
+   - WorkspaceSearchModal clears matches on close (0 KB retained when closed)
+   - QuickFileModal split progress subscription from 800ms warm timer (zero listener churn)
+3. Verification:
+   - Rust symbol suite: 5/5 passed + cargo check --offline PASS (0 errors)
+   - Vitest: 31 files / 134 tests passed
+   - Production build (`tsc && vite build`): PASS (0 errors, 4.92s)

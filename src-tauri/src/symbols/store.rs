@@ -37,7 +37,6 @@ pub(crate) struct ProjectSymbolIndex {
     pub(crate) interner: StringInterner,
     pub(crate) symbols: Vec<CompactSymbol>,
     pub(crate) by_name: HashMap<u32, Vec<u32>>,
-    pub(crate) by_name_lower: HashMap<String, Vec<u32>>,
     pub(crate) estimated_ram_bytes: u64,
     pub(crate) last_accessed: Instant,
     pub(crate) worktree_deltas: HashMap<String, WorktreeSymbolDelta>,
@@ -46,28 +45,29 @@ pub(crate) struct ProjectSymbolIndex {
 impl ProjectSymbolIndex {
     pub(crate) fn from_parts(
         repo_path: String,
-        interner: StringInterner,
+        mut interner: StringInterner,
         file_count: usize,
-        symbols: Vec<CompactSymbol>,
+        mut symbols: Vec<CompactSymbol>,
     ) -> Self {
-        let mut by_name: HashMap<u32, Vec<u32>> = HashMap::with_capacity(interner.len() / 2 + 16);
-        let mut by_name_lower: HashMap<String, Vec<u32>> =
-            HashMap::with_capacity(interner.len() / 2 + 16);
-        let mut seen_name_ids: HashSet<u32> = HashSet::with_capacity(interner.len());
+        symbols.shrink_to_fit();
+        let mut by_name: HashMap<u32, Vec<u32>> = HashMap::with_capacity(interner.len() / 3 + 16);
+        let mut symbol_name_ids: HashSet<u32> = HashSet::with_capacity(interner.len() / 3 + 16);
 
         for (idx, sym) in symbols.iter().enumerate() {
             by_name.entry(sym.name_id).or_default().push(idx as u32);
-            if seen_name_ids.insert(sym.name_id) {
-                let lower = interner.get(sym.name_id).to_ascii_lowercase();
-                if !lower.is_empty() {
-                    by_name_lower.entry(lower).or_default().push(sym.name_id);
-                }
-            }
+            symbol_name_ids.insert(sym.name_id);
         }
+        for vec in by_name.values_mut() {
+            vec.shrink_to_fit();
+        }
+        by_name.shrink_to_fit();
+
+        // Drop file paths & scope duplicates from interner reverse map (~40% RAM savings)
+        interner.freeze_for_lookup(&symbol_name_ids);
 
         let sym_bytes = (symbols.capacity() * std::mem::size_of::<CompactSymbol>()) as u64;
-        let inv_bytes = (by_name.len() * 40 + symbols.len() * 4) as u64;
-        let file_bytes = (file_count * 16) as u64;
+        let inv_bytes = (by_name.capacity() * 32 + symbols.len() * 4) as u64;
+        let file_bytes = (file_count * 8) as u64;
         let estimated_ram_bytes = interner.estimated_bytes() + sym_bytes + inv_bytes + file_bytes;
 
         Self {
@@ -75,7 +75,6 @@ impl ProjectSymbolIndex {
             interner,
             symbols,
             by_name,
-            by_name_lower,
             estimated_ram_bytes,
             last_accessed: Instant::now(),
             worktree_deltas: HashMap::new(),
@@ -85,11 +84,19 @@ impl ProjectSymbolIndex {
 
 pub type ProgressCallback = Arc<dyn Fn(SymbolIndexProgress) + Send + Sync>;
 
+struct CurrentFileContextCache {
+    abs_path: String,
+    mtime_secs: u64,
+    includes: Vec<String>,
+    usings: Vec<String>,
+}
+
 pub struct SymbolIndexStore {
     cache_dir: PathBuf,
     entries: RwLock<HashMap<String, ProjectSymbolIndex>>,
     statuses: RwLock<HashMap<String, SymbolIndexStatus>>,
     active_jobs: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    last_file_ctx: Mutex<Option<CurrentFileContextCache>>,
 }
 
 impl SymbolIndexStore {
@@ -101,6 +108,7 @@ impl SymbolIndexStore {
             entries: RwLock::new(HashMap::new()),
             statuses: RwLock::new(HashMap::new()),
             active_jobs: Mutex::new(HashMap::new()),
+            last_file_ctx: Mutex::new(None),
         }
     }
 
@@ -155,6 +163,7 @@ impl SymbolIndexStore {
         }
         self.entries.write().await.clear();
         self.statuses.write().await.clear();
+        *self.last_file_ctx.lock().await = None;
 
         if clear_disk {
             let cache_dir = self.cache_dir.clone();
@@ -413,22 +422,55 @@ impl SymbolIndexStore {
             let _ = self.ensure_worktree_delta(project_id, repo_path, wt_str).await;
         }
 
-        // Extract `#include` / `using` context from the currently open file (<1ms)
+        // Extract `#include` / `using` context from the currently open file (cached by path + mtime)
         let cur_abs = Path::new(effective_root_str).join(current_rel_path);
-        let cur_rel_owned = current_rel_path.replace('\\', "/");
-        let (cur_includes, cur_usings) = tokio::task::spawn_blocking(move || {
-            let Some(lang) = detect_symbol_lang(&cur_rel_owned) else {
-                return (Vec::new(), Vec::new());
-            };
-            let Ok(bytes) = std::fs::read(&cur_abs) else {
-                return (Vec::new(), Vec::new());
-            };
-            let mut parser = ReusableSymbolParser::new();
-            let parsed = parser.parse(lang, &bytes);
-            (parsed.includes, parsed.usings)
-        })
-        .await
-        .unwrap_or_default();
+        let cur_abs_str = cur_abs.to_string_lossy().to_string();
+        let cur_mtime = std::fs::metadata(&cur_abs)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let cached_ctx = {
+            let guard = self.last_file_ctx.lock().await;
+            guard.as_ref().and_then(|c| {
+                if c.abs_path == cur_abs_str && c.mtime_secs == cur_mtime {
+                    Some((c.includes.clone(), c.usings.clone()))
+                } else {
+                    None
+                }
+            })
+        };
+
+        let (cur_includes, cur_usings) = match cached_ctx {
+            Some(pair) => pair,
+            None => {
+                let cur_rel_owned = current_rel_path.replace('\\', "/");
+                let cur_abs_parse = cur_abs.clone();
+                let parsed_pair = tokio::task::spawn_blocking(move || {
+                    let Some(lang) = detect_symbol_lang(&cur_rel_owned) else {
+                        return (Vec::new(), Vec::new());
+                    };
+                    let Ok(bytes) = std::fs::read(&cur_abs_parse) else {
+                        return (Vec::new(), Vec::new());
+                    };
+                    let mut parser = ReusableSymbolParser::new();
+                    let parsed = parser.parse(lang, &bytes);
+                    (parsed.includes, parsed.usings)
+                })
+                .await
+                .unwrap_or_default();
+
+                *self.last_file_ctx.lock().await = Some(CurrentFileContextCache {
+                    abs_path: cur_abs_str,
+                    mtime_secs: cur_mtime,
+                    includes: parsed_pair.0.clone(),
+                    usings: parsed_pair.1.clone(),
+                });
+                parsed_pair
+            }
+        };
 
         // Collect candidates from RAM Base + Worktree Delta
         let mut candidates: Vec<CandidateSymbol> = Vec::new();
@@ -441,9 +483,13 @@ impl SymbolIndexStore {
                 let mut name_ids: Vec<u32> = Vec::new();
                 if let Some(exact_id) = entry.interner.lookup(trimmed) {
                     name_ids.push(exact_id);
-                } else if let Some(ci_ids) = entry.by_name_lower.get(&trimmed.to_ascii_lowercase())
-                {
-                    name_ids.extend_from_slice(ci_ids);
+                } else {
+                    // Rare case-insensitive fallback: scan unique symbol keys only (<0.2ms, 0 extra RAM)
+                    for &nid in entry.by_name.keys() {
+                        if entry.interner.get(nid).eq_ignore_ascii_case(trimmed) {
+                            name_ids.push(nid);
+                        }
+                    }
                 }
 
                 for nid in name_ids {

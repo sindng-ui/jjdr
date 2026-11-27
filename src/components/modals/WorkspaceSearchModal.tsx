@@ -143,9 +143,15 @@ export const WorkspaceSearchModal = React.memo(function WorkspaceSearchModal() {
     );
   }, [scopeKey, scopes, defaultScope]);
 
-  // Reset scope & focus input on open (pre-fill single-line selection if any)
+  // Reset scope & focus input on open (clear matches on close to hold 0 KB when closed)
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setMatches([]);
+      setTruncated(false);
+      setRegexError(null);
+      setLoading(false);
+      return;
+    }
     if (defaultScope) {
       setScopeKey(
         `${defaultScope.projectId}::${normalizePath(defaultScope.worktreePath)}`
