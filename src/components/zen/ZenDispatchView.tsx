@@ -31,6 +31,7 @@ import {
   ZenProjectPicker,
 } from "./ZenDispatchPicker";
 import { ZenWorkerCard } from "./ZenWorkerCard";
+import { ZenWorkerSearchBar } from "./ZenWorkerSearchBar";
 import { ZenTactileControl } from "./ZenTactileControl";
 
 interface ZenDispatchViewProps {
@@ -47,6 +48,7 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
   const projects = useAppStore((s) => s.projects);
   const matrixLanes = useAppStore((s) => s.computed.matrixLanes);
   const worktreeMeta = useAppStore((s) => s.worktreeMeta);
+  const autoMissionByWorktree = useAppStore((s) => s.autoMissionByWorktree);
   const removingWorktreePaths = useAppStore((s) => s.removingWorktreePaths);
   const rootCardMode = useAppStore((s) => s.settings.root_card_mode);
 
@@ -440,6 +442,12 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
     [deck, activeIndex, styleMode, resetTracking]
   );
 
+  const handleReturnToTerminal = useCallback(() => {
+    requestAnimationFrame(() => {
+      requestTerminalFocus();
+    });
+  }, [requestTerminalFocus]);
+
   const handleWakeAi = useCallback(async () => {
     if (!effectiveWorker || effectiveWorker.aiSession || wakingAi) return;
     const { project, worktree, cardKey, normWtPath } = effectiveWorker;
@@ -610,6 +618,18 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
             Change Project
           </button>
         </div>
+
+        {!isSolo && deck.length > 0 && (
+          <ZenWorkerSearchBar
+            projectId={selectedSummary.project.id}
+            deck={deck}
+            activeIndex={activeIndex}
+            worktreeMeta={worktreeMeta}
+            autoMissionByWorktree={autoMissionByWorktree}
+            onSelectDeckIndex={handleJumpToIndex}
+            onReturnToTerminal={handleReturnToTerminal}
+          />
+        )}
 
         {!isSolo && (
           <button

@@ -83,6 +83,38 @@ export function useGlobalShortcuts() {
               true
             );
           } else if (ui.viewMode === "zen") {
+            const isDispatchAssign =
+              ui.zenModeTab === "dispatch" &&
+              ui.zenDispatchStep === "browse_worker" &&
+              !ui.zenHiredSolo &&
+              !ui.zenHiringState;
+            if (isDispatchAssign && ctrlDir === "up") {
+              const dispatchSearchEl = document.querySelector<HTMLInputElement>(
+                "[data-jjdr-dispatch-search]"
+              );
+              if (dispatchSearchEl) {
+                dispatchSearchEl.focus();
+                dispatchSearchEl.select();
+                return;
+              }
+            }
+            if (isDispatchAssign && ctrlDir === "down") {
+              const dispatchSearchEl = document.querySelector<HTMLInputElement>(
+                "[data-jjdr-dispatch-search]"
+              );
+              if (dispatchSearchEl) {
+                dispatchSearchEl.dispatchEvent(
+                  new CustomEvent("jjdr:dispatch-search-close", {
+                    detail: { clear: false },
+                  })
+                );
+                dispatchSearchEl.blur();
+              }
+              requestAnimationFrame(() => {
+                useUiStore.getState().requestTerminalFocus();
+              });
+              return;
+            }
             if (ctrlDir === "right" || ctrlDir === "down") {
               ui.requestZenSkip();
             } else if (ctrlDir === "left" || ctrlDir === "up") {
@@ -209,9 +241,20 @@ export function useGlobalShortcuts() {
         if (k === "f" || e.code === "KeyF") {
           e.preventDefault();
           e.stopPropagation();
-          const searchEl = document.querySelector<HTMLInputElement>(
-            "[data-jjdr-search-input]"
-          );
+          const isDispatchAssign =
+            ui.viewMode === "zen" &&
+            ui.zenModeTab === "dispatch" &&
+            ui.zenDispatchStep === "browse_worker" &&
+            !ui.zenHiredSolo &&
+            !ui.zenHiringState;
+          const dispatchSearchEl = isDispatchAssign
+            ? document.querySelector<HTMLInputElement>(
+                "[data-jjdr-dispatch-search]"
+              )
+            : null;
+          const searchEl =
+            dispatchSearchEl ??
+            document.querySelector<HTMLInputElement>("[data-jjdr-search-input]");
           if (searchEl) {
             searchEl.focus();
             searchEl.select();
@@ -323,6 +366,18 @@ export function useGlobalShortcuts() {
         }
         if (inInput && target) {
           e.preventDefault();
+          if (target.dataset.jjdrDispatchSearch === "true") {
+            target.dispatchEvent(
+              new CustomEvent("jjdr:dispatch-search-close", {
+                detail: { clear: true },
+              })
+            );
+            target.blur();
+            requestAnimationFrame(() => {
+              useUiStore.getState().requestTerminalFocus();
+            });
+            return;
+          }
           if (target.dataset.jjdrSearchInput === "true") {
             ui.setSearchQuery("");
             target.blur();
