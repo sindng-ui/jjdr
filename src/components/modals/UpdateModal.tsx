@@ -32,12 +32,22 @@ export const UpdateModal = React.memo(function UpdateModal() {
   const open = useUiStore((s) => s.updateModalOpen);
   const info = useUiStore((s) => s.updateInfo);
   const setOpen = useUiStore((s) => s.setUpdateModalOpen);
+  const setModalBusy = useUiStore((s) => s.setUpdateModalBusy);
   const showToast = useUiStore((s) => s.showToast);
 
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [progress, setProgress] = useState<UpdateProgressEvent | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dryRunPath, setDryRunPath] = useState<string | null>(null);
+
+  const busy = phase === "downloading" || phase === "launching";
+
+  useEffect(() => {
+    setModalBusy(open && busy);
+    return () => {
+      setModalBusy(false);
+    };
+  }, [open, busy, setModalBusy]);
 
   useEffect(() => {
     if (!open) {
@@ -83,7 +93,6 @@ export const UpdateModal = React.memo(function UpdateModal() {
 
   if (!open || !info) return null;
 
-  const busy = phase === "downloading" || phase === "launching";
   const hasDirectInstaller = Boolean(
     info.asset_download_url && info.asset_name
   );
@@ -180,8 +189,11 @@ export const UpdateModal = React.memo(function UpdateModal() {
 
   return (
     <div
-      onClick={handleClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="새 버전 업데이트 가능"
+      onClick={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4"
       style={{ background: "var(--modal-overlay)" }}
     >
       <div
@@ -238,7 +250,7 @@ export const UpdateModal = React.memo(function UpdateModal() {
             type="button"
             onClick={handleClose}
             disabled={busy}
-            title="이번만 닫기 (Esc)"
+            title="이번만 닫기"
             className="p-1.5 rounded-full hover:bg-black/15 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ color: "var(--text-muted)" }}
           >

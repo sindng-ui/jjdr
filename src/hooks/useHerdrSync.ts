@@ -38,6 +38,7 @@ import {
   normalizeBgOverlayPosition,
   selectTopBgOverlayCandidate,
 } from "../utils/bgOverlay";
+import { hasBlockingModalOpen } from "../utils/modalGuard";
 
 export function useHerdrSync() {
   const workerRef = useRef<Worker | null>(null);
@@ -66,7 +67,7 @@ export function useHerdrSync() {
       app.setComputed(e.data.result);
 
       // One-time startup Zen routing after initial hydration + worktrees + herdr-core snapshot:
-      // All Clear (0 actionable) -> Zen Dispatch; otherwise -> Zen Inbox.
+      // Always land on Zen Inbox on startup (Dispatch is opened explicitly by the user).
       if (
         !startupZenRoutedRef.current &&
         app.hydrated &&
@@ -74,12 +75,7 @@ export function useHerdrSync() {
         worktreesLoadedRef.current
       ) {
         startupZenRoutedRef.current = true;
-        const actionable =
-          e.data.result.byBucket.needs_you.length +
-          e.data.result.byBucket.ready.length;
-        useUiStore
-          .getState()
-          .completeStartupRouting(actionable === 0 ? "dispatch" : "inbox");
+        useUiStore.getState().completeStartupRouting("inbox");
       }
     };
     workerRef.current = worker;
@@ -93,7 +89,7 @@ export function useHerdrSync() {
   useEffect(() => {
     if (!isTauriRuntime()) {
       startupZenRoutedRef.current = true;
-      useUiStore.getState().completeStartupRouting("dispatch");
+      useUiStore.getState().completeStartupRouting("inbox");
       return;
     }
     let active = true;
@@ -103,12 +99,7 @@ export function useHerdrSync() {
     const splashFallbackTimer = setTimeout(() => {
       if (!active || startupZenRoutedRef.current) return;
       startupZenRoutedRef.current = true;
-      const computed = useAppStore.getState().computed;
-      const actionable =
-        computed.byBucket.needs_you.length + computed.byBucket.ready.length;
-      useUiStore
-        .getState()
-        .completeStartupRouting(actionable === 0 ? "dispatch" : "inbox");
+      useUiStore.getState().completeStartupRouting("inbox");
     }, 1800);
 
     const pendingAttachedRef = { current: null as string | null };
@@ -512,21 +503,7 @@ export function useHerdrSync() {
         if (!active) return;
         const ui = useUiStore.getState();
         if (!ui.terminalDrawerOpen || !ui.attachedAddress) return;
-        if (
-          ui.settingsOpen ||
-          ui.commandPaletteOpen ||
-          ui.quickFileOpen ||
-          ui.projectModalProject ||
-          ui.createWorktreeProjectId ||
-          ui.editWorktreeTarget ||
-          ui.launchTarget ||
-          ui.teardownTarget ||
-          ui.diffTarget ||
-          ui.markdownViewerTarget ||
-          ui.codeViewerTarget ||
-          ui.updateModalOpen ||
-          ui.contextMenu
-        ) {
+        if (hasBlockingModalOpen(ui)) {
           return;
         }
         const activeEl = document.activeElement as HTMLElement | null;

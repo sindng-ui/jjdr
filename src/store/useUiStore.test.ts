@@ -11,6 +11,9 @@ describe("useUiStore Zen view transitions", () => {
       zenDispatchProjectId: null,
       zenHiredSolo: null,
       zenHiringState: null,
+      updateInfo: null,
+      updateModalOpen: false,
+      updateModalBusy: false,
     });
   });
 
@@ -54,9 +57,32 @@ describe("useUiStore Zen view transitions", () => {
     expect(useUiStore.getState().viewMode).toBe("zen");
     expect(useUiStore.getState().zenModeTab).toBe("dispatch");
 
-    useUiStore.setState({ startupReady: false, viewMode: "zen", zenModeTab: "inbox" });
-    store.completeStartupRouting("dispatch");
+    useUiStore.setState({ startupReady: false, viewMode: "zen", zenModeTab: "dispatch" });
+    store.completeStartupRouting();
+    expect(useUiStore.getState().startupReady).toBe(true);
     expect(useUiStore.getState().viewMode).toBe("zen");
-    expect(useUiStore.getState().zenModeTab).toBe("dispatch");
+    expect(useUiStore.getState().zenModeTab).toBe("inbox");
+  });
+
+  it("preserves updateModalOpen across Zen transitions and blocks closing while busy", () => {
+    const store = useUiStore.getState();
+    store.setUpdateModalOpen(true);
+    expect(useUiStore.getState().updateModalOpen).toBe(true);
+
+    // Startup routing & Zen Dispatch transitions must never dismiss the update modal
+    store.completeStartupRouting("inbox");
+    store.openZenDispatch("proj-1");
+    store.returnToZenInbox();
+    expect(useUiStore.getState().updateModalOpen).toBe(true);
+
+    // Closing is refused while download/install is busy
+    store.setUpdateModalBusy(true);
+    store.setUpdateModalOpen(false);
+    expect(useUiStore.getState().updateModalOpen).toBe(true);
+
+    // Once not busy, explicit close succeeds
+    store.setUpdateModalBusy(false);
+    store.setUpdateModalOpen(false);
+    expect(useUiStore.getState().updateModalOpen).toBe(false);
   });
 });

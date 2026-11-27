@@ -15,6 +15,7 @@ import {
 } from "../services/tauriBridge";
 import { getThemePreset } from "../utils/themes";
 import { cardKeyForSession } from "../utils/worktreeSessions";
+import { hasBlockingModalOpen } from "../utils/modalGuard";
 
 // DEC Mode 2026 (Synchronized Output): lets xterm.js paint an entire screen swap in one atomic frame
 const SYNC_START = new TextEncoder().encode("\x1b[?2026h");
@@ -245,20 +246,7 @@ export function useXtermSession(
     if (!term || !activeAddressRef.current) return;
     // Never steal focus when any modal or context menu is open
     const ui = useUiStore.getState();
-    if (
-      ui.settingsOpen ||
-      ui.commandPaletteOpen ||
-      ui.quickFileOpen ||
-      ui.projectModalProject ||
-      ui.createWorktreeProjectId ||
-      ui.editWorktreeTarget ||
-      ui.launchTarget ||
-      ui.teardownTarget ||
-      ui.diffTarget ||
-      ui.markdownViewerTarget ||
-      ui.codeViewerTarget ||
-      ui.contextMenu
-    ) {
+    if (hasBlockingModalOpen(ui)) {
       return;
     }
     const activeEl = document.activeElement as HTMLElement | null;

@@ -58,14 +58,16 @@ export async function clearSkippedUpdateVersion(): Promise<void> {
 }
 
 /**
- * Performs a single non-blocking GitHub Release check shortly after initial hydration.
+ * Performs a single non-blocking GitHub Release check shortly after initial hydration
+ * and startup routing complete, so the update modal never races with boot transitions.
  */
 export function useUpdateChecker() {
   const hydrated = useAppStore((s) => s.hydrated);
+  const startupReady = useUiStore((s) => s.startupReady);
   const checkedRef = useRef(false);
 
   useEffect(() => {
-    if (!hydrated || checkedRef.current || !isTauriRuntime()) return;
+    if (!hydrated || !startupReady || checkedRef.current || !isTauriRuntime()) return;
     checkedRef.current = true;
 
     let cancelled = false;
@@ -90,5 +92,5 @@ export function useUpdateChecker() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [hydrated]);
+  }, [hydrated, startupReady]);
 }

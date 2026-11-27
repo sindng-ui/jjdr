@@ -102,7 +102,7 @@ export interface ReviewPickerTarget {
   maxReviewers?: number;
 }
 
-interface UiStoreState {
+export interface UiStoreState {
   startupReady: boolean;
   viewMode: ViewMode;
   radarLayoutMode: RadarLayoutMode;
@@ -150,13 +150,14 @@ interface UiStoreState {
   reviewPickerTarget: ReviewPickerTarget | null;
   updateInfo: UpdateCheckResult | null;
   updateModalOpen: boolean;
+  updateModalBusy: boolean;
   toast: { message: string; kind: "info" | "error" | "success" } | null;
 
   setViewMode: (mode: ViewMode) => void;
   setRadarLayoutMode: (mode: RadarLayoutMode) => void;
   setRadarColumnWidthPx: (widthPx: number | null) => void;
   setRadarFocusSlideDir: (dir: "next" | "prev" | null) => void;
-  completeStartupRouting: (tab: ZenModeTab) => void;
+  completeStartupRouting: (tab?: ZenModeTab) => void;
   toggleViewMode: () => void;
   setActiveGroup: (group: string) => void;
   setSelectedProjectId: (id: string | null) => void;
@@ -208,6 +209,7 @@ interface UiStoreState {
   setReviewPickerTarget: (target: ReviewPickerTarget | null) => void;
   setUpdateInfo: (info: UpdateCheckResult | null) => void;
   setUpdateModalOpen: (open: boolean) => void;
+  setUpdateModalBusy: (busy: boolean) => void;
   openUpdateModal: (info: UpdateCheckResult) => void;
   showToast: (message: string, kind?: "info" | "error" | "success", durationMs?: number) => void;
   clearToast: () => void;
@@ -263,6 +265,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   reviewPickerTarget: null,
   updateInfo: null,
   updateModalOpen: false,
+  updateModalBusy: false,
   toast: null,
 
   setViewMode: (viewMode) =>
@@ -289,7 +292,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
     set({ radarColumnWidthPx });
   },
   setRadarFocusSlideDir: (radarFocusSlideDir) => set({ radarFocusSlideDir }),
-  completeStartupRouting: (tab) =>
+  completeStartupRouting: (tab = "inbox") =>
     set((s) => {
       // Respect user's manual view switch if they already navigated away during boot
       if (s.startupReady && s.viewMode !== "zen") {
@@ -467,7 +470,17 @@ export const useUiStore = create<UiStoreState>((set) => ({
     set({ pendingPrReviewPrompt }),
   setReviewPickerTarget: (reviewPickerTarget) => set({ reviewPickerTarget }),
   setUpdateInfo: (updateInfo) => set({ updateInfo }),
-  setUpdateModalOpen: (updateModalOpen) => set({ updateModalOpen }),
+  setUpdateModalOpen: (updateModalOpen) =>
+    set((s) => {
+      if (!updateModalOpen && s.updateModalBusy) {
+        return s;
+      }
+      return {
+        updateModalOpen,
+        updateModalBusy: updateModalOpen ? s.updateModalBusy : false,
+      };
+    }),
+  setUpdateModalBusy: (updateModalBusy) => set({ updateModalBusy }),
   openUpdateModal: (updateInfo) => set({ updateInfo, updateModalOpen: true }),
   showToast: (message, kind = "info", durationMs = 3500) => {
     if (toastTimer) clearTimeout(toastTimer);

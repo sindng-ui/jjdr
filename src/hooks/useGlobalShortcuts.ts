@@ -33,6 +33,12 @@ export function useGlobalShortcuts() {
       const inXterm = target?.closest(".xterm") !== null;
       const ui = useUiStore.getState();
 
+      // 0. While the top-most UpdateModal is open, block all app shortcuts (including Escape)
+      // so the update prompt can never be dismissed or disrupted accidentally.
+      if (ui.updateModalOpen) {
+        return;
+      }
+
       // 1. Ctrl+` (Backquote): toggle right terminal pane anywhere
       const isTerminalToggle =
         (e.ctrlKey || e.metaKey) &&
@@ -358,10 +364,6 @@ export function useGlobalShortcuts() {
         }
         if (ui.settingsOpen) {
           ui.setSettingsOpen(false);
-          return;
-        }
-        if (ui.updateModalOpen) {
-          ui.setUpdateModalOpen(false);
           return;
         }
         if (inInput && target) {

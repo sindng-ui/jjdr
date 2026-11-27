@@ -160,7 +160,7 @@ export function App() {
       {toast && (
         <div
           onClick={clearToast}
-          className="fixed bottom-5 right-5 z-50 px-4 py-2 rounded-full text-xs font-semibold cursor-pointer shadow-lg"
+          className="fixed bottom-5 right-5 z-[90] px-4 py-2 rounded-full text-xs font-semibold cursor-pointer shadow-lg"
           style={
             toast.kind === "error"
               ? {

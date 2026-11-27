@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Command,
+  DownloadCloud,
   FileSearch,
   Inbox,
   Minus,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
+import { shouldShowUpdatePopup } from "../../utils/updatePolicy";
 import { BrandMascotIcon } from "../shared/StartupSplash";
 import { jumpToNextActionable } from "../../hooks/useGlobalShortcuts";
 import {
@@ -30,6 +32,9 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
   const counts = useAppStore((s) => s.computed.globalCounts);
   const groups = useAppStore((s) => s.computed.groups);
   const health = useAppStore((s) => s.health);
+  const skippedUpdateVersion = useAppStore(
+    (s) => s.settings.skipped_update_version
+  );
 
   const viewMode = useUiStore((s) => s.viewMode);
   const setViewMode = useUiStore((s) => s.setViewMode);
@@ -40,6 +45,8 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const setQuickFileOpen = useUiStore((s) => s.setQuickFileOpen);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const updateInfo = useUiStore((s) => s.updateInfo);
+  const openUpdateModal = useUiStore((s) => s.openUpdateModal);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const showToast = useUiStore((s) => s.showToast);
@@ -87,6 +94,11 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
   };
 
   const hasActionable = counts.needsYou > 0 || counts.ready > 0;
+  const showUpdatePill = shouldShowUpdatePopup(
+    updateInfo,
+    skippedUpdateVersion,
+    false
+  );
 
   const handleHeaderMouseDown = (e: React.MouseEvent<HTMLElement>) => {
     if (e.button !== 0) return;
@@ -394,6 +406,23 @@ export const TopStatusBar = React.memo(function TopStatusBar() {
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
+
+        {showUpdatePill && updateInfo && (
+          <button
+            type="button"
+            onClick={() => openUpdateModal(updateInfo)}
+            title={`새 버전 v${updateInfo.latest_version} 업데이트 보기`}
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-[11px] font-mono-code font-bold transition-opacity hover:opacity-90 cursor-pointer shrink-0"
+            style={{
+              background: "var(--accent-soft)",
+              border: "1px solid var(--accent-border)",
+              color: "var(--accent)",
+            }}
+          >
+            <DownloadCloud className="w-3.5 h-3.5" />
+            <span>v{updateInfo.latest_version}</span>
+          </button>
+        )}
 
         <button
           type="button"

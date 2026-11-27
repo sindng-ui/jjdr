@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useUiStore, type ZenDispatchStep } from "../store/useUiStore";
 import type { ZenDispatchProjectSummary } from "../utils/zenDispatch";
+import { hasBlockingModalOpen } from "../utils/modalGuard";
 
 interface UseZenDispatchShortcutsParams {
   step: ZenDispatchStep;
@@ -63,13 +64,7 @@ export function useZenDispatchShortcuts({
         return;
       }
       const ui = useUiStore.getState();
-      if (
-        ui.createWorktreeProjectId ||
-        ui.projectModalProject ||
-        ui.commandPaletteOpen ||
-        ui.quickFileOpen ||
-        ui.settingsOpen
-      ) {
+      if (hasBlockingModalOpen(ui)) {
         return;
       }
 
@@ -121,6 +116,9 @@ export function useZenDispatchShortcuts({
           target.tagName === "SELECT" ||
           target.isContentEditable)
       ) {
+        return;
+      }
+      if (hasBlockingModalOpen(useUiStore.getState())) {
         return;
       }
       e.preventDefault();

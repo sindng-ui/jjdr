@@ -1,0 +1,46 @@
+jjdr Test Results — 2026-11-28 (Startup Zen Inbox Routing & UpdateModal Protection)
+====================================================================================
+
+1. Summary of Changes
+---------------------
+- Startup routing always lands on Zen Inbox (`completeStartupRouting("inbox")`) instead of auto-switching to Zen Dispatch.
+- Hardened UpdateModal so it never dismisses without explicit user action (`X`, `나중에`, `이 버전 건너뛰기`):
+  - Removed backdrop click dismissal (`onClick={handleClose}` -> `e.stopPropagation()`).
+  - Isolated UpdateModal on top-most `z-[80]` layer (Toast raised to `z-[90]`).
+  - Added `updateModalBusy` store lock to prevent closing during download/launch.
+  - Blocked all global shortcuts (including `Escape`) while `updateModalOpen` is true.
+  - Unified blocking modal guard (`src/utils/modalGuard.ts` -> `hasBlockingModalOpen`) across `useZenDispatchShortcuts`, `useXtermSession.focusNow`, and `useHerdrSync.onWindowFocus`.
+  - Delayed startup update check until both `hydrated && startupReady` are true.
+  - Added lightweight Zero-Blur `vX.Y.Z` update pill in `TopStatusBar` for 1-click reopening after clicking `나중에`.
+
+2. Vitest (`npm run test`)
+--------------------------
+Test Files  27 passed (27)
+     Tests  116 passed (116)
+  Duration  2.06s
+
+New / Updated Unit Tests:
+- src/utils/modalGuard.test.ts (3 tests) — PASS
+- src/store/useUiStore.test.ts (4 tests) — PASS
+
+3. TypeScript & Production Build (`npm run build`)
+--------------------------------------------------
+- `tsc`: 0 errors
+- `vite build`: 1706 modules transformed, built in 4.39s
+- UpdateModal lazy chunk: 9.49 kB (gzip 3.36 kB)
+
+4. Performance & Quality Checks
+-------------------------------
+- Zero-Blur check (`backdrop-blur`, `filter: blur`): 0 matches
+- 900-line file limit check: All touched files <= 747 lines
+  - src/utils/modalGuard.ts: 42 lines
+  - src/hooks/useUpdateChecker.ts: 96 lines
+  - src/hooks/useZenDispatchShortcuts.ts: 162 lines
+  - src/App.tsx: 191 lines
+  - src/components/modals/UpdateModal.tsx: 468 lines
+  - src/components/layout/TopStatusBar.tsx: 475 lines
+  - src/store/useUiStore.ts: 491 lines
+  - src/hooks/useGlobalShortcuts.ts: 526 lines
+  - src/hooks/useHerdrSync.ts: 731 lines
+  - src/hooks/useXtermSession.ts: 747 lines
+- APP_MAP.md updated with all added/modified interfaces.
