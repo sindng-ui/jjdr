@@ -280,9 +280,31 @@ export function formatRejectReasonShort(reason?: string | null): string {
   }
 }
 
-export function formatAssignmentChip(a: ReviewAssignmentView): AssignmentChipInfo {
+export function formatAssignmentChip(
+  a: ReviewAssignmentView,
+  peerStatus?: TeamPeerInfo["status"]
+): AssignmentChipInfo {
   const reasonShort = formatRejectReasonShort(a.reject_reason);
   const agentNote = a.worker_agent ? ` (${a.worker_agent})` : "";
+
+  // If reviewer dropped offline mid-review (PC reboot / shutdown), warn author & enable 1-click Replace
+  const isInProgress =
+    a.status === "reviewing" ||
+    a.status === "queued" ||
+    a.status === "dispatched" ||
+    a.status === "delivered";
+  if (isInProgress && peerStatus === "offline") {
+    return {
+      reviewerId: a.reviewer_id,
+      status: a.status,
+      label: "Offline (Interrupted)",
+      shortLabel: "Offline",
+      tone: "warn",
+      tooltip: `@${a.reviewer_id} went offline while review was in progress — click Replace to reassign`,
+      canReplace: true,
+      canCancel: true,
+    };
+  }
 
   switch (a.status) {
     case "reviewing":

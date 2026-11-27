@@ -202,5 +202,20 @@ describe("teamReviews utilities (Phase 4)", () => {
     });
     expect(quotaChip.label).toBe("AI Quota");
     expect(quotaChip.canReplace).toBe(true);
+
+    // Mid-review reviewer goes offline (PC reboot/shutdown) -> warn + 1-click Replace enabled!
+    const droppedChip = formatAssignmentChip(
+      { ...base, status: "reviewing" },
+      "offline"
+    );
+    expect(droppedChip.label).toBe("Offline (Interrupted)");
+    expect(droppedChip.tone).toBe("warn");
+    expect(droppedChip.canReplace).toBe(true);
+    expect(droppedChip.canCancel).toBe(true);
+
+    // Completed reviewer going offline later stays green Posted (no spurious warning)
+    const doneOfflineChip = formatAssignmentChip(base, "offline");
+    expect(doneOfflineChip.label).toBe("Posted");
+    expect(doneOfflineChip.canReplace).toBe(false);
   });
 });

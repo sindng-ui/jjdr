@@ -1,13 +1,18 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
-import type { ReviewRequestWithAssignments } from "../../types/domain";
+import type { ReviewRequestWithAssignments, TeamPeerInfo } from "../../types/domain";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import {
   cancelAuthoredTeamReview,
   listAuthoredTeamReviews,
 } from "../../services/tauriBridge";
-import { formatAssignmentChip } from "../../utils/teamReviews";
+import {
+  formatAssignmentChip,
+  normalizeGithubHandle,
+} from "../../utils/teamReviews";
+
+const EMPTY_PEERS: TeamPeerInfo[] = [];
 
 interface AuthorReviewStatusBarProps {
   review: ReviewRequestWithAssignments;
@@ -68,7 +73,16 @@ export const AuthorReviewStatusBar = React.memo(function AuthorReviewStatusBar({
   const setReviewPickerTarget = useUiStore((s) => s.setReviewPickerTarget);
   const showToast = useUiStore((s) => s.showToast);
   const setAuthoredReviews = useAppStore((s) => s.setAuthoredReviews);
+  const peers = useAppStore((s) => s.teamSnapshot?.peers ?? EMPTY_PEERS);
   const [busyReviewer, setBusyReviewer] = useState<string | null>(null);
+
+  const peerStatusMap = useMemo(() => {
+    const map = new Map<string, TeamPeerInfo["status"]>();
+    for (const p of peers) {
+      map.set(normalizeGithubHandle(p.github_id), p.status);
+    }
+    return map;
+  }, [peers]);
 
   if (!review.assignments.length) return null;
 
@@ -134,7 +148,10 @@ export const AuthorReviewStatusBar = React.memo(function AuthorReviewStatusBar({
       }`}
     >
       {review.assignments.map((assignment) => {
-        const chip = formatAssignmentChip(assignment);
+        const peerStatus = peerStatusMap.get(
+          normalizeGithubHandle(assignment.reviewer_id)
+        );
+        const chip = formatAssignmentChip(assignment, peerStatus);
         const st = TONE_STYLES[chip.tone];
         const isBusy = busyReviewer === assignment.reviewer_id;
         return (

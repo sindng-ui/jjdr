@@ -4,6 +4,8 @@ use relay_protocol::{ActiveAssignmentCheck, ReviewAssignmentStatus};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_AUTO_RESUME_ATTEMPTS: u32 = 2;
+/// Interrupted reviews older than 1 hour on PC reboot are aborted & cleaned up instead of auto-resuming.
+pub const MAX_REBOOT_RESUME_AGE_MS: i64 = 60 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -199,6 +201,8 @@ pub enum StartupReconcileAction {
     PreserveReadyForAck,
     /// Relay cancelled/expired, or phase is CleaningUp -> teardown worktree and drop job.
     AbortAndCleanup,
+    /// Reviewer was offline too long (>1h) before reboot -> notify relay Failed(ExpiredTtl) & cleanup.
+    AbortExpiredAfterOffline,
     /// Exceeded MAX_AUTO_RESUME_ATTEMPTS -> stop auto-retrying and surface Failed card.
     MarkResumeLimitFailed,
     /// Job was still in FIFO queue -> keep queued for normal scheduler dispatch.
@@ -211,6 +215,7 @@ pub fn decide_startup_reconcile_action(
     has_live_terminal: bool,
     worktree_exists: bool,
     report_exists_non_empty: bool,
+    now_ms: i64,
 ) -> StartupReconcileAction {
     if job.phase == AutoReviewJobPhase::CleaningUp {
         return StartupReconcileAction::AbortAndCleanup;
@@ -233,16 +238,22 @@ pub fn decide_startup_reconcile_action(
         }
     }
 
-    if job.phase == AutoReviewJobPhase::Queued {
-        return StartupReconcileAction::KeepQueued;
-    }
-
     if has_live_terminal {
         return StartupReconcileAction::KeepAttached;
     }
 
     if report_exists_non_empty {
         return StartupReconcileAction::PromoteToReadyForAck;
+    }
+
+    // Prevent stale reviews from unexpectedly firing up hours later (e.g. next morning after turning off PC)
+    let age_ms = now_ms - job.updated_ms.max(job.created_ms);
+    if age_ms > MAX_REBOOT_RESUME_AGE_MS {
+        return StartupReconcileAction::AbortExpiredAfterOffline;
+    }
+
+    if job.phase == AutoReviewJobPhase::Queued {
+        return StartupReconcileAction::KeepQueued;
     }
 
     if job.resume_attempts >= MAX_AUTO_RESUME_ATTEMPTS {
@@ -350,55 +361,64 @@ mod tests {
             updated_ms: 200,
         };
 
+        let now_quick = 100 + 10 * 60 * 1000; // 10 minutes after job start
+        let now_next_day = 100 + 12 * 60 * 60 * 1000; // 12 hours later (e.g. next morning)
+
         // Case 1: jjdr restarted while herdr-core session still alive
         assert_eq!(
-            decide_startup_reconcile_action(&job, Some(&ok_check), true, true, false),
+            decide_startup_reconcile_action(&job, Some(&ok_check), true, true, false, now_quick),
             StartupReconcileAction::KeepAttached
         );
 
-        // Case 2: Reboot killed session, but MD report was already written
+        // Case 2: Reboot killed session, but MD report was already written (even hours later -> preserve!)
         assert_eq!(
-            decide_startup_reconcile_action(&job, Some(&ok_check), false, true, true),
+            decide_startup_reconcile_action(&job, Some(&ok_check), false, true, true, now_next_day),
             StartupReconcileAction::PromoteToReadyForAck
         );
 
-        // Case 3: Reboot interrupted review mid-way -> ResumeReview
+        // Case 3: Quick reboot (10m) interrupted review mid-way -> ResumeReview
         assert_eq!(
-            decide_startup_reconcile_action(&job, Some(&ok_check), false, true, false),
+            decide_startup_reconcile_action(&job, Some(&ok_check), false, true, false, now_quick),
             StartupReconcileAction::ResumeReview
+        );
+
+        // Case 3a (Offline cutoff): PC stayed off > 1h (12h later) -> AbortExpiredAfterOffline!
+        assert_eq!(
+            decide_startup_reconcile_action(&job, Some(&ok_check), false, true, false, now_next_day),
+            StartupReconcileAction::AbortExpiredAfterOffline
         );
 
         // Case 3b (Despair): Author cancelled while PC was rebooting -> AbortAndCleanup!
         assert_eq!(
-            decide_startup_reconcile_action(&job, Some(&abort_check), false, true, false),
+            decide_startup_reconcile_action(&job, Some(&abort_check), false, true, false, now_quick),
             StartupReconcileAction::AbortAndCleanup
         );
 
         // Case 3c (Despair): Repeated reboot loop hits MAX_AUTO_RESUME_ATTEMPTS -> stop looping!
         job.resume_attempts = MAX_AUTO_RESUME_ATTEMPTS;
         assert_eq!(
-            decide_startup_reconcile_action(&job, Some(&ok_check), false, true, false),
+            decide_startup_reconcile_action(&job, Some(&ok_check), false, true, false, now_quick),
             StartupReconcileAction::MarkResumeLimitFailed
         );
 
-        // Case 4: Worktree missing/half-created -> RecreateAndStart
+        // Case 4: Worktree missing/half-created within window -> RecreateAndStart
         job.resume_attempts = 0;
         assert_eq!(
-            decide_startup_reconcile_action(&job, Some(&ok_check), false, false, false),
+            decide_startup_reconcile_action(&job, Some(&ok_check), false, false, false, now_quick),
             StartupReconcileAction::RecreateAndStart
         );
 
         // Case 5: ReadyForAck must NEVER be deleted on reboot
         job.phase = AutoReviewJobPhase::ReadyForAck;
         assert_eq!(
-            decide_startup_reconcile_action(&job, Some(&abort_check), false, true, true),
+            decide_startup_reconcile_action(&job, Some(&abort_check), false, true, true, now_next_day),
             StartupReconcileAction::PreserveReadyForAck
         );
 
         // Case 6: CleaningUp interrupted by reboot -> finish AbortAndCleanup
         job.phase = AutoReviewJobPhase::CleaningUp;
         assert_eq!(
-            decide_startup_reconcile_action(&job, None, false, true, false),
+            decide_startup_reconcile_action(&job, None, false, true, false, now_quick),
             StartupReconcileAction::AbortAndCleanup
         );
     }

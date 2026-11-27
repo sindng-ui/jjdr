@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[cfg(not(test))]
 use chrono::Utc;
 #[cfg(not(test))]
-use relay_protocol::ReviewAssignmentStatus;
+use relay_protocol::{RejectReason, ReviewAssignmentStatus};
 #[cfg(not(test))]
 use tauri::{AppHandle, Emitter};
 #[cfg(not(test))]
@@ -85,6 +85,7 @@ impl AutoReviewOrchestrator {
                 has_live_term,
                 wt_exists,
                 report_non_empty,
+                Utc::now().timestamp_millis(),
             ) {
                 StartupReconcileAction::KeepAttached
                 | StartupReconcileAction::PreserveReadyForAck
@@ -142,6 +143,20 @@ impl AutoReviewOrchestrator {
                     .await;
                 }
                 StartupReconcileAction::AbortAndCleanup => {
+                    self.abort_and_cleanup_job(app, &job.request_id, false)
+                        .await;
+                }
+                StartupReconcileAction::AbortExpiredAfterOffline => {
+                    let _ = self
+                        .report_status(
+                            &job.request_id,
+                            &reviewer_id,
+                            ReviewAssignmentStatus::Failed,
+                            Some(RejectReason::ExpiredTtl),
+                            Some("Reviewer was offline for over 1 hour; interrupted review cleaned up".to_string()),
+                            Some(job.agent_id.clone()),
+                        )
+                        .await;
                     self.abort_and_cleanup_job(app, &job.request_id, false)
                         .await;
                 }
