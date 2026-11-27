@@ -1,6 +1,6 @@
 [package]
 name = "jjdr"
-version = "0.4.5"
+version = "0.4.6"
 description = "jjdr — Low-cognitive-load AI worktree mission control on herdr-core"
 authors = ["jjdr"]
 edition = "2021"
@@ -28,4 +28,4 @@ base64 = "0.22"
 dirs = "6"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "system-proxy"] }

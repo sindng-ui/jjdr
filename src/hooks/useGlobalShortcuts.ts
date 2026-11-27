@@ -169,13 +169,16 @@ export function useGlobalShortcuts() {
         }
       }
 
-      // 3d. Ctrl+Shift+D: Toggle Zen Worker Dispatch (safe inside xterm; never intercepts Ctrl+D EOF)
+      // 3d. Ctrl+Shift+D: Enter Zen Inbox from non-Zen tabs, or toggle Zen Inbox <-> Dispatch inside Zen (safe inside xterm; never intercepts Ctrl+D EOF)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
         const k = e.key.toLowerCase();
         if (k === "d" || e.code === "KeyD") {
           e.preventDefault();
           e.stopPropagation();
-          if (ui.viewMode === "zen" && ui.zenModeTab === "dispatch") {
+          if (ui.viewMode !== "zen") {
+            ui.setViewMode("zen");
+            ui.returnToZenInbox();
+          } else if (ui.zenModeTab === "dispatch") {
             ui.returnToZenInbox();
           } else {
             ui.openZenDispatch();

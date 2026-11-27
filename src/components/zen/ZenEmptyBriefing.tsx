@@ -1,13 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Radar, Send, Terminal } from "lucide-react";
+import { Radar, Send } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
 import type { ZenDispatchProjectSummary } from "../../utils/zenDispatch";
-import { getWorkerPersona } from "../../utils/workerPersona";
-import { WorkerMonsterAvatar } from "./WorkerMonsterAvatar";
-import { formatElapsed } from "../../utils/format";
-import { computeRunningProgressVisual } from "../../utils/zenQueue";
 import { useAppStore } from "../../store/useAppStore";
 import { normalizePath } from "../../workers/dashboardLogic";
+import { ZenRunningMissionCard } from "./ZenRunningMissionCard";
 
 const BURST_PARTICLES: ReadonlyArray<{
   bx: string;
@@ -33,6 +30,7 @@ interface ZenEmptyBriefingProps {
   peekingAddress?: string | null;
   projectSummaries: ZenDispatchProjectSummary[];
   onPeekSession: (session: EnrichedSession) => void;
+  onEditSession?: (session: EnrichedSession) => void;
   onStartDispatch: (projectId?: string | null) => void;
   onOpenRecap: () => void;
   onOpenRadar: () => void;
@@ -50,6 +48,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   peekingAddress = null,
   projectSummaries,
   onPeekSession,
+  onEditSession,
   onStartDispatch,
   onOpenRecap,
   onOpenRadar,
@@ -294,135 +293,17 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {runningCards.slice(0, 6).map((s) => {
-                const explicitProgress =
-                  typeof s.terminal.status?.progress === "number"
-                    ? s.terminal.status.progress
-                    : null;
-                const statusBaseMs = s.terminal.status_ms || s.terminal.created_ms;
-                const liveElapsedMs = statusBaseMs
-                  ? Math.max(s.elapsedMs, Math.max(0, nowMs - statusBaseMs))
-                  : s.elapsedMs;
-                const progressVis = computeRunningProgressVisual(
-                  liveElapsedMs,
-                  explicitProgress
-                );
-                const isPeeking = peekingAddress === s.address;
-                const normPath = normalizePath(s.worktreePath);
-                const cardMeta = worktreeMeta[normPath];
-                const persona = getWorkerPersona(normPath);
-                const cardDisplayName = cardMeta?.display_name?.trim() || "";
-                const branchText = s.branch || "(detached)";
-                return (
-                  <button
-                    key={`${s.projectId ?? "ext"}::${s.worktreePath}::${s.address}`}
-                    type="button"
-                    onClick={() => onPeekSession(s)}
-                    title={
-                      cardDisplayName
-                        ? `${persona.name} · ${cardDisplayName} — ${s.projectName} / ${branchText}`
-                        : `${persona.name} · ${s.projectName} / ${branchText}`
-                    }
-                    className="jjdr-card-lift text-left rounded-2xl p-3 space-y-1.5 cursor-pointer"
-                    style={{
-                      background: "var(--run-bg)",
-                      border: `1px solid ${
-                        isPeeking ? "var(--accent-border)" : "var(--run-border)"
-                      }`,
-                      boxShadow: isPeeking
-                        ? "var(--card-selected-shadow)"
-                        : undefined,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <WorkerMonsterAvatar
-                          persona={persona}
-                          mood="working"
-                          size={30}
-                          className="shrink-0"
-                        />
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className="font-extrabold truncate"
-                              style={{ color: persona.palette.body }}
-                            >
-                              {persona.name}
-                            </span>
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: s.projectColor }}
-                            />
-                            <span
-                              className="font-mono-code font-semibold truncate"
-                              style={{ color: "var(--text-primary)" }}
-                            >
-                              {cardDisplayName || branchText}
-                            </span>
-                          </div>
-                          <div
-                            className="font-mono-code text-[10px] truncate"
-                            style={{ color: "var(--text-secondary)" }}
-                          >
-                            {s.projectName} / {branchText}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {isPeeking && (
-                          <span
-                            className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono-code uppercase"
-                            style={{
-                              background: "var(--accent-soft)",
-                              color: "var(--accent)",
-                            }}
-                          >
-                            Viewing
-                          </span>
-                        )}
-                        <span
-                          className="font-mono-code text-[11px] font-semibold tabular-nums"
-                          style={{ color: progressVis.color }}
-                        >
-                          {explicitProgress !== null
-                            ? `${progressVis.percent}%`
-                            : formatElapsed(liveElapsedMs)}
-                        </span>
-                      </div>
-                    </div>
-                    <div
-                      className="h-1.5 rounded-full overflow-hidden"
-                      style={{ background: "var(--input-bg)" }}
-                    >
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${progressVis.percent}%`,
-                          backgroundColor: progressVis.color,
-                          transition:
-                            "width 600ms ease, background-color 600ms ease",
-                        }}
-                      />
-                    </div>
-                    <div
-                      className="flex items-center justify-between text-[11px]"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      <span className="truncate">
-                        {s.agentLabel} · {s.terminal.status?.msg || "Working..."}
-                      </span>
-                      <Terminal
-                        className="w-3 h-3 shrink-0 ml-1"
-                        style={{
-                          color: isPeeking ? "var(--accent)" : undefined,
-                          opacity: isPeeking ? 1 : 0.75,
-                        }}
-                      />
-                    </div>
-                  </button>
-                );
-              })}
+              {runningCards.slice(0, 6).map((s) => (
+                <ZenRunningMissionCard
+                  key={`${s.projectId ?? "ext"}::${s.worktreePath}::${s.address}`}
+                  session={s}
+                  cardMeta={worktreeMeta[normalizePath(s.worktreePath)]}
+                  nowMs={nowMs}
+                  isPeeking={peekingAddress === s.address}
+                  onPeek={onPeekSession}
+                  onEdit={onEditSession}
+                />
+              ))}
             </div>
           </div>
         )}

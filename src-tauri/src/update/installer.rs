@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
+use crate::update::win_http::format_reqwest_error;
+
 pub const ENV_UPDATE_DRY_RUN: &str = "JJDR_UPDATE_DRY_RUN";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,61 +85,93 @@ where
     let final_path = dest_dir.join(&safe_name);
     let part_path = dest_dir.join(format!("{}.part", safe_name));
 
-    let mut resp = client
+    let downloaded: u64 = match client
         .get(download_url)
         .header(reqwest::header::USER_AGENT, "jjdr-updater")
         .send()
         .await
-        .map_err(|e| format!("Download request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Installer download returned HTTP {}",
-            resp.status().as_u16()
-        ));
-    }
-
-    let total_bytes = resp.content_length();
-    let mut file = tokio::fs::File::create(&part_path)
-        .await
-        .map_err(|e| format!("Failed to create temp installer file: {}", e))?;
-
-    let mut downloaded: u64 = 0;
-    let mut last_percent: Option<u8> = None;
-    let mut last_emit = Instant::now();
-    on_progress(0, total_bytes, Some(0));
-
-    while let Some(chunk) = resp
-        .chunk()
-        .await
-        .map_err(|e| format!("Download stream interrupted: {}", e))?
     {
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("Failed to write installer chunk: {}", e))?;
-        downloaded += chunk.len() as u64;
-
-        let pct = total_bytes.and_then(|total| {
-            if total > 0 {
-                Some(((downloaded.saturating_mul(100)) / total).min(100) as u8)
-            } else {
-                None
+        Ok(mut resp) => {
+            if !resp.status().is_success() {
+                return Err(format!(
+                    "Installer download returned HTTP {}",
+                    resp.status().as_u16()
+                ));
             }
-        });
 
-        let pct_changed = pct != last_percent;
-        let elapsed_ok = last_emit.elapsed() >= Duration::from_millis(90);
-        if pct_changed || elapsed_ok {
-            last_percent = pct;
-            last_emit = Instant::now();
-            on_progress(downloaded, total_bytes, pct);
+            let total_bytes = resp.content_length();
+            let mut file = tokio::fs::File::create(&part_path)
+                .await
+                .map_err(|e| format!("Failed to create temp installer file: {}", e))?;
+
+            let mut dl: u64 = 0;
+            let mut last_percent: Option<u8> = None;
+            let mut last_emit = Instant::now();
+            on_progress(0, total_bytes, Some(0));
+
+            while let Some(chunk) = resp
+                .chunk()
+                .await
+                .map_err(|e| format!("Download stream interrupted: {}", format_reqwest_error(&e)))?
+            {
+                file.write_all(&chunk)
+                    .await
+                    .map_err(|e| format!("Failed to write installer chunk: {}", e))?;
+                dl += chunk.len() as u64;
+
+                let pct = total_bytes.and_then(|total| {
+                    if total > 0 {
+                        Some(((dl.saturating_mul(100)) / total).min(100) as u8)
+                    } else {
+                        None
+                    }
+                });
+
+                let pct_changed = pct != last_percent;
+                let elapsed_ok = last_emit.elapsed() >= Duration::from_millis(90);
+                if pct_changed || elapsed_ok {
+                    last_percent = pct;
+                    last_emit = Instant::now();
+                    on_progress(dl, total_bytes, pct);
+                }
+            }
+
+            file.flush()
+                .await
+                .map_err(|e| format!("Failed to flush installer file: {}", e))?;
+            drop(file);
+            on_progress(dl, total_bytes.or(Some(dl)), Some(100));
+            dl
         }
-    }
+        Err(primary_err) => {
+            let primary_msg = format_reqwest_error(&primary_err);
 
-    file.flush()
-        .await
-        .map_err(|e| format!("Failed to flush installer file: {}", e))?;
-    drop(file);
+            #[cfg(windows)]
+            if download_url.trim().starts_with("https://") {
+                crate::update::win_http::download_file_via_windows_proxy(
+                    download_url,
+                    "jjdr-updater",
+                    &part_path,
+                    180,
+                    &mut on_progress,
+                )
+                .await
+                .map_err(|fallback_err| {
+                    format!(
+                        "Download request failed: {} (Windows proxy fallback also failed: {})",
+                        primary_msg, fallback_err
+                    )
+                })?
+            } else {
+                return Err(format!("Download request failed: {}", primary_msg));
+            }
+
+            #[cfg(not(windows))]
+            {
+                return Err(format!("Download request failed: {}", primary_msg));
+            }
+        }
+    };
 
     if downloaded == 0 {
         let _ = tokio::fs::remove_file(&part_path).await;
@@ -151,7 +185,6 @@ where
         .await
         .map_err(|e| format!("Failed to finalize installer file: {}", e))?;
 
-    on_progress(downloaded, total_bytes.or(Some(downloaded)), Some(100));
     Ok((final_path, downloaded))
 }
 

@@ -251,7 +251,21 @@ export const useUiStore = create<UiStoreState>((set) => ({
   updateModalOpen: false,
   toast: null,
 
-  setViewMode: (viewMode) => set({ viewMode, startupReady: true }),
+  setViewMode: (viewMode) =>
+    set((s) => {
+      if (viewMode === "zen" && s.viewMode !== "zen") {
+        return {
+          viewMode,
+          startupReady: true,
+          zenModeTab: "inbox",
+          zenDispatchStep: "pick_project",
+          zenDispatchProjectId: null,
+          zenHiredSolo: null,
+          zenHiringState: null,
+        };
+      }
+      return { viewMode, startupReady: true };
+    }),
   setRadarLayoutMode: (radarLayoutMode) => {
     writeStoredRadarLayout(radarLayoutMode);
     set({ radarLayoutMode });
@@ -289,14 +303,25 @@ export const useUiStore = create<UiStoreState>((set) => ({
       };
     }),
   toggleViewMode: () =>
-    set((s) => ({
-      viewMode:
+    set((s) => {
+      const next: ViewMode =
         s.viewMode === "radar"
           ? "queue"
           : s.viewMode === "queue"
           ? "zen"
-          : "radar",
-    })),
+          : "radar";
+      if (next === "zen") {
+        return {
+          viewMode: next,
+          zenModeTab: "inbox",
+          zenDispatchStep: "pick_project",
+          zenDispatchProjectId: null,
+          zenHiredSolo: null,
+          zenHiringState: null,
+        };
+      }
+      return { viewMode: next };
+    }),
   setActiveGroup: (activeGroup) => set({ activeGroup }),
   setSelectedProjectId: (selectedProjectId) => set({ selectedProjectId }),
   toggleSelectedProjectId: (id) =>

@@ -3,6 +3,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::update::semver::{is_newer_version, normalize_version};
+use crate::update::win_http::format_reqwest_error;
 
 pub const DEFAULT_RELEASES_API_URL: &str =
     "https://api.github.com/repos/sindng-ui/jjdr/releases/latest";
@@ -141,37 +142,79 @@ pub fn build_check_result(
     }
 }
 
+fn parse_release_response(
+    status: u16,
+    body: &str,
+    current_version: &str,
+) -> Result<UpdateCheckResult, String> {
+    if status == 404 {
+        return Err("No published GitHub release found yet (404).".into());
+    }
+    if status == 403 {
+        return Err("GitHub API rate limit exceeded. Please try again shortly.".into());
+    }
+    if !(200..300).contains(&status) {
+        return Err(format!("Release server returned HTTP {}", status));
+    }
+
+    let payload = serde_json::from_str::<GitHubReleasePayload>(body)
+        .map_err(|e| format!("Invalid release JSON payload: {}", e))?;
+
+    Ok(build_check_result(current_version, payload))
+}
+
 pub async fn check_release_from_url(
     client: &reqwest::Client,
     feed_url: &str,
     current_version: &str,
 ) -> Result<UpdateCheckResult, String> {
     let ua = format!("jjdr-updater/{}", normalize_version(current_version));
-    let resp = client
+    let accept = "application/vnd.github+json";
+
+    match client
         .get(feed_url)
-        .header(reqwest::header::USER_AGENT, ua)
-        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .header(reqwest::header::USER_AGENT, &ua)
+        .header(reqwest::header::ACCEPT, accept)
         .send()
         .await
-        .map_err(|e| format!("Failed to reach release server: {}", e))?;
+    {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            let body = resp
+                .text()
+                .await
+                .map_err(|e| format!("Failed to read release response: {}", format_reqwest_error(&e)))?;
+            parse_release_response(status, &body, current_version)
+        }
+        Err(primary_err) => {
+            let primary_msg = format_reqwest_error(&primary_err);
 
-    let status = resp.status();
-    if status.as_u16() == 404 {
-        return Err("No published GitHub release found yet (404).".into());
-    }
-    if status.as_u16() == 403 {
-        return Err("GitHub API rate limit exceeded. Please try again shortly.".into());
-    }
-    if !status.is_success() {
-        return Err(format!("Release server returned HTTP {}", status.as_u16()));
-    }
+            #[cfg(windows)]
+            if feed_url.trim().starts_with("https://") {
+                match crate::update::win_http::fetch_text_via_windows_proxy(
+                    feed_url, &ua, accept, 12,
+                )
+                .await
+                {
+                    Ok(win_resp) => {
+                        return parse_release_response(
+                            win_resp.status,
+                            &win_resp.body,
+                            current_version,
+                        );
+                    }
+                    Err(fallback_err) => {
+                        return Err(format!(
+                            "Failed to reach release server: {} (Windows proxy fallback also failed: {})",
+                            primary_msg, fallback_err
+                        ));
+                    }
+                }
+            }
 
-    let payload = resp
-        .json::<GitHubReleasePayload>()
-        .await
-        .map_err(|e| format!("Invalid release JSON payload: {}", e))?;
-
-    Ok(build_check_result(current_version, payload))
+            Err(format!("Failed to reach release server: {}", primary_msg))
+        }
+    }
 }
 
 #[cfg(test)]

@@ -68,6 +68,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const closeTerminalDrawer = useUiStore((s) => s.closeTerminalDrawer);
   const requestTerminalFocus = useUiStore((s) => s.requestTerminalFocus);
   const setDiffTarget = useUiStore((s) => s.setDiffTarget);
+  const setEditWorktreeTarget = useUiStore((s) => s.setEditWorktreeTarget);
   const setTeardownTarget = useUiStore((s) => s.setTeardownTarget);
   const setViewMode = useUiStore((s) => s.setViewMode);
   const showToast = useUiStore((s) => s.showToast);
@@ -113,6 +114,19 @@ export const ZenModeView = React.memo(function ZenModeView() {
     count: 0,
     lastMs: 0,
   });
+
+  const handleEditRunning = useCallback(
+    (session: EnrichedSession) => {
+      if (!session.projectId) return;
+      setEditWorktreeTarget({
+        projectId: session.projectId,
+        worktreePath: session.worktree?.path ?? session.worktreePath,
+        branch: session.worktree?.branch ?? session.branch ?? "",
+        isMain: session.worktree?.is_main ?? false,
+      });
+    },
+    [setEditWorktreeTarget]
+  );
 
   const logClearedSession = useCallback(
     (s: EnrichedSession | null) => {
@@ -723,6 +737,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
           peekingAddress={terminalDrawerOpen || attachedAddress ? peekingAddr : null}
           projectSummaries={projectSummaries}
           onPeekSession={handlePeekRunning}
+          onEditSession={handleEditRunning}
           onStartDispatch={(pid) => openZenDispatch(pid ?? null)}
           onOpenRecap={() => setRecapOpen(true)}
           onOpenRadar={() => setViewMode("radar")}

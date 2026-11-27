@@ -18,10 +18,13 @@ fn is_plain_shell_bin(raw_bin: &str) -> bool {
         .rsplit('/')
         .next()
         .unwrap_or(raw_bin)
-        .trim_end_matches(".exe")
         .to_lowercase();
+    let bin = bin
+        .trim_end_matches(".exe")
+        .trim_end_matches(".cmd")
+        .trim_end_matches(".bat");
     matches!(
-        bin.as_str(),
+        bin,
         "" | "shell" | "pwsh" | "powershell" | "cmd" | "bash" | "zsh" | "sh" | "fish"
     )
 }
@@ -63,8 +66,12 @@ pub fn normalize_agent_argv(
         .rsplit('/')
         .next()
         .unwrap_or(&argv[0])
-        .trim_end_matches(".exe")
         .to_lowercase();
+    let bin = bin
+        .trim_end_matches(".exe")
+        .trim_end_matches(".cmd")
+        .trim_end_matches(".bat")
+        .to_string();
 
     if bin == "codex" && !argv.iter().any(|a| a == "--no-daemon") {
         argv.push("--no-daemon".into());
