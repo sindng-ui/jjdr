@@ -5,6 +5,7 @@ import type { ZenDispatchProjectSummary } from "../../utils/zenDispatch";
 import { useAppStore } from "../../store/useAppStore";
 import { normalizePath } from "../../workers/dashboardLogic";
 import { ZenRunningMissionCard } from "./ZenRunningMissionCard";
+import { ZenScenicEmptyHud } from "./ZenScenicEmptyHud";
 
 const BURST_PARTICLES: ReadonlyArray<{
   bx: string;
@@ -29,6 +30,8 @@ interface ZenEmptyBriefingProps {
   celebrateNonce: number;
   peekingAddress?: string | null;
   projectSummaries: ZenDispatchProjectSummary[];
+  scenicMode?: boolean;
+  peekSceneryOnly?: boolean;
   onPeekSession: (session: EnrichedSession) => void;
   onEditSession?: (session: EnrichedSession) => void;
   onStartDispatch: (projectId?: string | null) => void;
@@ -47,6 +50,8 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   celebrateNonce,
   peekingAddress = null,
   projectSummaries,
+  scenicMode = false,
+  peekSceneryOnly = false,
   onPeekSession,
   onEditSession,
   onStartDispatch,
@@ -74,6 +79,25 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
     const id = setTimeout(() => setCelebrating(false), 680);
     return () => clearTimeout(id);
   }, [celebrateNonce]);
+
+  if (scenicMode) {
+    return (
+      <ZenScenicEmptyHud
+        runningCards={runningCards}
+        idleCount={idleCount}
+        clearedToday={clearedToday}
+        nowMs={nowMs}
+        peekingAddress={peekingAddress}
+        projectSummaries={projectSummaries}
+        peekSceneryOnly={peekSceneryOnly}
+        onPeekSession={onPeekSession}
+        onEditSession={onEditSession}
+        onStartDispatch={onStartDispatch}
+        onOpenRecap={onOpenRecap}
+        onOpenRadar={onOpenRadar}
+      />
+    );
+  }
 
   return (
     <div className="flex-1 h-full min-h-0 overflow-y-auto flex items-center justify-center p-8">

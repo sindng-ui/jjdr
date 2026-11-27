@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Inbox, Send, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
@@ -36,8 +36,20 @@ import { ZenTactileControl } from "./ZenTactileControl";
 import { ZenEmptyBriefing } from "./ZenEmptyBriefing";
 import { ZenDispatchView } from "./ZenDispatchView";
 import { ZenRecapModal } from "./ZenRecapModal";
+import { ZenChillBackdropPicker } from "./ZenChillBackdropPicker";
+import {
+  readStoredChillBackdrop,
+  writeStoredChillBackdrop,
+  type ChillBackdropConfig,
+} from "../../utils/zenChillBackdrop";
 import type { EnrichedSession } from "../../types/domain";
 import "../../styles/zenMode.css";
+
+const ZenChillBackdropCanvas = lazy(() =>
+  import("./ZenChillBackdropCanvas").then((m) => ({
+    default: m.ZenChillBackdropCanvas,
+  }))
+);
 
 function sessionReadyStamp(s: EnrichedSession): string {
   const digest = computeSessionDigest(s.terminal, s.previewLines);
@@ -84,6 +96,10 @@ export const ZenModeView = React.memo(function ZenModeView() {
   );
   const [celebrateNonce, setCelebrateNonce] = useState(0);
   const [recapOpen, setRecapOpen] = useState(false);
+  const [chillConfig, setChillConfig] = useState<ChillBackdropConfig>(() =>
+    readStoredChillBackdrop()
+  );
+  const [peekSceneryOnly, setPeekSceneryOnly] = useState(false);
   const [lockedCardKey, setLockedCardKey] = useState<string | null>(null);
   const [skippedKeys, setSkippedKeys] = useState<string[]>([]);
 
@@ -166,6 +182,18 @@ export const ZenModeView = React.memo(function ZenModeView() {
       if (next) playZenLeverSfx(true);
       return next;
     });
+  }, []);
+
+  const handleChangeChillConfig = useCallback((next: ChillBackdropConfig) => {
+    setChillConfig(next);
+    writeStoredChillBackdrop(next);
+    if (next.scene === "none") {
+      setPeekSceneryOnly(false);
+    }
+  }, []);
+
+  const handleTogglePeekScenery = useCallback(() => {
+    setPeekSceneryOnly((prev) => !prev);
   }, []);
 
   // Filter out cards the user explicitly stamped "결재 완료" at the exact same turn/status_ms
@@ -604,6 +632,8 @@ export const ZenModeView = React.memo(function ZenModeView() {
 
   const displayCard = exitingCard ?? activeCard;
   const displayKey = displayCard ? cardKeyForSession(displayCard) : null;
+  const isAllClearStage = !isDispatchTab && !displayCard;
+  const showChillBackdrop = isAllClearStage && chillConfig.scene !== "none";
 
   const enterAnimClass = exitingCard
     ? ""
@@ -613,8 +643,15 @@ export const ZenModeView = React.memo(function ZenModeView() {
 
   return (
     <div className="flex-1 h-full min-h-0 overflow-hidden flex flex-col px-6 py-4 min-w-0 relative">
-      {/* Calm Minimal Top Bar: Inbox <-> Dispatch Switcher + Style Switcher + Today Cleared */}
-      <div className="flex items-center justify-between gap-2 flex-wrap shrink-0 select-none">
+      {/* Full-Stage Zero-Blur 2D Pixel Art Backdrop (mounted only on All Clear / Time to Chill when selected) */}
+      {showChillBackdrop && (
+        <Suspense fallback={null}>
+          <ZenChillBackdropCanvas config={chillConfig} />
+        </Suspense>
+      )}
+
+      {/* Calm Minimal Top Bar: Inbox <-> Dispatch Switcher + Style Switcher + Backdrop + Today Cleared */}
+      <div className="relative z-20 flex items-center justify-between gap-2 flex-wrap shrink-0 select-none">
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="jjdr-pill inline-flex items-center rounded-full p-0.5 text-xs">
             <button
@@ -700,6 +737,15 @@ export const ZenModeView = React.memo(function ZenModeView() {
         </div>
 
         <div className="flex items-center gap-2">
+          {isAllClearStage && (
+            <ZenChillBackdropPicker
+              config={chillConfig}
+              peekSceneryOnly={peekSceneryOnly}
+              onChange={handleChangeChillConfig}
+              onTogglePeekScenery={handleTogglePeekScenery}
+            />
+          )}
+
           <button
             type="button"
             onClick={handleToggleSfx}
@@ -744,6 +790,8 @@ export const ZenModeView = React.memo(function ZenModeView() {
           celebrateNonce={celebrateNonce}
           peekingAddress={terminalDrawerOpen || attachedAddress ? peekingAddr : null}
           projectSummaries={projectSummaries}
+          scenicMode={chillConfig.scene !== "none"}
+          peekSceneryOnly={peekSceneryOnly}
           onPeekSession={handlePeekRunning}
           onEditSession={handleEditRunning}
           onStartDispatch={(pid) => openZenDispatch(pid ?? null)}

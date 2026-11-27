@@ -1,0 +1,43 @@
+jjdr Test Results — 2026-11-28 (Zen All Clear / Time to Chill 2D Pixel Art Backdrops)
+======================================================================================
+
+1. Summary of Changes
+---------------------
+- Default remains Classic Card (`scene: "none"`), preserving the exact existing centered ZenEmptyBriefing layout with 0 overhead.
+- Added 4 selectable 2D pixel art scenes via the Zen All Clear top-bar `Backdrop` popover:
+  1) `resort_beach` (240x135) — First-group Concept A serene Pixel Resort Coast (palm silhouettes, shimmering sea, sailboat)
+  2) `coastal_train` (320x180) — Concept A-5 Summer Sea & Retro Coastal Train
+  3) `alpine_chalet` (320x180) — Concept S-1 Natural Asymmetric Alpine Massif, Red Gondola & Warm Chalet
+  4) `glacier_express` (320x180) — Concept S-3 Dolomites Glacier Gorge, Mirror Lake & Red Express Viaduct Train
+- Selecting any of the 4 scenes automatically switches Chill layout to Open Scenic Floating HUD (`ZenScenicEmptyHud`), while keeping the backdrop active across both `Time to chill` (running > 0) and `All clear` (running === 0) states.
+- Added `Auto` time-of-day mood (plus manual Day / Warm / Sunset / Night), readability scrim slider (0..55%), Monsters/Snow/Motion toggles, and `Pure View` HUD hide/show toggle.
+
+2. Vitest (`npm run test`)
+--------------------------
+Test Files  28 passed (28)
+     Tests  120 passed (120)
+  Duration  2.07s
+
+New Unit Test:
+- src/utils/zenChillBackdrop.test.ts (4 tests) — PASS
+
+3. TypeScript & Production Build (`npm run build`)
+--------------------------------------------------
+- `tsc`: 0 errors
+- `vite build`: 1712 modules transformed, built in 4.21s
+- Lazy-loaded chunk: `ZenChillBackdropCanvas` = 21.78 kB (gzip 8.80 kB) — 0 KB loaded in default Classic mode
+
+4. Performance & Quality Checks
+-------------------------------
+- Zero-Blur check (`backdrop-blur`, `filter: blur`): 0 matches
+- Animation loop: 12fps throttled rAF, auto-paused on `document.hidden`, 1-frame static draw when `motion === false`, completely unmounted outside All Clear / Time to Chill
+- 900-line file limit check: All touched files <= 874 lines
+  - src/components/zen/ZenChillBackdropCanvas.tsx: 113 lines
+  - src/utils/zenChillBackdrop.ts: 193 lines
+  - src/components/zen/ZenScenicEmptyHud.tsx: 251 lines
+  - src/components/zen/ZenChillBackdropPicker.tsx: 317 lines
+  - src/components/zen/ZenEmptyBriefing.tsx: 417 lines
+  - src/utils/zenPixelScenes.ts: 676 lines
+  - src/utils/zenPixelCommon.ts: 749 lines
+  - src/components/zen/ZenModeView.tsx: 874 lines
+- APP_MAP.md updated with all added/modified files and interfaces.
