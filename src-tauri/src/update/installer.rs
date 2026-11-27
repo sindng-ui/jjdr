@@ -207,7 +207,9 @@ pub fn launch_installer(path: &Path) -> Result<(), String> {
                 .spawn()
                 .map_err(|e| format!("Failed to launch MSI installer: {}", e))?;
         } else {
+            // Tauri NSIS supports /P (passive progress without wizard clicks) + /R (auto-relaunch)
             std::process::Command::new(path)
+                .args(["/P", "/R"])
                 .spawn()
                 .map_err(|e| format!("Failed to launch EXE installer: {}", e))?;
         }

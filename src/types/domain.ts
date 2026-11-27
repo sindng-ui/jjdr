@@ -208,9 +208,22 @@ export interface OverlayOpenCardEvent {
   address: string;
 }
 
+export type MissionKind = "dev" | "review" | "fix" | "refactor";
+
 export interface WorktreeCardMeta {
   display_name?: string | null;
   note?: string | null;
+  mission_kind?: MissionKind | null;
+  pr_number?: number | null;
+  pr_url?: string | null;
+}
+
+export interface AutoMissionInfo {
+  kind?: MissionKind | null;
+  prNumber?: number | null;
+  prUrl?: string | null;
+  source: "prompt" | "preview" | "branch";
+  updatedAt: number;
 }
 
 export interface AckedSessionSnapshot {

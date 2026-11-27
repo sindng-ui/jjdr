@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   AckedSessionSnapshot,
   AppSettings,
+  AutoMissionInfo,
   DashboardWorkerResult,
   HerdrHealth,
   ProjectConfig,
@@ -12,6 +13,13 @@ import type {
   WorktreeCardMeta,
   WorktreeInfo,
 } from "../types/domain";
+import {
+  mergeAutoMission,
+  normalizeMissionKind,
+  normalizePrNumber,
+  normalizePrUrl,
+  parseMissionFromText,
+} from "../utils/missionDetector";
 import {
   applyThemeToDom,
   DEFAULT_RADAR_DENSITY,
@@ -67,6 +75,7 @@ interface AppStoreState {
   queuedPrompts: Record<string, string[]>;
   lastAgentByWorktree: Record<string, string[]>;
   worktreeMeta: Record<string, WorktreeCardMeta>;
+  autoMissionByWorktree: Record<string, AutoMissionInfo>;
   worktreeOrderByProject: Record<string, string[]>;
   removingWorktreePaths: Record<string, true>;
   computed: DashboardWorkerResult;
@@ -102,6 +111,8 @@ interface AppStoreState {
   popQueuedPrompt: (address: string) => string | null;
   removeQueuedPrompt: (address: string, index: number) => void;
   recordLastAgent: (normWorktreePath: string, argv: string[]) => void;
+  recordWorktreePromptMission: (normWorktreePath: string, promptText: string) => void;
+  recordTerminalPromptMission: (address: string, promptText: string) => void;
   setWorktreeMeta: (normWorktreePath: string, meta: WorktreeCardMeta | null) => void;
   setProjectWorktreeOrder: (projectId: string, orderedNormPaths: string[]) => void;
   setComputed: (result: DashboardWorkerResult) => void;
@@ -127,6 +138,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   queuedPrompts: {},
   lastAgentByWorktree: {},
   worktreeMeta: {},
+  autoMissionByWorktree: {},
   worktreeOrderByProject: {},
   removingWorktreePaths: {},
   computed: EMPTY_COMPUTED,
@@ -151,9 +163,53 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         delete nextPreviews[addr];
       }
 
+      // Opportunistically detect PR# / URL / mission kind from only the delta terminals & previews
+      let nextAutoMission = state.autoMissionByWorktree;
+      let autoChanged = false;
+      const dirtyAddrs = new Set<string>();
+      for (const t of batch.terminals) dirtyAddrs.add(t.address);
+      for (const p of batch.previews) dirtyAddrs.add(p.address);
+
+      if (dirtyAddrs.size > 0) {
+        const now = Date.now();
+        for (const addr of dirtyAddrs) {
+          const term = nextTerminals[addr];
+          if (!term || term.state !== "live") continue;
+          const wtRaw = term.labels["jjdr.worktree"] || term.cwd;
+          if (!wtRaw) continue;
+          const normWt = normalizePath(wtRaw);
+          const preview = nextPreviews[addr];
+          const sample = [
+            term.status?.msg ?? "",
+            ...(preview?.lines.slice(-6) ?? []),
+          ]
+            .filter(Boolean)
+            .join("\n");
+          if (!sample) continue;
+          const signal = parseMissionFromText(sample);
+          if (!signal.kind && signal.prNumber === null && !signal.prUrl) {
+            continue;
+          }
+          const merged = mergeAutoMission(
+            nextAutoMission[normWt],
+            signal,
+            "preview",
+            now
+          );
+          if (merged) {
+            if (!autoChanged) {
+              nextAutoMission = { ...nextAutoMission };
+              autoChanged = true;
+            }
+            nextAutoMission[normWt] = merged;
+          }
+        }
+      }
+
       return {
         terminals: nextTerminals,
         previews: nextPreviews,
+        autoMissionByWorktree: nextAutoMission,
         health: batch.health,
         seq: batch.seq,
       };
@@ -347,17 +403,49 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       },
     })),
 
+  recordWorktreePromptMission: (normWorktreePath, promptText) =>
+    set((state) => {
+      if (!normWorktreePath || !promptText.trim()) return state;
+      const signal = parseMissionFromText(promptText);
+      const merged = mergeAutoMission(
+        state.autoMissionByWorktree[normWorktreePath],
+        signal,
+        "prompt"
+      );
+      if (!merged) return state;
+      return {
+        autoMissionByWorktree: {
+          ...state.autoMissionByWorktree,
+          [normWorktreePath]: merged,
+        },
+      };
+    }),
+
+  recordTerminalPromptMission: (address, promptText) => {
+    const term = get().terminals[address];
+    if (!term) return;
+    const wtRaw = term.labels["jjdr.worktree"] || term.cwd;
+    if (!wtRaw) return;
+    get().recordWorktreePromptMission(normalizePath(wtRaw), promptText);
+  },
+
   setWorktreeMeta: (normWorktreePath, meta) =>
     set((state) => {
       const next = { ...state.worktreeMeta };
       const cleanedName = meta?.display_name?.trim() || null;
       const cleanedNote = meta?.note?.trim() || null;
-      if (!cleanedName && !cleanedNote) {
+      const cleanedKind = normalizeMissionKind(meta?.mission_kind);
+      const cleanedPr = normalizePrNumber(meta?.pr_number);
+      const cleanedUrl = normalizePrUrl(meta?.pr_url);
+      if (!cleanedName && !cleanedNote && !cleanedKind && cleanedPr === null && !cleanedUrl) {
         delete next[normWorktreePath];
       } else {
         next[normWorktreePath] = {
           display_name: cleanedName,
           note: cleanedNote,
+          mission_kind: cleanedKind,
+          pr_number: cleanedPr,
+          pr_url: cleanedUrl,
         };
       }
       return { worktreeMeta: next };

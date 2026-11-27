@@ -488,22 +488,29 @@ export function useXtermSession(
       if (activeChannelRef.current !== null) {
         void writeTerminalInput(activeChannelRef.current, data);
       }
-      // Track genuine prompt submission (printable text + Enter) for Zen Dispatch guard
+      // Track genuine prompt submission (printable text + Enter) for Zen Dispatch guard & Auto Mission detection
       const addr = activeAddressRef.current;
       if (!addr || !data) return;
       if (typedLineAddr !== addr) {
         typedLineAddr = addr;
         typedLineBuf = "";
       }
-      // Ignore ANSI escape sequences (arrows, mouse tracking reports, focus in/out)
-      if (data.startsWith("\x1b")) return;
+      // Unwrap bracketed paste payloads (\x1b[200~...\x1b[201~) so pasted PR URLs/prompts are captured,
+      // while ignoring other ANSI escape sequences (arrows, mouse tracking reports, focus in/out).
+      let payload = data;
+      if (payload.startsWith("\x1b[200~")) {
+        payload = payload.replace(/^\x1b\[200~/, "").replace(/\x1b\[201~$/, "");
+      } else if (payload.startsWith("\x1b")) {
+        return;
+      }
 
-      for (let i = 0; i < data.length; i++) {
-        const ch = data[i];
-        const code = data.charCodeAt(i);
+      for (let i = 0; i < payload.length; i++) {
+        const ch = payload[i];
+        const code = payload.charCodeAt(i);
         if (ch === "\r" || ch === "\n") {
           if (isRealPromptSubmission(typedLineBuf)) {
             useUiStore.getState().recordTerminalSubmit(addr);
+            useAppStore.getState().recordTerminalPromptMission(addr, typedLineBuf);
           }
           typedLineBuf = "";
         } else if (code === 0x7f || code === 0x08) {
@@ -511,7 +518,7 @@ export function useXtermSession(
         } else if (code === 0x03 || code === 0x15) {
           typedLineBuf = "";
         } else if (code >= 0x20) {
-          if (typedLineBuf.length < 256) {
+          if (typedLineBuf.length < 512) {
             typedLineBuf += ch;
           }
         }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Check, GitBranch, GitBranchPlus, X, Zap } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
+import type { MissionKind } from "../../types/domain";
 import {
   createWorktreeAndLaunch,
   inspectGitRepo,
@@ -13,6 +14,8 @@ import {
   BRANCH_PREFIXES,
   formatEffectiveCommand,
 } from "../../utils/agents";
+import { normalizePrNumber } from "../../utils/missionDetector";
+import { MissionOptionalTagBar } from "../shared/MissionBadges";
 
 export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
   const projectId = useUiStore((s) => s.createWorktreeProjectId);
@@ -34,6 +37,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
   const [autonomous, setAutonomous] = useState(true);
   const [customAgentMode, setCustomAgentMode] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState("");
+  const [missionKind, setMissionKind] = useState<MissionKind | null>(null);
+  const [prNumberText, setPrNumberText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,6 +55,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
       templates.some((t) => t.name === defAgent);
     setCustomAgentMode(!isKnown);
     setInitialPrompt("");
+    setMissionKind(null);
+    setPrNumberText("");
     setError(null);
 
     void inspectGitRepo(project.repo_path)
@@ -85,6 +92,8 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
       : undefined;
     const snapPrompt = initialPrompt.trim() || undefined;
     const snapAutonomous = autonomous;
+    const snapMissionKind = missionKind;
+    const snapPrNumber = normalizePrNumber(prNumberText);
 
     const uiBefore = useUiStore.getState();
     const launchedFromZenDispatch =
@@ -115,10 +124,21 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
       autonomous: snapAutonomous,
     })
       .then(async (res) => {
+        const normWt = normalizePath(res.worktree_path);
+        const appStore = useAppStore.getState();
         if (launchArgv && launchArgv.length > 0) {
-          useAppStore
-            .getState()
-            .recordLastAgent(normalizePath(res.worktree_path), launchArgv);
+          appStore.recordLastAgent(normWt, launchArgv);
+        }
+        if (snapMissionKind || snapPrNumber !== null) {
+          const prevMeta = appStore.worktreeMeta[normWt];
+          appStore.setWorktreeMeta(normWt, {
+            ...prevMeta,
+            mission_kind: snapMissionKind,
+            pr_number: snapPrNumber,
+          });
+        }
+        if (snapPrompt) {
+          appStore.recordWorktreePromptMission(normWt, snapPrompt);
         }
 
         const updatedWts = await listProjectWorktrees(snapProjectId).catch(
@@ -310,6 +330,15 @@ export const CreateWorktreeModal = React.memo(function CreateWorktreeModal() {
               className="jjdr-input w-full px-3.5 py-2.5 rounded-full font-mono-code text-sm"
             />
           </div>
+
+          {/* Ultra-slim collapsible optional mission tag (defaults to Zero-Input auto detection) */}
+          <MissionOptionalTagBar
+            key={project.id}
+            kind={missionKind}
+            prNumberText={prNumberText}
+            onKindChange={setMissionKind}
+            onPrNumberChange={setPrNumberText}
+          />
 
           {/* Choice-first AI CLI picker */}
           <div>

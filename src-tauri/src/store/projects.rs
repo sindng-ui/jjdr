@@ -39,6 +39,12 @@ pub struct WorktreeCardMeta {
     pub display_name: Option<String>,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub mission_kind: Option<String>,
+    #[serde(default)]
+    pub pr_number: Option<u32>,
+    #[serde(default)]
+    pub pr_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -2,11 +2,18 @@ import React, { useEffect, useState } from "react";
 import { GitBranch, Pencil, X } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
+import type { MissionKind } from "../../types/domain";
 import { normalizePath } from "../../workers/dashboardLogic";
 import {
   listProjectWorktrees,
   renameWorktreeBranch,
 } from "../../services/tauriBridge";
+import {
+  MISSION_KIND_META,
+  normalizeMissionKind,
+  normalizePrNumber,
+} from "../../utils/missionDetector";
+import { MissionTagPicker } from "../shared/MissionBadges";
 
 export const EditWorktreeModal = React.memo(function EditWorktreeModal() {
   const target = useUiStore((s) => s.editWorktreeTarget);
@@ -17,9 +24,14 @@ export const EditWorktreeModal = React.memo(function EditWorktreeModal() {
   const existingMeta = useAppStore((s) =>
     normPath ? s.worktreeMeta[normPath] : undefined
   );
+  const autoMission = useAppStore((s) =>
+    normPath ? s.autoMissionByWorktree[normPath] : undefined
+  );
 
   const [displayName, setDisplayName] = useState("");
   const [note, setNote] = useState("");
+  const [missionKind, setMissionKind] = useState<MissionKind | null>(null);
+  const [prNumberText, setPrNumberText] = useState("");
   const [branchName, setBranchName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +40,10 @@ export const EditWorktreeModal = React.memo(function EditWorktreeModal() {
     if (!target) return;
     setDisplayName(existingMeta?.display_name ?? "");
     setNote(existingMeta?.note ?? "");
+    setMissionKind(normalizeMissionKind(existingMeta?.mission_kind));
+    setPrNumberText(
+      existingMeta?.pr_number ? String(existingMeta.pr_number) : ""
+    );
     setBranchName(target.branch || "");
     setError(null);
   }, [target, existingMeta]);
@@ -63,9 +79,18 @@ export const EditWorktreeModal = React.memo(function EditWorktreeModal() {
         }
       }
 
+      const nextPr = normalizePrNumber(prNumberText);
+      const preservedUrl =
+        nextPr !== null && existingMeta?.pr_number === nextPr
+          ? existingMeta.pr_url ?? null
+          : null;
+
       useAppStore.getState().setWorktreeMeta(normPath, {
         display_name: displayName.trim() || null,
         note: note.trim() || null,
+        mission_kind: missionKind,
+        pr_number: nextPr,
+        pr_url: preservedUrl,
       });
 
       showToast("Worktree 카드가 업데이트되었습니다.", "success");
@@ -149,6 +174,35 @@ export const EditWorktreeModal = React.memo(function EditWorktreeModal() {
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder={`비워두면 Git 브랜치명(${target.branch || "main"}) 표시`}
               className="jjdr-input w-full px-3.5 py-2 rounded-full"
+            />
+          </div>
+
+          <div>
+            <label
+              className="block mb-1.5 font-semibold"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              작업 태그 &amp; PR 번호 (선택 · 비우면 자동 감지)
+            </label>
+            <MissionTagPicker
+              kind={missionKind}
+              prNumberText={prNumberText}
+              onKindChange={setMissionKind}
+              onPrNumberChange={setPrNumberText}
+              autoHint={
+                autoMission && (autoMission.kind || autoMission.prNumber)
+                  ? `Auto detected: ${[
+                      autoMission.kind
+                        ? MISSION_KIND_META[autoMission.kind].label
+                        : null,
+                      autoMission.prNumber
+                        ? `PR #${autoMission.prNumber}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}`
+                  : null
+              }
             />
           </div>
 

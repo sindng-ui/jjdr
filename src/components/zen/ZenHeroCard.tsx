@@ -11,6 +11,8 @@ import {
   normalizePath,
 } from "../../workers/dashboardLogic";
 import { useAppStore } from "../../store/useAppStore";
+import { resolveEffectiveMission } from "../../utils/missionDetector";
+import { MissionBadges } from "../shared/MissionBadges";
 
 interface ZenHeroCardProps {
   session: EnrichedSession;
@@ -41,7 +43,23 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
 }: ZenHeroCardProps) {
   const normWtPath = normalizePath(session.worktreePath);
   const cardMeta = useAppStore((s) => s.worktreeMeta[normWtPath]);
+  const autoMission = useAppStore((s) => s.autoMissionByWorktree[normWtPath]);
   const persona = useMemo(() => getWorkerPersona(normWtPath), [normWtPath]);
+  const mission = useMemo(
+    () =>
+      resolveEffectiveMission(cardMeta, autoMission, {
+        branch: session.branch,
+        statusMsg: session.terminal.status?.msg,
+        previewLines: session.previewLines,
+      }),
+    [
+      cardMeta,
+      autoMission,
+      session.branch,
+      session.terminal.status?.msg,
+      session.previewLines,
+    ]
+  );
 
   const cardRef = useRef<HTMLDivElement>(null);
   const sheenRef = useRef<HTMLDivElement>(null);
@@ -204,13 +222,14 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
           className="relative z-10 flex items-center justify-between gap-2 pb-3"
           style={{ borderBottom: "1px dashed var(--divider)" }}
         >
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
               <StatusBadge
                 bucket={bucket}
                 status={terminal.status}
                 isStuck={session.isStuck}
                 stuckMinutes={session.stuckMinutes}
               />
+              <MissionBadges mission={mission} size="sm" />
               {canDismissMerged && (
                 <span
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0"

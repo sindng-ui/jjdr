@@ -18,6 +18,8 @@ import { getWorkerPersona } from "../../utils/workerPersona";
 import { formatElapsed } from "../../utils/format";
 import { useAppStore } from "../../store/useAppStore";
 import { WorkerMonsterAvatar } from "./WorkerMonsterAvatar";
+import { resolveEffectiveMission } from "../../utils/missionDetector";
+import { MissionBadges } from "../shared/MissionBadges";
 
 interface ZenWorkerCardProps {
   worker: ZenDispatchWorker;
@@ -77,6 +79,9 @@ export const ZenWorkerCard = React.memo(function ZenWorkerCard({
   onTeardown,
 }: ZenWorkerCardProps) {
   const worktreeMeta = useAppStore((s) => s.worktreeMeta);
+  const autoMission = useAppStore(
+    (s) => s.autoMissionByWorktree[worker.normWtPath]
+  );
   const cardMeta = worktreeMeta[worker.normWtPath];
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -87,6 +92,21 @@ export const ZenWorkerCard = React.memo(function ZenWorkerCard({
   const persona = useMemo(
     () => getWorkerPersona(worker.normWtPath),
     [worker.normWtPath]
+  );
+  const mission = useMemo(
+    () =>
+      resolveEffectiveMission(cardMeta, autoMission, {
+        branch: worktree.branch,
+        statusMsg: aiSession?.terminal.status?.msg,
+        previewLines: aiSession?.previewLines,
+      }),
+    [
+      cardMeta,
+      autoMission,
+      worktree.branch,
+      aiSession?.terminal.status?.msg,
+      aiSession?.previewLines,
+    ]
   );
   const displayName = cardMeta?.display_name?.trim() || "";
   const customNote = cardMeta?.note?.trim() || "";
@@ -311,6 +331,7 @@ export const ZenWorkerCard = React.memo(function ZenWorkerCard({
                   MERGED
                 </span>
               )}
+              <MissionBadges mission={mission} size="sm" />
             </div>
 
             <span
@@ -422,7 +443,7 @@ export const ZenWorkerCard = React.memo(function ZenWorkerCard({
                 <button
                   type="button"
                   onClick={onEditCard}
-                  title="Edit worker alias or note"
+                  title="Edit worker alias, mission tag, PR#, or note"
                   className="jjdr-pill p-1 rounded-full cursor-pointer shrink-0 transition-colors"
                   style={{ color: "var(--text-muted)" }}
                 >

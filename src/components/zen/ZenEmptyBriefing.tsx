@@ -54,6 +54,7 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   onOpenRadar,
 }: ZenEmptyBriefingProps) {
   const worktreeMeta = useAppStore((s) => s.worktreeMeta);
+  const autoMissionByWorktree = useAppStore((s) => s.autoMissionByWorktree);
   const runningCount = runningCards.length;
   const hasRunning = runningCount > 0;
   const [celebrating, setCelebrating] = useState(false);
@@ -293,17 +294,21 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {runningCards.slice(0, 6).map((s) => (
-                <ZenRunningMissionCard
-                  key={`${s.projectId ?? "ext"}::${s.worktreePath}::${s.address}`}
-                  session={s}
-                  cardMeta={worktreeMeta[normalizePath(s.worktreePath)]}
-                  nowMs={nowMs}
-                  isPeeking={peekingAddress === s.address}
-                  onPeek={onPeekSession}
-                  onEdit={onEditSession}
-                />
-              ))}
+              {runningCards.slice(0, 6).map((s) => {
+                const normWt = normalizePath(s.worktreePath);
+                return (
+                  <ZenRunningMissionCard
+                    key={`${s.projectId ?? "ext"}::${s.worktreePath}::${s.address}`}
+                    session={s}
+                    cardMeta={worktreeMeta[normWt]}
+                    autoMission={autoMissionByWorktree[normWt]}
+                    nowMs={nowMs}
+                    isPeeking={peekingAddress === s.address}
+                    onPeek={onPeekSession}
+                    onEdit={onEditSession}
+                  />
+                );
+              })}
             </div>
           </div>
         )}

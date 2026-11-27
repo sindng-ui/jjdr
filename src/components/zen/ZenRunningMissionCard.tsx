@@ -1,15 +1,22 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Pencil, Terminal } from "lucide-react";
-import type { EnrichedSession, WorktreeCardMeta } from "../../types/domain";
+import type {
+  AutoMissionInfo,
+  EnrichedSession,
+  WorktreeCardMeta,
+} from "../../types/domain";
 import { getWorkerPersona } from "../../utils/workerPersona";
 import { WorkerMonsterAvatar } from "./WorkerMonsterAvatar";
 import { formatElapsed } from "../../utils/format";
 import { computeRunningProgressVisual } from "../../utils/zenQueue";
 import { normalizePath } from "../../workers/dashboardLogic";
+import { resolveEffectiveMission } from "../../utils/missionDetector";
+import { MissionBadges } from "../shared/MissionBadges";
 
 interface ZenRunningMissionCardProps {
   session: EnrichedSession;
   cardMeta?: WorktreeCardMeta;
+  autoMission?: AutoMissionInfo;
   nowMs: number;
   isPeeking: boolean;
   onPeek: (session: EnrichedSession) => void;
@@ -23,6 +30,7 @@ interface ZenRunningMissionCardProps {
 export const ZenRunningMissionCard = React.memo(function ZenRunningMissionCard({
   session: s,
   cardMeta,
+  autoMission,
   nowMs,
   isPeeking,
   onPeek,
@@ -46,6 +54,15 @@ export const ZenRunningMissionCard = React.memo(function ZenRunningMissionCard({
   const cardNote = cardMeta?.note?.trim() || "";
   const branchText = s.branch || "(detached)";
   const canEdit = Boolean(s.projectId && onEdit);
+  const mission = useMemo(
+    () =>
+      resolveEffectiveMission(cardMeta, autoMission, {
+        branch: s.branch,
+        statusMsg: s.terminal.status?.msg,
+        previewLines: s.previewLines,
+      }),
+    [cardMeta, autoMission, s.branch, s.terminal.status?.msg, s.previewLines]
+  );
 
   return (
     <div
@@ -100,9 +117,10 @@ export const ZenRunningMissionCard = React.memo(function ZenRunningMissionCard({
               </span>
             </div>
             <div
-              className="flex items-center gap-1.5 font-mono-code text-[10px] min-w-0"
+              className="flex items-center gap-1.5 font-mono-code text-[10px] min-w-0 flex-wrap"
               style={{ color: "var(--text-secondary)" }}
             >
+              <MissionBadges mission={mission} size="xs" />
               <span className="truncate">
                 {s.projectName} / {branchText}
               </span>
