@@ -1,0 +1,32 @@
+[package]
+name = "jjdr-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight Windows/Linux team relay hub for jjdr PR auto-review orchestration"
+
+[lib]
+name = "jjdr_relay"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jjdr-relay"
+path = "src/main.rs"
+
+[dependencies]
+relay-protocol = { path = "../crates/relay-protocol" }
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util = "0.3"
+toml = "0.8"
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+tokio-tungstenite = "0.26"
+tempfile = "3"

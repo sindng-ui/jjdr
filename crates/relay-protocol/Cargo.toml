@@ -1,0 +1,9 @@
+[package]
+name = "relay-protocol"
+version = "0.1.0"
+edition = "2021"
+description = "Shared wire protocol types and URL/ID normalization for jjdr and jjdr-relay"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

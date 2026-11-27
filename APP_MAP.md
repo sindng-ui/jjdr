@@ -146,3 +146,28 @@
 | `scripts/mock-update-server.mjs` | 로컬 E2E 업데이트 테스트용 Mock GitHub Releases API + 청크 스트리밍 인스톨러 서버 (`npm run test:update-mock`) | CLI (`--port`, `--version`, `--size-mb`, `--fail-download`, `--status`) |
 | `scripts/generate-release-notes.mjs` | 직전 `v*` 태그~`HEAD` 커밋 자동 분류(`feat`/`fix`/`perf`/일반) + 커밋 본문 불릿 + `CHANGELOG.md` 우선 반영 + `GITHUB_OUTPUT` 멀티라인 안전 기록 릴리즈 노트 생성기 (`npm run release:notes`) | `extractChangelogSection`, `parseGitLogOutput`, `classifyCommit`, `buildReleaseNotesMarkdown`, `findPreviousReleaseTag`, `collectCommitsSinceTag` |
 | `scripts/generate-latest-manifest.mjs` | CI 릴리즈 빌드 산출물(`.exe`/`.msi`)과 What's New로 Rate-Limit-Free CDN 피드(`latest.json`)를 생성해 GitHub Release Asset으로 첨부하는 스크립트 | `collectInstallerAssets`, `buildLatestManifest` |
+
+---
+
+## 4. Team Relay & Shared Protocol (`crates/relay-protocol/`, `relay/`)
+
+| 파일 | 역할 | 주요 인터페이스 / Export |
+| :--- | :--- | :--- |
+| `crates/relay-protocol/src/lib.rs` | `jjdr`와 `jjdr-relay`가 컴파일 타임에 공유하는 와이어 프로토콜 루트 (`PROTOCOL_VERSION = 1`) | `PROTOCOL_VERSION`, re-exports |
+| `crates/relay-protocol/src/types.rs` | 팀 디렉토리·PR 리뷰 요청·At-Least-Once 배정 상태 머신(`Dispatched`/`Delivered` 포함)·기기 선점(`claimed_by_device_id`)·`sync-active` 결과·Layer-1/Layer-2 Reject 사유 코드 도메인 모델 | `PresenceStatus`, `PeerInfo`, `ReviewRequestPayload`, `ReviewAssignmentStatus`, `RejectReason`, `ReviewAssignmentView`, `ActiveAssignmentCheck`, `ReviewRequestWithAssignments`, `ReviewerInboxItem` |
+| `crates/relay-protocol/src/messages.rs` | WebSocket 양방향 메시지(`Hello(device_id)`, `AckDelivery`, `ClientMessage`/`ServerMessage`) 및 REST 요청·응답 봉투 타입(`SyncActiveRequestsBody/Response` 포함) | `ClientMessage`, `ServerMessage`, `CreateReviewRequestBody/Response`, `UpdateAssignmentStatusBody`, `SyncActiveRequestsBody/Response`, `CancelReviewRequestBody/Response`, `HealthResponse` |
+| `crates/relay-protocol/src/normalize.rs` | 사내 GHE HTTPS/SSH/SCP 원격 URL 및 GitHub ID 정규화 순수 엔진 + 단위 테스트 | `normalize_repo_url`, `normalize_repo_list`, `normalize_github_id` |
+| `relay/src/lib.rs` | `jjdr-relay` 서버 상태(`RelayApp`), 백그라운드 TTL 만료 워커 및 Axum 라우터 빌더 | `RelayApp::{new, spawn_ttl_worker, router}`, `SERVER_VERSION` |
+| `relay/src/main.rs` | Windows/Linux 단일 바이너리 엔트리 포인트(`jjdr-relay.exe`, `--config` 지원, `Ctrl+C` 우아한 종료) | `main` |
+| `relay/src/config.rs` | `jjdr-relay.toml` + `JJDR_RELAY_*` 환경변수 설정 로더 (`ws_ping_interval_secs`/`ws_pong_timeout_secs` 포함) | `RelayConfig::{load, ttl_ms}` |
+| `relay/src/auth.rs` | `TEAM_KEY` 상수시간 인증 검증 및 유저별 슬라이딩 윈도우 스팸 Rate Limiter | `verify_team_key`, `SlidingWindowLimiter` |
+| `relay/src/db/mod.rs` | SQLite WAL + `synchronous=FULL`(정전 내구성, `rusqlite bundled`) 스키마·마이그레이션(`claimed_by_device_id`)·인덱스 초기화, `spawn_blocking` 논블로킹 래퍼, Peer CRUD | `RelayDb::{open, run, upsert_peer, touch_peer_last_seen, list_peers}`, `StoredPeer`, `DbError` |
+| `relay/src/db/reviews.rs` | `BEGIN IMMEDIATE` 원자적 Layer-1 Reject + `Dispatched`/`PendingOffline` 저장, At-Least-Once 미ACK 재전달(`list_undelivered_for_reviewer`), 명시적 `ack_delivery_atomic` 기기 선점, 타 기기 `409 Conflict` 방어, `sync_active_requests` 오프라인 취소 대조, TTL 만료(`dispatched` 포함) | `RelayDb::{create_review_request_atomic, list_undelivered_for_reviewer, ack_delivery_atomic, revert_dispatched_to_pending_offline, update_assignment_status, cancel_review_request, expire_stale_assignments, sync_active_requests, list_authored_requests, list_reviewer_inbox}` |
+| `relay/src/db/mappers.rs` | SQLite 트랜잭션 조회 헬퍼 및 행 매퍼 (`claimed_by_device_id` 포함) | `fetch_peer_tx`, `has_blocking_duplicate_tx`, `fetch_request_tx`, `fetch_assignment_tx`, `map_request_row`, `map_assignment_row`, `map_inbox_row` |
+| `relay/src/hub.rs` | 인메모리 WebSocket 연결 허브: 다중 기기/재접속 소켓 관리 + 작업 배정 단일 Primary 소켓 라우팅(`send_to_primary_device`) 및 알림 브로드캐스트 | `RelayHub::{new, register, unregister, online_user_ids, online_count, send_to_primary_device, send_to_user, broadcast}` |
+| `relay/src/service.rs` | 팀 Relay 핵심 비즈니스 오케스트레이션(Presence, At-Least-Once `AckDelivery`, `device_id` 선점, `sync_active_requests`, Layer-1 Reject, 실시간 미니 상태바 중계, 취소, TTL 만료) | `RelayService`, `ServiceError`, `now_ms` |
+| `relay/src/routes.rs` | Axum HTTP REST(`/health`, `/api/v1/peers`, `/api/v1/reviews/*`, `/api/v1/reviews/sync-active`) 및 서버 주도 30s Ping/60s Timeout Reaper 내장 WebSocket(`/ws`) 핸들러 | `build_router` |
+| `relay/tests/happy_and_offline_tests.rs` | Happy 패스 2명 실시간 중계 + `AckDelivery`, 서버 재시작 크래시 복구, 듀얼 소켓 재접속, 신규 팀원 첫 접속 배달, Layer-2 실패 후 재시도 E2E 테스트 (5 TC) | integration test suite |
+| `relay/tests/despair_and_security_tests.rs` | 인증 실패(401), Layer-1 Reject 4종, 20x 동시성 레이스, 악성 입력, 403 하이잭/터미널 불변성, 429 Rate Limit, SQLi/유니코드 안전성 절망 테스트 (10 TC) | integration test suite |
+| `relay/tests/chaos_hardening_tests.rs` | Half-Open 미ACK 재전달, 30s/60s WS Heartbeat 좀비 소켓 Reaper, 2대 PC 단일 Primary 배정 & 타 기기 409 선점 충돌, 오프라인 취소 `sync-active` 탐지, 미ACK `Dispatched` TTL 만료 카오스 테스트 (5 TC) | integration test suite |
+| `relay/scripts/smoke_test_relay.mjs` | 사내 공용 PC 실전 연결 검증용 Zero-dependency Node 22+ 라이브 스모크/절망 테스터 (`AckDelivery`, 409 기기 충돌, `sync-active` 포함 7단계) | CLI (`--url`, `--key`) |

@@ -1,0 +1,89 @@
+jjdr Team Relay Phase 1 — Test & Verification Report
+Date: 2026-11-27
+Scope: crates/relay-protocol + relay/ (jjdr-relay.exe) + relay/scripts/smoke_test_relay.mjs
+
+================================================================================
+1. Shared Protocol Unit Tests (`cargo test --offline --manifest-path crates/relay-protocol/Cargo.toml`)
+================================================================================
+Result: 5 passed, 0 failed (0.00s)
+- normalize::tests::normalizes_enterprise_https_and_ssh_variants_identically ... ok
+- normalize::tests::preserves_custom_port_and_subgroups ... ok
+- normalize::tests::rejects_invalid_or_local_paths ... ok
+- normalize::tests::normalizes_github_ids_safely ... ok
+- normalize::tests::deduplicates_repo_list ... ok
+
+================================================================================
+2. Relay Unit Tests (`cargo test --offline --manifest-path relay/Cargo.toml`)
+================================================================================
+Result: 2 passed, 0 failed (0.10s)
+- auth::tests::verifies_team_key_strictly ... ok
+- auth::tests::rate_limiter_blocks_and_recovers ... ok
+
+================================================================================
+3. Happy / Offline / Crash-Recovery E2E Tests (`tests/happy_and_offline_tests.rs`)
+================================================================================
+Result: 5 passed, 0 failed (0.17s)
+- tc02_happy_path_two_reviewers_realtime_status_flow ... ok
+- tc03_offline_store_and_forward_survives_server_restart ... ok
+- tc11_dual_socket_reconnect_overlap_never_drops_presence ... ok
+- tc14_unknown_peer_offline_mailbox_and_first_join_delivery ... ok
+- tc15_layer2_reject_and_quota_failure_allow_retry ... ok
+
+================================================================================
+4. Despair / Adversarial / Race-Condition E2E Tests (`tests/despair_and_security_tests.rs`)
+================================================================================
+Result: 10 passed, 0 failed (0.36s)
+- tc01_health_and_auth_failures ... ok
+- tc04_layer1_duplicate_sha_blocks_active_and_allows_after_cancel_or_new_sha ... ok
+- tc05_layer1_reviewer_paused_rejects_and_recovers_on_resume ... ok
+- tc06_layer1_repo_not_registered_rejects_and_recovers_after_sync ... ok
+- tc07_layer1_expired_ttl_sweeps_and_never_delivers_on_late_reconnect ... ok
+- tc08_concurrent_20_duplicate_requests_race_condition_only_one_wins ... ok
+- tc09_malformed_inputs_self_review_dedup_and_bounds ... ok
+- tc10_adversarial_forbidden_hijack_and_terminal_immutability ... ok
+- tc12_rate_limit_blocks_spam_flood_with_429 ... ok
+- tc13_unicode_emoji_and_sql_injection_payload_safety ... ok
+
+================================================================================
+5. Release Binary Build & Live Smoke Verification (`jjdr-relay.exe` + `smoke_test_relay.mjs`)
+================================================================================
+Artifact: relay/target/release/jjdr-relay.exe (10.53 MB, self-contained SQLite bundled)
+Result: ALL 7 LIVE SMOKE CHECKS PASSED
+- [PASS] 1. Health check (no auth)
+- [PASS] 2. Invalid TEAM_KEY blocked (401)
+- [PASS] 3. Author + 2 Reviewers connect over WebSocket
+- [PASS] 4. Happy path: 2 reviewers receive PR + author gets live status
+- [PASS] 5. Despair path: Duplicate SHA rejected by Layer-1
+- [PASS] 6. Despair path: Unauthorized hijack blocked (403)
+- [PASS] 7. Cleanup: Author cancels smoke test request
+
+================================================================================
+6. File Size & Modularity Check (900-line ceiling compliance)
+================================================================================
+All files strictly under 900 lines (max production source: 520 lines, max test file: 620 lines).
+- crates/relay-protocol/src/lib.rs: 9 lines
+- crates/relay-protocol/src/messages.rs: 158 lines
+- crates/relay-protocol/src/normalize.rs: 189 lines
+- crates/relay-protocol/src/types.rs: 218 lines
+- relay/src/auth.rs: 116 lines
+- relay/src/config.rs: 131 lines
+- relay/src/hub.rs: 103 lines
+- relay/src/lib.rs: 57 lines
+- relay/src/main.rs: 75 lines
+- relay/src/routes.rs: 410 lines
+- relay/src/service.rs: 520 lines
+- relay/src/db/mappers.rs: 202 lines
+- relay/src/db/mod.rs: 278 lines
+- relay/src/db/reviews.rs: 449 lines
+- relay/tests/common/mod.rs: 190 lines
+- relay/tests/happy_and_offline_tests.rs: 333 lines
+- relay/tests/despair_and_security_tests.rs: 620 lines
+- relay/scripts/smoke_test_relay.mjs: 219 lines
+
+================================================================================
+7. Performance Check
+================================================================================
+- SQLite WAL mode + synchronous=NORMAL + busy_timeout=5000 + composite indexes (dedup/inbox/expiry/author).
+- All SQLite calls run inside `tokio::task::spawn_blocking` (0ms Tokio WebSocket event loop blocking).
+- Atomic `BEGIN IMMEDIATE` transaction prevents duplicate race conditions under 20x concurrency.
+- Bounded memory sliding-window rate limiter with opportunistic stale-key pruning.

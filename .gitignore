@@ -11,7 +11,12 @@ coverage/
 # Tauri / Rust build outputs & generated schemas
 src-tauri/target/
 src-tauri/gen/schemas/
+relay/target/
+crates/*/target/
 **/*.rs.bk
+*.db
+*.db-wal
+*.db-shm
 
 # Environment & local secrets
 .env

@@ -1,0 +1,51 @@
+jjdr Team Relay Phase 1.5 (Chaos Hardening) — Test & Verification Report
+Date: 2026-11-27
+Scope: WS Heartbeat Reaper (30s/60s), Explicit AckDelivery (At-Least-Once), device_id Single-Primary & Atomic Claim, sync-active Offline Cancel Reconciliation, SQLite synchronous=FULL
+
+================================================================================
+1. Shared Protocol Unit Tests (`cargo test --offline --manifest-path crates/relay-protocol/Cargo.toml`)
+================================================================================
+Result: 5 passed, 0 failed (0.00s)
+
+================================================================================
+2. Relay Unit Tests (`cargo test --offline --manifest-path relay/Cargo.toml`)
+================================================================================
+Result: 2 passed, 0 failed (0.10s)
+
+================================================================================
+3. Phase 1.5 Chaos Hardening E2E Tests (`tests/chaos_hardening_tests.rs`)
+================================================================================
+Result: 5 passed, 0 failed (3.53s)
+- tc16_explicit_delivery_ack_and_half_open_drop_redelivery ... ok
+- tc17_ws_heartbeat_reaps_zombie_silent_socket ... ok
+- tc18_dual_device_single_primary_delivery_and_atomic_claim_conflict ... ok
+- tc19_offline_cancel_caught_by_sync_active_on_reconnect ... ok
+- tc20_dispatched_unacked_assignment_expires_on_ttl_sweep ... ok
+
+================================================================================
+4. Despair & Security E2E Tests (`tests/despair_and_security_tests.rs`)
+================================================================================
+Result: 10 passed, 0 failed (0.52s)
+
+================================================================================
+5. Happy & Offline E2E Tests (`tests/happy_and_offline_tests.rs`)
+================================================================================
+Result: 5 passed, 0 failed (0.36s)
+
+================================================================================
+6. Release Binary & Live Smoke Verification (`jjdr-relay.exe` + `smoke_test_relay.mjs`)
+================================================================================
+Artifact: relay/target/release/jjdr-relay.exe (10.73 MB, SQLite bundled, synchronous=FULL)
+Result: ALL 7 LIVE SMOKE CHECKS PASSED
+- [PASS] 1. Health check (no auth)
+- [PASS] 2. Invalid TEAM_KEY blocked (401)
+- [PASS] 3. Author + 2 Reviewers connect over WebSocket (with device_id)
+- [PASS] 4. Happy path: 2 reviewers receive PR + AckDelivery + live status
+- [PASS] 5. Despair path: Duplicate SHA rejected by Layer-1
+- [PASS] 6. Despair path: Unauthorized hijack (403) + Other device claim conflict (409)
+- [PASS] 7. Cleanup + sync-active cancellation verification
+
+================================================================================
+7. File Size Check (900-line ceiling compliance)
+================================================================================
+Max production source: 653 lines (`relay/src/db/reviews.rs`). All files strictly under 900 lines.
