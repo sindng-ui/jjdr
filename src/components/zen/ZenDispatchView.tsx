@@ -588,8 +588,8 @@ export const ZenDispatchView = React.memo(function ZenDispatchView({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col relative">
-      {/* Sub-breadcrumb bar */}
-      <div className="flex items-center justify-between gap-2 pt-3 shrink-0 select-none">
+      {/* Sub-breadcrumb bar (relative anchor so Assign search dropdown spans full stage width cleanly) */}
+      <div className="relative flex items-center justify-between gap-2 pt-3 shrink-0 select-none">
         <div className="flex items-center gap-1.5">
           <button
             type="button"

@@ -128,7 +128,7 @@ export const ZenWorkerSearchBar = React.memo(function ZenWorkerSearchBar({
   };
 
   return (
-    <div className="relative flex-1 max-w-[290px] min-w-[160px]">
+    <div className="flex-1 max-w-[320px] min-w-[160px]">
       <div
         className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-colors"
         style={{
@@ -187,7 +187,7 @@ export const ZenWorkerSearchBar = React.memo(function ZenWorkerSearchBar({
 
       {open && (
         <div
-          className="absolute left-0 right-0 mt-1.5 z-40 rounded-2xl overflow-hidden py-1"
+          className="absolute left-0 right-0 top-full mt-2 mx-auto w-full max-w-[540px] z-40 rounded-2xl overflow-hidden py-1.5"
           style={{
             background: "var(--modal-bg)",
             border: "1px solid var(--card-border)",
@@ -196,13 +196,13 @@ export const ZenWorkerSearchBar = React.memo(function ZenWorkerSearchBar({
         >
           {matches.length === 0 ? (
             <div
-              className="px-3 py-3 text-center text-[11px]"
+              className="px-4 py-4 text-center text-xs"
               style={{ color: "var(--text-muted)" }}
             >
               No matching workers for &ldquo;{query}&rdquo;
             </div>
           ) : (
-            <div className="max-h-[260px] overflow-y-auto px-1 space-y-0.5">
+            <div className="max-h-[340px] overflow-y-auto px-1.5 space-y-1">
               {matches.map((m, idx) => {
                 const isHighlighted = idx === highlightIdx;
                 const isCurrent = m.deckIndex === activeIndex;
@@ -220,72 +220,101 @@ export const ZenWorkerSearchBar = React.memo(function ZenWorkerSearchBar({
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setHighlightIdx(idx)}
                     onClick={() => commitSelection(m.deckIndex)}
-                    className="w-full text-left px-2 py-1.5 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                    className="w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 cursor-pointer transition-colors"
                     style={{
                       background: isHighlighted
                         ? "var(--accent-soft)"
                         : "transparent",
+                      border: `1px solid ${
+                        isHighlighted ? "var(--accent-border)" : "transparent"
+                      }`,
                     }}
                   >
                     <WorkerMonsterAvatar
                       persona={persona}
                       mood={hasAi ? "ready" : "sleeping"}
-                      size={22}
-                      className="shrink-0"
+                      size={28}
+                      className="shrink-0 mt-0.5"
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      {/* Line 1: Clear Card Name / Branch + Status Pill */}
+                      <div className="flex items-center justify-between gap-2 min-w-0">
                         <span
-                          className="text-[11px] font-bold truncate"
+                          className="text-xs font-extrabold truncate"
                           style={{ color: "var(--text-primary)" }}
+                          title={
+                            m.displayName
+                              ? `${m.displayName} (${branchText})`
+                              : branchText
+                          }
                         >
                           {m.displayName || branchText}
                         </span>
-                        <MissionBadges mission={m.mission} size="xs" />
+                        <span
+                          className="text-[10px] font-mono-code font-bold px-2 py-0.5 rounded-full shrink-0"
+                          style={{
+                            background: isCurrent
+                              ? "var(--accent-soft)"
+                              : hasAi
+                              ? "var(--ready-soft)"
+                              : "var(--pill-bg)",
+                            color: isCurrent
+                              ? "var(--accent)"
+                              : hasAi
+                              ? "var(--ready-fg)"
+                              : "var(--text-faint)",
+                          }}
+                        >
+                          {isCurrent ? "ACTIVE" : hasAi ? "AI" : "ZZZ"}
+                        </span>
                       </div>
+
+                      {/* Line 2: Mission Badges + Persona + Project / Branch + Note */}
                       <div
-                        className="flex items-center gap-1.5 text-[10px] font-mono-code truncate"
+                        className="flex items-center gap-1.5 flex-wrap text-[11px] font-mono-code leading-tight"
                         style={{ color: "var(--text-muted)" }}
                       >
-                        <span style={{ color: persona.palette.body }}>
+                        <MissionBadges mission={m.mission} size="xs" />
+                        <span
+                          className="font-semibold shrink-0"
+                          style={{ color: persona.palette.body }}
+                        >
                           {persona.name}
                         </span>
-                        <span>·</span>
-                        <span className="truncate">
+                        <span className="opacity-60">·</span>
+                        <span className="truncate max-w-[240px]">
                           {m.worker.project.name} / {branchText}
                         </span>
+                        {m.note && (
+                          <span
+                            className="truncate max-w-[160px] px-1.5 py-0.2 rounded-full text-[10px]"
+                            style={{
+                              background: "var(--input-bg)",
+                              border: "1px solid var(--divider)",
+                              color: "var(--text-secondary)",
+                            }}
+                            title={m.note}
+                          >
+                            {m.note}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <span
-                      className="text-[9px] font-mono-code font-bold px-1.5 py-0.5 rounded-full shrink-0"
-                      style={{
-                        background: isCurrent
-                          ? "var(--accent-soft)"
-                          : hasAi
-                          ? "var(--ready-soft)"
-                          : "var(--pill-bg)",
-                        color: isCurrent
-                          ? "var(--accent)"
-                          : hasAi
-                          ? "var(--ready-fg)"
-                          : "var(--text-faint)",
-                      }}
-                    >
-                      {isCurrent ? "ACTIVE" : hasAi ? "AI" : "ZZZ"}
-                    </span>
                   </button>
                 );
               })}
             </div>
           )}
           <div
-            className="px-2.5 pt-1 mt-0.5 flex items-center justify-between text-[9px] font-mono-code"
+            className="px-3 pt-1.5 mt-1 flex items-center justify-between text-[10px] font-mono-code"
             style={{
               borderTop: "1px solid var(--divider)",
               color: "var(--text-faint)",
             }}
           >
-            <span>↑↓ Select · Enter Assign</span>
+            <span>
+              {matches.length} / {deck.length} workers · ↑↓ Select · Enter Assign
+            </span>
             <span>Ctrl+↓ / Esc Terminal</span>
           </div>
         </div>
