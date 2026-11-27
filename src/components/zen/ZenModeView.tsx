@@ -11,7 +11,7 @@ import {
   isPermissionApprovalPending,
   normalizePath,
 } from "../../workers/dashboardLogic";
-import { sendTerminalKeys } from "../../services/tauriBridge";
+import { ackAutoReviewJob, sendTerminalKeys } from "../../services/tauriBridge";
 import {
   computeNextSkippedOrder,
   incrementTodayClearedCount,
@@ -444,6 +444,14 @@ export const ZenModeView = React.memo(function ZenModeView() {
           cardSnapshot.terminal.turn,
           digest
         );
+      // If this card is an ephemeral Auto-Review worker, trigger background worktree teardown & next FIFO dispatch
+      const autoJob =
+        useAppStore.getState().autoReviewJobsByWorktree[
+          normalizePath(cardSnapshot.worktreePath)
+        ];
+      if (autoJob) {
+        void ackAutoReviewJob(autoJob.request_id).catch(() => {});
+      }
     }
     dismissZenCardStamp(activeKey, stampKey);
     recordZenAcked(activeKey);

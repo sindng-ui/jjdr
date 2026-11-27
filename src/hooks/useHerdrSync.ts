@@ -11,12 +11,15 @@ import {
   isMainVisibleOnScreen,
   isTauriRuntime,
   listAllWorktrees,
+  listAutoReviewJobs,
   listTemplates,
+  listenAutoReviewJobsChanged,
   listenMainBgChanged,
   listenOverlayDismissed,
   listenOverlayOpenCard,
   listenStateBatch,
   listenTeamStateChanged,
+  listenTeamWorktreesDirty,
   listenWorktreeTeardownResult,
   loadPersistedBundle,
   saveUiState,
@@ -260,10 +263,11 @@ export function useHerdrSync() {
           }, 800);
         }
 
-        const [wts, templates, teamSnap] = await Promise.all([
+        const [wts, templates, teamSnap, reviewJobs] = await Promise.all([
           listAllWorktrees().catch(() => ({})),
           listTemplates().catch(() => []),
           getTeamStatus().catch(() => null),
+          listAutoReviewJobs().catch(() => []),
         ]);
         if (!active) return;
         worktreesLoadedRef.current = true;
@@ -272,6 +276,7 @@ export function useHerdrSync() {
         if (teamSnap) {
           useAppStore.getState().setTeamSnapshot(teamSnap);
         }
+        useAppStore.getState().setAutoReviewJobs(reviewJobs);
       } catch (err) {
         console.error("Failed to bootstrap jjdr state:", err);
       }
@@ -302,11 +307,14 @@ export function useHerdrSync() {
     };
   }, []);
 
-  // 2.5 Subscribe to live Team Relay connection & peer directory snapshots
+  // 2.5 Subscribe to live Team Relay connection, peer directory, and auto-review job snapshots
   useEffect(() => {
     if (!isTauriRuntime()) return;
     let active = true;
     let unlistenTeam: (() => void) | null = null;
+    let unlistenJobs: (() => void) | null = null;
+    let unlistenDirty: (() => void) | null = null;
+
     void listenTeamStateChanged((snapshot) => {
       if (!active) return;
       useAppStore.getState().setTeamSnapshot(snapshot);
@@ -314,9 +322,40 @@ export function useHerdrSync() {
       if (active) unlistenTeam = fn;
       else fn();
     });
+
+    void listenAutoReviewJobsChanged((jobs) => {
+      if (!active) return;
+      useAppStore.getState().setAutoReviewJobs(jobs);
+    }).then((fn) => {
+      if (active) unlistenJobs = fn;
+      else fn();
+    });
+
+    void listenTeamWorktreesDirty(() => {
+      if (!active) return;
+      void Promise.all([
+        listAllWorktrees().catch(() => null),
+        loadPersistedBundle().catch(() => null),
+      ]).then(([wts, bundle]) => {
+        if (!active) return;
+        const app = useAppStore.getState();
+        if (wts) app.setWorktreesByProject(wts);
+        if (bundle?.ui_state?.worktree_meta) {
+          for (const [k, v] of Object.entries(bundle.ui_state.worktree_meta)) {
+            app.setWorktreeMeta(k, v);
+          }
+        }
+      });
+    }).then((fn) => {
+      if (active) unlistenDirty = fn;
+      else fn();
+    });
+
     return () => {
       active = false;
       if (unlistenTeam) unlistenTeam();
+      if (unlistenJobs) unlistenJobs();
+      if (unlistenDirty) unlistenDirty();
     };
   }, []);
 

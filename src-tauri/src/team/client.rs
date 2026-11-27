@@ -9,6 +9,7 @@ use crate::team::identity::{
     collect_project_repo_urls, detect_github_id_via_gh, load_or_create_device_id,
 };
 use crate::team::outbox::{OutboxPayload, RelayOutbox};
+use crate::team::orchestrator::RelayOrchestratorEvent;
 use crate::team::TeamConnectionSnapshot;
 
 #[cfg(not(test))]
@@ -39,6 +40,7 @@ pub struct TeamRelayRuntime {
     detected_github_id: RwLock<Option<String>>,
     #[allow(dead_code)]
     ws_outbound: RwLock<Option<mpsc::UnboundedSender<ClientMessage>>>,
+    orchestrator_tx: Mutex<Option<mpsc::UnboundedSender<RelayOrchestratorEvent>>>,
     config_tx: watch::Sender<u64>,
     #[allow(dead_code)]
     config_rx: watch::Receiver<u64>,
@@ -71,9 +73,16 @@ impl TeamRelayRuntime {
             }),
             detected_github_id: RwLock::new(None),
             ws_outbound: RwLock::new(None),
+            orchestrator_tx: Mutex::new(None),
             config_tx,
             config_rx,
         })
+    }
+
+    pub fn attach_orchestrator_tx(&self, tx: mpsc::UnboundedSender<RelayOrchestratorEvent>) {
+        if let Ok(mut guard) = self.orchestrator_tx.lock() {
+            *guard = Some(tx);
+        }
     }
 
     pub fn device_id(&self) -> &str {
@@ -408,6 +417,11 @@ impl TeamRelayRuntime {
                 let _ = out_tx.send(ClientMessage::AckDelivery {
                     request_id: request.request_id.clone(),
                 });
+                if let Ok(guard) = self.orchestrator_tx.lock() {
+                    if let Some(ref orch_tx) = *guard {
+                        let _ = orch_tx.send(RelayOrchestratorEvent::ReviewAssigned(request.clone()));
+                    }
+                }
                 let _ = app.emit_to(
                     "main",
                     "jjdr:team-review-assigned",
@@ -454,6 +468,13 @@ impl TeamRelayRuntime {
                 reason,
                 updated_ms,
             } => {
+                if let Ok(guard) = self.orchestrator_tx.lock() {
+                    if let Some(ref orch_tx) = *guard {
+                        let _ = orch_tx.send(RelayOrchestratorEvent::ReviewCancelled {
+                            request_id: request_id.clone(),
+                        });
+                    }
+                }
                 let _ = app.emit_to(
                     "main",
                     "jjdr:team-review-cancelled",

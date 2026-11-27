@@ -1,7 +1,11 @@
 pub mod client;
 pub mod http;
 pub mod identity;
+pub mod jobs;
+pub mod orchestrator;
 pub mod outbox;
+pub mod recovery;
+pub mod reject;
 
 use relay_protocol::{
     PeerInfo, PresenceStatus, RejectReason, ReviewAssignmentStatus, ReviewAssignmentView,

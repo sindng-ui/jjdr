@@ -193,6 +193,40 @@ export interface RelayTestResult {
   error?: string | null;
 }
 
+export type AutoReviewJobPhase =
+  | "queued"
+  | "creating_wt"
+  | "reviewing"
+  | "ready_for_ack"
+  | "cleaning_up"
+  | "failed";
+
+export interface AutoReviewJob {
+  request_id: string;
+  repo_url: string;
+  project_id: string;
+  project_name: string;
+  repo_path: string;
+  pr_number: number;
+  pr_url: string;
+  pr_title: string;
+  base_branch: string;
+  head_branch: string;
+  head_sha: string;
+  author_id: string;
+  worktree_path?: string | null;
+  report_path?: string | null;
+  terminal_address?: string | null;
+  agent_id: string;
+  model: string;
+  phase: AutoReviewJobPhase;
+  fallback_used: boolean;
+  resume_attempts: number;
+  last_error?: string | null;
+  created_ms: number;
+  updated_ms: number;
+}
+
 export interface AppSettings {
   theme: ThemeId;
   radar_density: RadarDensity;

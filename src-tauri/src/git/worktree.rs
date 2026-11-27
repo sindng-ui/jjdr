@@ -206,6 +206,83 @@ pub async fn create_worktree(
     Ok(target_str)
 }
 
+/// Build a collision-free sibling directory path for an ephemeral auto-review worktree:
+/// `<parent>/<repo_name>-rev-pr<pr_number>-<short_id>`
+pub fn build_auto_review_worktree_dir(
+    repo_path: &Path,
+    pr_number: u64,
+    short_id: &str,
+) -> PathBuf {
+    let repo_name = repo_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("repo");
+    let parent = repo_path.parent().unwrap_or(repo_path);
+    let clean_id: String = short_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(8)
+        .collect();
+    let suffix = if clean_id.is_empty() {
+        "tmp".to_string()
+    } else {
+        clean_id.to_ascii_lowercase()
+    };
+    parent.join(format!("{}-rev-pr{}-{}", repo_name, pr_number, suffix))
+}
+
+/// Returns true only for folders following our ephemeral auto-review naming pattern,
+/// guaranteeing orphan cleanup can NEVER touch regular developer or ROOT worktrees.
+pub fn is_auto_review_worktree_dir(worktree_path: &str) -> bool {
+    let name = Path::new(worktree_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if let Some((_, rest)) = name.rsplit_once("-rev-pr") {
+        if let Some((num_part, id_part)) = rest.split_once('-') {
+            return !num_part.is_empty()
+                && num_part.bytes().all(|b| b.is_ascii_digit())
+                && !id_part.is_empty()
+                && id_part.bytes().all(|b| b.is_ascii_alphanumeric());
+        }
+    }
+    false
+}
+
+/// Create a lightweight detached-HEAD worktree for an automated PR review (`skip_bootstrap`).
+/// Creates zero local branches and avoids branch name collisions completely.
+pub async fn create_detached_pr_worktree(
+    repo_path: &str,
+    pr_number: u64,
+    head_sha: &str,
+    short_id: &str,
+) -> Result<String, String> {
+    let root = PathBuf::from(repo_path);
+    let target_dir = build_auto_review_worktree_dir(&root, pr_number, short_id);
+    let target_str = target_dir.to_string_lossy().to_string();
+
+    let pr_ref = format!("pull/{}/head", pr_number);
+    let fetched = run_git(&root, &["fetch", "--no-tags", "origin", &pr_ref]).await;
+    if fetched.is_err() {
+        // Fallback: fetch explicit commit SHA if PR refspec is unavailable on host
+        let sha = head_sha.trim();
+        if sha.is_empty() {
+            return Err(fetched.unwrap_err());
+        }
+        run_git(&root, &["fetch", "--no-tags", "origin", sha])
+            .await
+            .map_err(|e2| format!("git fetch PR #{} failed: {}; fallback sha failed: {}", pr_number, fetched.unwrap_err(), e2))?;
+    }
+
+    run_git(
+        &root,
+        &["worktree", "add", "--detach", &target_str, "FETCH_HEAD"],
+    )
+    .await?;
+
+    Ok(target_str)
+}
+
 async fn is_worktree_registered(root: &Path, worktree_path: &str) -> bool {
     let target = normalize_path(worktree_path);
     match run_git(root, &["worktree", "list", "--porcelain"]).await {
@@ -463,5 +540,20 @@ detached
         let wt = Path::new("K:/repo/app-wt-auth");
         let trash = build_trash_dir_path(wt, 12345);
         assert_eq!(trash, PathBuf::from("K:/repo/.app-wt-auth.jjdr-trash-12345"));
+    }
+
+    #[test]
+    fn builds_and_recognizes_ephemeral_auto_review_dirs_safely() {
+        let repo = Path::new("K:/work/jjdr");
+        let dir = build_auto_review_worktree_dir(repo, 412, "AB-12/cd9999");
+        let dir_str = dir.to_string_lossy().to_string();
+        assert_eq!(
+            dir.file_name().and_then(|s| s.to_str()),
+            Some("jjdr-rev-pr412-ab12cd99")
+        );
+        assert!(is_auto_review_worktree_dir(&dir_str));
+        assert!(!is_auto_review_worktree_dir("K:/work/jjdr"));
+        assert!(!is_auto_review_worktree_dir("K:/work/jjdr-wt-feat-pr412"));
+        assert!(!is_auto_review_worktree_dir("K:/work/jjdr-rev-prabc-1234"));
     }
 }

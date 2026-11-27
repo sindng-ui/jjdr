@@ -35,6 +35,8 @@ use store::overlay::BgOverlayPayload;
 use store::projects::PersistenceStore;
 #[cfg(not(test))]
 use team::client::TeamRelayRuntime;
+#[cfg(not(test))]
+use team::orchestrator::AutoReviewOrchestrator;
 
 #[cfg(not(test))]
 pub struct AppState {
@@ -42,6 +44,7 @@ pub struct AppState {
     pub hub: Arc<TerminalStateHub>,
     pub gemini_bridge: Arc<GeminiBridgeRuntime>,
     pub team_relay: Arc<TeamRelayRuntime>,
+    pub auto_review: Arc<AutoReviewOrchestrator>,
     pub store: Arc<PersistenceStore>,
     pub attach: Arc<AttachManager>,
     pub file_index: Arc<FileIndexStore>,
@@ -64,6 +67,14 @@ pub fn run() {
     let gemini_bridge = GeminiBridgeRuntime::new();
     let store = Arc::new(PersistenceStore::new());
     let team_relay = TeamRelayRuntime::new(store.local_dir());
+    let auto_review = AutoReviewOrchestrator::new(
+        store.local_dir(),
+        store.clone(),
+        herdr.clone(),
+        hub.clone(),
+        team_relay.clone(),
+    );
+    team_relay.attach_orchestrator_tx(auto_review.event_sender());
     let attach = Arc::new(AttachManager::new());
     let file_index = Arc::new(FileIndexStore::new());
 
@@ -72,6 +83,7 @@ pub fn run() {
         hub: hub.clone(),
         gemini_bridge: gemini_bridge.clone(),
         team_relay: team_relay.clone(),
+        auto_review: auto_review.clone(),
         store: store.clone(),
         attach: attach.clone(),
         file_index,
@@ -116,6 +128,7 @@ pub fn run() {
             spawn_herdr_supervisor(app.handle().clone(), herdr.clone(), hub.clone());
             gemini_bridge.start(hub.clone());
             team_relay.spawn_supervisor(app.handle().clone(), store.clone());
+            auto_review.start_workers(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -180,6 +193,9 @@ pub fn run() {
             commands::team::reconnect_team_relay,
             commands::team::list_team_peers,
             commands::team::flush_team_outbox,
+            commands::team::list_auto_review_jobs,
+            commands::team::ack_auto_review_job,
+            commands::team::cancel_auto_review_job,
         ])
         .build(tauri::generate_context!())
         .expect("error while building jjdr tauri application");

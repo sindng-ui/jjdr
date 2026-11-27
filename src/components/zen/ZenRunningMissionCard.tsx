@@ -12,6 +12,7 @@ import { computeRunningProgressVisual } from "../../utils/zenQueue";
 import { normalizePath } from "../../workers/dashboardLogic";
 import { resolveEffectiveMission } from "../../utils/missionDetector";
 import { MissionBadges } from "../shared/MissionBadges";
+import { useAppStore } from "../../store/useAppStore";
 
 interface ZenRunningMissionCardProps {
   session: EnrichedSession;
@@ -49,6 +50,7 @@ export const ZenRunningMissionCard = React.memo(function ZenRunningMissionCard({
     explicitProgress
   );
   const normPath = normalizePath(s.worktreePath);
+  const autoReviewJob = useAppStore((st) => st.autoReviewJobsByWorktree[normPath]);
   const persona = getWorkerPersona(normPath);
   const cardDisplayName = cardMeta?.display_name?.trim() || "";
   const cardNote = cardMeta?.note?.trim() || "";
@@ -121,6 +123,19 @@ export const ZenRunningMissionCard = React.memo(function ZenRunningMissionCard({
               style={{ color: "var(--text-secondary)" }}
             >
               <MissionBadges mission={mission} size="xs" />
+              {autoReviewJob && (
+                <span
+                  className="shrink-0 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase tracking-wide"
+                  style={{
+                    background: "var(--accent-soft)",
+                    color: "var(--accent)",
+                    border: "1px solid var(--accent-border)",
+                  }}
+                  title={`Auto-Review · PR #${autoReviewJob.pr_number} by @${autoReviewJob.author_id}`}
+                >
+                  AUTO-REVIEW
+                </span>
+              )}
               <span className="truncate">
                 {s.projectName} / {branchText}
               </span>

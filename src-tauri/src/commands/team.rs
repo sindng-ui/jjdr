@@ -1,7 +1,8 @@
 use relay_protocol::PeerInfo;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::team::http::test_relay_connection;
+use crate::team::jobs::AutoReviewJob;
 use crate::team::{RelayTestResult, TeamConnectionSnapshot};
 use crate::AppState;
 
@@ -41,4 +42,31 @@ pub async fn list_team_peers(state: State<'_, AppState>) -> Result<Vec<PeerInfo>
 pub async fn flush_team_outbox(state: State<'_, AppState>) -> Result<usize, String> {
     let team = state.store.get_settings().await.team;
     Ok(state.team_relay.flush_outbox(&team).await)
+}
+
+#[tauri::command]
+pub async fn list_auto_review_jobs(
+    state: State<'_, AppState>,
+) -> Result<Vec<AutoReviewJob>, String> {
+    Ok(state.auto_review.list_jobs())
+}
+
+#[tauri::command]
+pub async fn ack_auto_review_job(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request_id: String,
+) -> Result<(), String> {
+    state.auto_review.ack_job(&app, &request_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_auto_review_job(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request_id: String,
+) -> Result<(), String> {
+    state.auto_review.cancel_local_job(&app, &request_id).await;
+    Ok(())
 }

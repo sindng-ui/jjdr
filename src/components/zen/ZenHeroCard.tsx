@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Check, FileDiff, GitMerge, Home, Trash2 } from "lucide-react";
+import { Check, FileDiff, FileText, GitMerge, Home, Trash2 } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
 import type { ZenCardStyle } from "../../utils/zenQueue";
 import { getWorkerPersona } from "../../utils/workerPersona";
@@ -11,6 +11,8 @@ import {
   normalizePath,
 } from "../../workers/dashboardLogic";
 import { useAppStore } from "../../store/useAppStore";
+import { useUiStore } from "../../store/useUiStore";
+import { readTextFile } from "../../services/tauriBridge";
 import { resolveEffectiveMission } from "../../utils/missionDetector";
 import { MissionBadges } from "../shared/MissionBadges";
 
@@ -44,6 +46,27 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
   const normWtPath = normalizePath(session.worktreePath);
   const cardMeta = useAppStore((s) => s.worktreeMeta[normWtPath]);
   const autoMission = useAppStore((s) => s.autoMissionByWorktree[normWtPath]);
+  const autoReviewJob = useAppStore((s) => s.autoReviewJobsByWorktree[normWtPath]);
+
+  const handleOpenReviewMarkdown = useCallback(async () => {
+    if (!autoReviewJob?.report_path) return;
+    try {
+      await readTextFile(autoReviewJob.report_path);
+      useUiStore.getState().setMarkdownViewerTarget({
+        absolutePath: autoReviewJob.report_path,
+        relativePath: `.jjdr-review/pr-${autoReviewJob.pr_number}.md`,
+        projectName: autoReviewJob.project_name || session.projectName,
+        rootPath: autoReviewJob.worktree_path || session.worktreePath,
+      });
+    } catch {
+      useUiStore
+        .getState()
+        .showToast(
+          "리뷰 MD 파일이 아직 생성되지 않았습니다. 우측 터미널 출력을 확인해 주세요.",
+          "info"
+        );
+    }
+  }, [autoReviewJob, session.projectName, session.worktreePath]);
   const persona = useMemo(() => getWorkerPersona(normWtPath), [normWtPath]);
   const mission = useMemo(
     () =>
@@ -333,23 +356,41 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
                   (displayName ? `branch: ${branchText}` : session.worktreePath)}
               </span>
 
-              {hasDiff && worktree && onOpenDiff && (
-                <button
-                  type="button"
-                  onClick={onOpenDiff}
-                  className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono-code cursor-pointer shrink-0"
-                  style={{ color: "var(--text-secondary)" }}
-                  title="Preview Git Diff"
-                >
-                  <FileDiff className="w-3 h-3" />
-                  <span style={{ color: "var(--ready-fg)" }}>
-                    +{worktree.added_lines}
-                  </span>
-                  <span style={{ color: "var(--action-fg)" }}>
-                    -{worktree.deleted_lines}
-                  </span>
-                </button>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {autoReviewJob?.report_path && (
+                  <button
+                    type="button"
+                    onClick={() => void handleOpenReviewMarkdown()}
+                    className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold cursor-pointer shrink-0"
+                    style={{
+                      color: "var(--accent)",
+                      borderColor: "var(--accent-border)",
+                    }}
+                    title="Open AI Auto-Review report in built-in Markdown Viewer"
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>Review MD</span>
+                  </button>
+                )}
+
+                {hasDiff && worktree && onOpenDiff && (
+                  <button
+                    type="button"
+                    onClick={onOpenDiff}
+                    className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono-code cursor-pointer shrink-0"
+                    style={{ color: "var(--text-secondary)" }}
+                    title="Preview Git Diff"
+                  >
+                    <FileDiff className="w-3 h-3" />
+                    <span style={{ color: "var(--ready-fg)" }}>
+                      +{worktree.added_lines}
+                    </span>
+                    <span style={{ color: "var(--action-fg)" }}>
+                      -{worktree.deleted_lines}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

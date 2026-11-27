@@ -3,6 +3,7 @@ import type {
   AckedSessionSnapshot,
   AppSettings,
   AutoMissionInfo,
+  AutoReviewJob,
   DashboardWorkerResult,
   HerdrHealth,
   ProjectConfig,
@@ -86,12 +87,15 @@ interface AppStoreState {
   removingWorktreePaths: Record<string, true>;
   computed: DashboardWorkerResult;
   teamSnapshot: TeamConnectionSnapshot | null;
+  autoReviewJobs: AutoReviewJob[];
+  autoReviewJobsByWorktree: Record<string, AutoReviewJob>;
   hydrated: boolean;
   seq: number;
 
   applyBatch: (batch: StateBatchPayload) => void;
   setHealth: (health: HerdrHealth) => void;
   setTeamSnapshot: (snapshot: TeamConnectionSnapshot | null) => void;
+  setAutoReviewJobs: (jobs: AutoReviewJob[]) => void;
   setProjects: (projects: ProjectConfig[]) => void;
   setWorktreesByProject: (map: Record<string, WorktreeInfo[]>) => void;
   setProjectWorktrees: (projectId: string, list: WorktreeInfo[]) => void;
@@ -151,6 +155,8 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   removingWorktreePaths: {},
   computed: EMPTY_COMPUTED,
   teamSnapshot: null,
+  autoReviewJobs: [],
+  autoReviewJobsByWorktree: {},
   hydrated: false,
   seq: 0,
 
@@ -286,6 +292,15 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }),
   setTemplates: (templates) => set({ templates }),
   setTeamSnapshot: (teamSnapshot) => set({ teamSnapshot }),
+  setAutoReviewJobs: (jobs) => {
+    const byWt: Record<string, AutoReviewJob> = {};
+    for (const j of jobs) {
+      if (j.worktree_path) {
+        byWt[normalizePath(j.worktree_path)] = j;
+      }
+    }
+    set({ autoReviewJobs: jobs, autoReviewJobsByWorktree: byWt });
+  },
   setSettings: (settings) => {
     const normalized: AppSettings = {
       ...settings,

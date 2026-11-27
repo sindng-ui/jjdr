@@ -299,6 +299,28 @@ impl PersistenceStore {
         doc_set_best_effort(client, DOC_UI_STATE_KEY, json!(state)).await;
     }
 
+    pub async fn update_worktree_meta(
+        &self,
+        client: &Arc<HerdrClient>,
+        norm_worktree_path: String,
+        meta: Option<WorktreeCardMeta>,
+    ) {
+        let snapshot = {
+            let mut guard = self.ui_state.write().await;
+            match meta {
+                Some(m) => {
+                    guard.worktree_meta.insert(norm_worktree_path, m);
+                }
+                None => {
+                    guard.worktree_meta.remove(&norm_worktree_path);
+                }
+            }
+            guard.clone()
+        };
+        write_local_json(&self.local_dir.join("ui_state.json"), &snapshot);
+        doc_set_best_effort(client, DOC_UI_STATE_KEY, json!(snapshot)).await;
+    }
+
     pub async fn save_settings(&self, client: &Arc<HerdrClient>, settings: AppSettings) {
         *self.settings.write().await = settings.clone();
         write_local_json(&self.local_dir.join("settings.json"), &settings);

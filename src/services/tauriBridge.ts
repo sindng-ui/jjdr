@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppSettings,
   AttachResult,
+  AutoReviewJob,
   BgOverlayPayload,
   BootstrapConfig,
   DiffDetail,
@@ -555,4 +556,30 @@ export async function listenTeamStateChanged(
   return listen<TeamConnectionSnapshot>("jjdr:team-state-changed", (e) =>
     cb(e.payload)
   );
+}
+
+export async function listAutoReviewJobs(): Promise<AutoReviewJob[]> {
+  return invoke<AutoReviewJob[]>("list_auto_review_jobs");
+}
+
+export async function ackAutoReviewJob(requestId: string): Promise<void> {
+  return invoke<void>("ack_auto_review_job", { requestId });
+}
+
+export async function cancelAutoReviewJob(requestId: string): Promise<void> {
+  return invoke<void>("cancel_auto_review_job", { requestId });
+}
+
+export async function listenAutoReviewJobsChanged(
+  cb: (payload: AutoReviewJob[]) => void
+): Promise<UnlistenFn> {
+  return listen<AutoReviewJob[]>("jjdr:auto-review-jobs-changed", (e) =>
+    cb(e.payload)
+  );
+}
+
+export async function listenTeamWorktreesDirty(
+  cb: () => void
+): Promise<UnlistenFn> {
+  return listen<boolean>("jjdr:team-worktrees-dirty", () => cb());
 }
