@@ -1,6 +1,6 @@
 [package]
 name = "jjdr"
-version = "0.5.0"
+version = "0.5.1"
 description = "jjdr — Low-cognitive-load AI worktree mission control on herdr-core"
 authors = ["jjdr"]
 edition = "2021"
