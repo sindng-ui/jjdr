@@ -3,6 +3,8 @@
 > **대상**: 사내 GHE / GitHub 환경에서 `jjdr`를 쓰는 팀원 누구나 (3분 세팅)  
 > **구조**: `작성자 jjdr` ↔ `jjdr-relay.exe (사내 공용 PC 1대)` ↔ `리뷰어 jjdr` (GitHub 폴링 **0%**, GHE 토큰 공용 PC 저장 **0%**)
 
+![jjdr 팀 자동 PR 리뷰 전체 흐름](./assets/team_auto_review_flow.svg)
+
 ---
 
 ## 1. 최초 1회 세팅
