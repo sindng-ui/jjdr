@@ -15,6 +15,7 @@ import { ZenModeView } from "./components/zen/ZenModeView";
 import { WorktreeContextMenu } from "./components/board/WorktreeContextMenu";
 import { CommandPalette } from "./components/modals/CommandPalette";
 import { QuickFileModal } from "./components/modals/QuickFileModal";
+import { WorkspaceSearchModal } from "./components/modals/WorkspaceSearchModal";
 import { ProjectModal } from "./components/modals/ProjectModal";
 import { CreateWorktreeModal } from "./components/modals/CreateWorktreeModal";
 import { EditWorktreeModal } from "./components/modals/EditWorktreeModal";
@@ -131,6 +132,7 @@ export function App() {
       <WorktreeContextMenu />
       <CommandPalette />
       <QuickFileModal />
+      <WorkspaceSearchModal />
       {markdownViewerTarget && (
         <Suspense fallback={null}>
           <MarkdownViewerModal />

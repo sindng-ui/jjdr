@@ -3,6 +3,7 @@ pub mod files;
 pub mod gemini_bridge;
 pub mod overlay;
 pub mod projects;
+pub mod symbols;
 pub mod system;
 pub mod team;
 pub mod terminals;

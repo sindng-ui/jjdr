@@ -1,0 +1,46 @@
+=== jjdr Symbol Jump + Outline + Workspace Search Test Results (2026-11-28) ===
+
+1. Rust Unit Tests & 20k/10k Stress Benchmark
+   Command: cargo test --offline --manifest-path src-tauri/Cargo.toml --lib -- --nocapture
+   Result:  PASS — 100 passed, 0 failed, 0 ignored (0 warnings in jjdr crate)
+   Symbol Suite:
+   - symbols::tests::parses_csharp_cpp_ts_rust_symbols_accurately ... ok
+   - symbols::tests::skips_generated_files ... ok
+   - symbols::tests::disk_cache_roundtrip_preserves_symbols ... ok
+   - symbols::tests::ranking_prioritizes_qualifier_and_cpp_pair_definition ... ok
+   - symbols::tests::stress_synthetic_20k_csharp_and_10k_cpp_memory_budget ... ok
+   Benchmark Output:
+   - 1,000 real tree-sitter parses (500 C# + 500 C++, debug build): 114ms
+   - C# 20,000 files (300,000 symbols) compact RAM: 15.17 MB
+   - C++ 10,000 files (120,000 symbols) compact RAM: 6.82 MB
+   - Combined LRU(2) RAM footprint: 21.98 MB
+
+2. Rust Full Binary Typecheck
+   Command: cargo check --offline --manifest-path src-tauri/Cargo.toml
+   Result:  PASS — Finished `dev` profile (0 warnings, 0 errors)
+
+3. Frontend Unit Tests (Vitest)
+   Command: npm run test
+   Result:  PASS — 31 test files passed, 134 tests passed (0 failed)
+   New Tests:
+   - src/utils/__tests__/symbolClickTarget.test.ts (7 tests) ... ok
+   - src/hooks/__tests__/useCodeNavigationHistory.test.ts (3 tests) ... ok
+
+4. Frontend Production Build (TypeScript + Vite)
+   Command: npm run build (tsc && vite build)
+   Result:  PASS — 0 errors, built in 5.27s
+
+5. Performance, Zero-Blur & File-Size Compliance Check
+   - Zero-Blur (`backdrop-blur` / `filter: blur`): 0 occurrences across all new & modified files
+   - 900-line file limit: ALL files strictly under 900 lines
+     * src-tauri/src/symbols/parser.rs: 871 lines
+     * src-tauri/src/symbols/store.rs: 532 lines
+     * src-tauri/src/symbols/indexer.rs: 444 lines
+     * src-tauri/src/commands/files.rs: 536 lines
+     * src/components/modals/CodeViewerModal.tsx: 777 lines
+     * src/components/modals/codeViewer/CodeViewerHeader.tsx: 252 lines
+     * src/components/modals/codeViewer/CodeViewerBody.tsx: 220 lines
+     * src/components/modals/codeViewer/WorkspaceSearchPanel.tsx: 306 lines
+     * src/components/modals/QuickFileModal.tsx: 610 lines
+   - Default OFF guarantee: AppSettings.symbol_index_enabled defaults to false (0 workers, 0 RAM, 0 disk I/O when OFF)
+   - Lazy trigger guarantee: Only warms active project when Settings ON AND Ctrl+P opens; OFF immediately cancels active jobs and evicts RAM.

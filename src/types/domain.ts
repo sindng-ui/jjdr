@@ -239,6 +239,7 @@ export interface AppSettings {
   bg_overlay_position?: BgOverlayPosition;
   prompt_presets: PromptPreset[];
   skipped_update_version?: string | null;
+  symbol_index_enabled?: boolean;
   team?: TeamOrchestrationSettings;
 }
 
@@ -522,4 +523,86 @@ export interface CancelReviewRequestResponse {
   request_id: string;
   cancelled_reviewers: string[];
   skipped_terminal_reviewers: string[];
+}
+
+export type SymbolKind =
+  | "namespace"
+  | "class"
+  | "struct"
+  | "interface"
+  | "record"
+  | "enum"
+  | "method"
+  | "function"
+  | "constructor"
+  | "property"
+  | "delegate"
+  | "event"
+  | "type_alias"
+  | "macro"
+  | "trait"
+  | "module"
+  | "constant";
+
+export interface SymbolMatch {
+  name: string;
+  scope: string;
+  kind: SymbolKind;
+  relative_path: string;
+  line: number;
+  col: number;
+  is_definition: boolean;
+  is_partial: boolean;
+  score: number;
+  preview: string;
+}
+
+export interface OutlineSymbol {
+  name: string;
+  scope: string;
+  kind: SymbolKind;
+  line: number;
+  col: number;
+  is_definition: boolean;
+}
+
+export interface SymbolIndexStatus {
+  project_id: string;
+  state: "disabled" | "idle" | "loading_cache" | "indexing" | "ready" | "cancelled" | "error" | string;
+  indexed_files: number;
+  total_files: number;
+  symbol_count: number;
+  from_cache: boolean;
+  estimated_ram_bytes: number;
+  elapsed_ms: number;
+  error?: string | null;
+}
+
+export interface SymbolCacheStats {
+  ram_projects: number;
+  ram_symbols: number;
+  ram_estimated_bytes: number;
+  disk_cache_files: number;
+  disk_cache_bytes: number;
+  active_jobs: number;
+}
+
+export interface IncludeResolveResult {
+  relative_path: string;
+  absolute_path: string;
+}
+
+export interface WorkspaceTextMatch {
+  relative_path: string;
+  line: number;
+  col: number;
+  line_text: string;
+}
+
+export interface WorkspaceTextSearchResult {
+  root_path: string;
+  matches: WorkspaceTextMatch[];
+  truncated: boolean;
+  elapsed_ms: number;
+  regex_error?: string | null;
 }

@@ -110,6 +110,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub skipped_update_version: Option<String>,
     #[serde(default)]
+    pub symbol_index_enabled: bool,
+    #[serde(default)]
     pub team: TeamOrchestrationSettings,
 }
 
@@ -170,6 +172,7 @@ impl Default for AppSettings {
             bg_overlay_position: default_bg_overlay_position(),
             prompt_presets: default_presets(),
             skipped_update_version: None,
+            symbol_index_enabled: false,
             team: TeamOrchestrationSettings::default(),
         }
     }

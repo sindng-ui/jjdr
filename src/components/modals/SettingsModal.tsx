@@ -10,6 +10,7 @@ import {
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import {
+  clearSymbolIndexCache,
   hideBgOverlay,
   saveSettings,
   showBgOverlay,
@@ -114,6 +115,21 @@ export const SettingsModal = React.memo(function SettingsModal() {
     persistImmediate({ ...draft, bg_overlay_enabled: nextEnabled });
     if (!nextEnabled) {
       void hideBgOverlay(true).catch(() => {});
+    }
+  };
+
+  const handleToggleSymbolIndex = () => {
+    const nextEnabled = !(draft.symbol_index_enabled ?? false);
+    persistImmediate({ ...draft, symbol_index_enabled: nextEnabled });
+    if (!nextEnabled) {
+      void clearSymbolIndexCache(false).catch(() => {});
+      showToast("심볼 인덱싱 꺼짐 — RAM 인덱스 해제됨", "info", 1800);
+    } else {
+      showToast(
+        "심볼 인덱싱 켜짐 — Ctrl+P를 열면 해당 프로젝트만 백그라운드 시동합니다",
+        "success",
+        2600
+      );
     }
   };
 
@@ -278,6 +294,10 @@ export const SettingsModal = React.memo(function SettingsModal() {
                 onToggleBgOverlay={handleToggleBgOverlay}
                 onSelectBgOverlayPosition={handleSelectBgOverlayPosition}
                 onPreviewBgOverlay={handlePreviewBgOverlay}
+                onToggleSymbolIndex={handleToggleSymbolIndex}
+                onSymbolCacheCleared={() =>
+                  showToast("심볼 RAM 및 디스크 캐시를 비웠습니다", "success", 1800)
+                }
               />
             )}
             {activeTab === "team" && (

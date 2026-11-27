@@ -81,3 +81,29 @@
 .jjdr-code-row-match-active {
   background: var(--cv-match-active-bg);
 }
+
+@keyframes jjdr-code-landed-flash {
+  0% {
+    background: rgba(56, 189, 248, 0.36);
+  }
+  70% {
+    background: rgba(56, 189, 248, 0.16);
+  }
+  100% {
+    background: rgba(56, 189, 248, 0.08);
+  }
+}
+
+.jjdr-code-row-landed {
+  animation: jjdr-code-landed-flash 1.4s ease-out forwards;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.jjdr-code-viewer.ctrl-jump-ready .jjdr-code-line-text {
+  cursor: pointer;
+}
+.jjdr-code-viewer.ctrl-jump-ready .jjdr-code-line-text:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 2px;
+}

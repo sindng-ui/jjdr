@@ -85,6 +85,10 @@ export interface CodeViewerTarget {
   relativePath: string;
   projectName: string;
   rootPath: string;
+  projectId?: string;
+  repoPath?: string;
+  initialLine?: number;
+  initialCol?: number;
 }
 
 export interface CardGrabState {
@@ -135,6 +139,7 @@ export interface UiStoreState {
   idleCollapsed: boolean;
   commandPaletteOpen: boolean;
   quickFileOpen: boolean;
+  workspaceSearchOpen: boolean;
   markdownViewerTarget: MarkdownViewerTarget | null;
   codeViewerTarget: CodeViewerTarget | null;
   cardGrabState: CardGrabState | null;
@@ -194,6 +199,7 @@ export interface UiStoreState {
   toggleIdleCollapsed: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setQuickFileOpen: (open: boolean) => void;
+  setWorkspaceSearchOpen: (open: boolean) => void;
   setMarkdownViewerTarget: (t: MarkdownViewerTarget | null) => void;
   setCodeViewerTarget: (t: CodeViewerTarget | null) => void;
   setCardGrabState: (state: CardGrabState | null) => void;
@@ -250,6 +256,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   idleCollapsed: false,
   commandPaletteOpen: false,
   quickFileOpen: false,
+  workspaceSearchOpen: false,
   markdownViewerTarget: null,
   codeViewerTarget: null,
   cardGrabState: null,
@@ -452,7 +459,16 @@ export const useUiStore = create<UiStoreState>((set) => ({
     })),
   toggleIdleCollapsed: () => set((s) => ({ idleCollapsed: !s.idleCollapsed })),
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
-  setQuickFileOpen: (quickFileOpen) => set({ quickFileOpen }),
+  setQuickFileOpen: (quickFileOpen) =>
+    set((s) => ({
+      quickFileOpen,
+      workspaceSearchOpen: quickFileOpen ? false : s.workspaceSearchOpen,
+    })),
+  setWorkspaceSearchOpen: (workspaceSearchOpen) =>
+    set((s) => ({
+      workspaceSearchOpen,
+      quickFileOpen: workspaceSearchOpen ? false : s.quickFileOpen,
+    })),
   setMarkdownViewerTarget: (markdownViewerTarget) =>
     set({ markdownViewerTarget }),
   setCodeViewerTarget: (codeViewerTarget) => set({ codeViewerTarget }),

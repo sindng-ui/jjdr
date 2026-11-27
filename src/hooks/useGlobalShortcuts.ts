@@ -153,6 +153,7 @@ export function useGlobalShortcuts() {
         (!inInput || inXterm) &&
         !ui.commandPaletteOpen &&
         !ui.quickFileOpen &&
+        !ui.workspaceSearchOpen &&
         !ui.markdownViewerTarget &&
         !ui.codeViewerTarget &&
         !ui.projectModalProject &&
@@ -207,9 +208,15 @@ export function useGlobalShortcuts() {
         }
       }
 
-      // 3d. Ctrl+Shift+D: Enter Zen Inbox from non-Zen tabs, or toggle Zen Inbox <-> Dispatch inside Zen (safe inside xterm; never intercepts Ctrl+D EOF)
+      // 3d. Ctrl+Shift+D (Zen Inbox <-> Dispatch) & Ctrl+Shift+F (Top-level Workspace Text/Regex Search)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
         const k = e.key.toLowerCase();
+        if (k === "f" || e.code === "KeyF") {
+          e.preventDefault();
+          e.stopPropagation();
+          ui.setWorkspaceSearchOpen(!ui.workspaceSearchOpen);
+          return;
+        }
         if (k === "d" || e.code === "KeyD") {
           e.preventDefault();
           e.stopPropagation();
@@ -320,6 +327,10 @@ export function useGlobalShortcuts() {
         }
         if (ui.contextMenu) {
           ui.setContextMenu(null);
+          return;
+        }
+        if (ui.workspaceSearchOpen) {
+          ui.setWorkspaceSearchOpen(false);
           return;
         }
         if (ui.quickFileOpen) {

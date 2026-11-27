@@ -56,7 +56,11 @@ pub async fn save_settings(
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<(), String> {
+    let symbol_enabled = settings.symbol_index_enabled;
     state.store.save_settings(&state.herdr, settings).await;
+    if !symbol_enabled {
+        state.symbol_index.clear_cache(false).await;
+    }
     state.team_relay.notify_config_changed();
     Ok(())
 }

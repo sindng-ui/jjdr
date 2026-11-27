@@ -12,17 +12,23 @@ import {
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import {
+  getSymbolIndexStatus,
+  listenSymbolIndexProgress,
   openInVsCode,
   openWithDefaultApp,
   searchProjectFiles,
+  warmProjectSymbolIndex,
   type FileMatchItem,
 } from "../../services/tauriBridge";
+import type { SymbolIndexStatus } from "../../types/domain";
+import { SymbolIndexBadge } from "./codeViewer/SymbolIndexBadge";
 import { normalizePath } from "../../workers/dashboardLogic";
 import { isMarkdownFile } from "../../utils/markdownRenderer";
 
 interface TargetScope {
   projectId: string;
   projectName: string;
+  repoPath: string;
   worktreePath: string;
   branch: string;
 }
@@ -48,12 +54,18 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
   const setOpen = useUiStore((s) => s.setQuickFileOpen);
   const selectedCardKey = useUiStore((s) => s.selectedCardKey);
   const selectedProjectId = useUiStore((s) => s.selectedProjectId);
+  const attachedAddress = useUiStore((s) => s.attachedAddress);
   const setMarkdownViewerTarget = useUiStore((s) => s.setMarkdownViewerTarget);
   const setCodeViewerTarget = useUiStore((s) => s.setCodeViewerTarget);
   const showToast = useUiStore((s) => s.showToast);
 
   const projects = useAppStore((s) => s.projects);
   const worktreesByProject = useAppStore((s) => s.worktreesByProject);
+  const allSessions = useAppStore((s) => s.computed.allSessions);
+  const symbolIndexEnabled = useAppStore(
+    (s) => s.settings.symbol_index_enabled ?? false
+  );
+  const [symbolStatus, setSymbolStatus] = useState<SymbolIndexStatus | null>(null);
 
   // Build available scopes (project + worktree) so user defaults to focused card but can switch easily
   const scopes = useMemo<TargetScope[]>(() => {
@@ -65,6 +77,7 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
           out.push({
             projectId: p.id,
             projectName: p.name,
+            repoPath: p.repo_path,
             worktreePath: wt.path,
             branch: wt.branch || (wt.is_main ? p.default_branch || "main" : "wt"),
           });
@@ -73,6 +86,7 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
         out.push({
           projectId: p.id,
           projectName: p.name,
+          repoPath: p.repo_path,
           worktreePath: p.repo_path,
           branch: p.default_branch || "main",
         });
@@ -83,6 +97,20 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
 
   const defaultScope = useMemo<TargetScope | null>(() => {
     if (scopes.length === 0) return null;
+    // 1. If a terminal is actively attached (e.g. Zen Time to chill right pane), prefer its project/worktree
+    if (attachedAddress) {
+      const liveSess = allSessions.find((s) => s.address === attachedAddress);
+      if (liveSess?.projectId) {
+        const normWt = normalizePath(liveSess.worktreePath);
+        const byAttached =
+          scopes.find(
+            (sc) =>
+              sc.projectId === liveSess.projectId &&
+              normalizePath(sc.worktreePath) === normWt
+          ) ?? scopes.find((sc) => sc.projectId === liveSess.projectId);
+        if (byAttached) return byAttached;
+      }
+    }
     if (selectedCardKey && selectedCardKey.startsWith("wt::")) {
       const rest = selectedCardKey.slice(4);
       const sepIdx = rest.indexOf("::");
@@ -101,7 +129,7 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
       if (byProj) return byProj;
     }
     return scopes[0];
-  }, [scopes, selectedCardKey, selectedProjectId]);
+  }, [scopes, attachedAddress, allSessions, selectedCardKey, selectedProjectId]);
 
   const [scopeKey, setScopeKey] = useState<string>("");
   const [query, setQuery] = useState("");
@@ -178,6 +206,54 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
     return () => clearTimeout(timer);
   }, [open, activeScope, query, useRegex, showToast]);
 
+  // Lazy per-project symbol indexing:
+  // - Only starts when Settings opt-in is ON AND user opens Ctrl+P.
+  // - Reads cached status immediately, but debounces warm start by 800ms (or immediately once query is typed)
+  //   so switching the scope dropdown right after opening Ctrl+P never accidentally warms an unwanted project.
+  useEffect(() => {
+    if (!open || !activeScope || !symbolIndexEnabled) {
+      setSymbolStatus(null);
+      return;
+    }
+    let cancelled = false;
+    const pid = activeScope.projectId;
+    const wtPath = activeScope.worktreePath;
+
+    void getSymbolIndexStatus(pid)
+      .then((st) => {
+        if (!cancelled && st) setSymbolStatus(st);
+      })
+      .catch(() => {});
+
+    let unlisten: (() => void) | null = null;
+    void listenSymbolIndexProgress((ev) => {
+      if (!cancelled && ev.project_id === pid) {
+        setSymbolStatus(ev);
+      }
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+
+    const delayMs = query.trim().length > 0 ? 0 : 800;
+    const warmTimer = setTimeout(() => {
+      if (cancelled) return;
+      void warmProjectSymbolIndex(pid, wtPath)
+        .then((st) => {
+          if (!cancelled && st) setSymbolStatus(st);
+        })
+        .catch(() => {});
+    }, delayMs);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(warmTimer);
+      unlisten?.();
+    };
+  }, [open, activeScope, symbolIndexEnabled, query.trim().length > 0]);
+
   // Keep active row scrolled into view
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>(
@@ -209,14 +285,29 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
         relativePath: relPath,
         projectName: `${activeScope.projectName} / ${activeScope.branch}`,
         rootPath: activeScope.worktreePath,
+        projectId: activeScope.projectId,
+        repoPath: activeScope.repoPath,
       };
       if (isMd) {
         setMarkdownViewerTarget(viewerTarget);
       } else {
+        if (symbolIndexEnabled) {
+          void warmProjectSymbolIndex(
+            activeScope.projectId,
+            activeScope.worktreePath
+          ).catch(() => {});
+        }
         setCodeViewerTarget(viewerTarget);
       }
     },
-    [activeScope, setOpen, setMarkdownViewerTarget, setCodeViewerTarget, showToast]
+    [
+      activeScope,
+      symbolIndexEnabled,
+      setOpen,
+      setMarkdownViewerTarget,
+      setCodeViewerTarget,
+      showToast,
+    ]
   );
 
   const openVsCodeDirect = useCallback(
@@ -320,14 +411,17 @@ export const QuickFileModal = React.memo(function QuickFileModal() {
               </span>
             )}
           </div>
-          <span
-            className="font-mono-code tabular-nums shrink-0"
-            style={{ color: "var(--text-faint)" }}
-          >
-            {loading
-              ? "검색 중..."
-              : `${matches.length} / ${totalIndexed.toLocaleString()} files`}
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <SymbolIndexBadge enabled={symbolIndexEnabled} status={symbolStatus} />
+            <span
+              className="font-mono-code tabular-nums shrink-0"
+              style={{ color: "var(--text-faint)" }}
+            >
+              {loading
+                ? "검색 중..."
+                : `${matches.length} / ${totalIndexed.toLocaleString()} files`}
+            </span>
+          </div>
         </div>
 
         {/* Search Input */}

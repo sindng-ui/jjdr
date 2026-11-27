@@ -4,6 +4,7 @@ import {
   BG_OVERLAY_POSITION_PRESETS,
   normalizeBgOverlayPosition,
 } from "../../../utils/bgOverlay";
+import { SymbolIndexSettingsSection } from "./SymbolIndexSettingsSection";
 import type {
   AppSettings,
   BgOverlayPosition,
@@ -16,6 +17,8 @@ interface GeneralSettingsTabProps {
   onToggleBgOverlay: () => void;
   onSelectBgOverlayPosition: (position: BgOverlayPosition) => void;
   onPreviewBgOverlay: () => void;
+  onToggleSymbolIndex: () => void;
+  onSymbolCacheCleared?: () => void;
 }
 
 export const GeneralSettingsTab = React.memo(function GeneralSettingsTab({
@@ -24,6 +27,8 @@ export const GeneralSettingsTab = React.memo(function GeneralSettingsTab({
   onToggleBgOverlay,
   onSelectBgOverlayPosition,
   onPreviewBgOverlay,
+  onToggleSymbolIndex,
+  onSymbolCacheCleared,
 }: GeneralSettingsTabProps) {
   const updatePreset = (idx: number, patch: Partial<PromptPreset>) => {
     onChangeDraft((prev) => ({
@@ -223,6 +228,13 @@ export const GeneralSettingsTab = React.memo(function GeneralSettingsTab({
           worktrees)
         </label>
       </div>
+
+      {/* Symbol Jump Indexing (Opt-in, Default OFF) */}
+      <SymbolIndexSettingsSection
+        enabled={draft.symbol_index_enabled ?? false}
+        onToggle={onToggleSymbolIndex}
+        onCleared={onSymbolCacheCleared}
+      />
 
       {/* Prompt Presets */}
       <div

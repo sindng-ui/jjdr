@@ -11,6 +11,8 @@ import type {
   DownloadOutcome,
   GeminiBridgeStatus,
   HerdrHealth,
+  IncludeResolveResult,
+  OutlineSymbol,
   OverlayOpenCardEvent,
   PersistedBundle,
   PersistedUiState,
@@ -22,6 +24,9 @@ import type {
   StateBatchPayload,
   SubmitTeamReviewInput,
   SubmitTeamReviewResult,
+  SymbolCacheStats,
+  SymbolIndexStatus,
+  SymbolMatch,
   TeamConnectionSnapshot,
   TeamPeerInfo,
   TeamStatusChangedEvent,
@@ -30,6 +35,7 @@ import type {
   TermDataEvent,
   UpdateCheckResult,
   UpdateProgressEvent,
+  WorkspaceTextSearchResult,
   WorktreeInfo,
 } from "../types/domain";
 
@@ -160,9 +166,110 @@ export async function openWithDefaultApp(path: string): Promise<void> {
   return invoke<void>("open_with_default_app", { path });
 }
 
-export async function openInVsCode(path: string): Promise<void> {
+export async function openInVsCode(path: string, line?: number): Promise<void> {
   if (!isTauriRuntime()) return;
-  return invoke<void>("open_in_vscode", { path });
+  return invoke<void>("open_in_vscode", { path, line: line ?? null });
+}
+
+export async function searchWorkspaceText(params: {
+  rootPath: string;
+  query: string;
+  useRegex?: boolean;
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  maxResults?: number;
+}): Promise<WorkspaceTextSearchResult> {
+  return invoke<WorkspaceTextSearchResult>("search_workspace_text", {
+    rootPath: params.rootPath,
+    query: params.query,
+    useRegex: Boolean(params.useRegex),
+    caseSensitive: Boolean(params.caseSensitive),
+    wholeWord: Boolean(params.wholeWord),
+    maxResults: params.maxResults ?? 400,
+  });
+}
+
+export async function warmProjectSymbolIndex(
+  projectId: string,
+  worktreePath?: string | null
+): Promise<SymbolIndexStatus | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<SymbolIndexStatus>("warm_project_symbol_index", {
+    projectId,
+    worktreePath: worktreePath ?? null,
+  });
+}
+
+export async function getSymbolIndexStatus(
+  projectId: string
+): Promise<SymbolIndexStatus | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<SymbolIndexStatus>("get_symbol_index_status", { projectId });
+}
+
+export async function getSymbolCacheStats(): Promise<SymbolCacheStats | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<SymbolCacheStats>("get_symbol_cache_stats");
+}
+
+export async function lookupSymbolDefinitions(params: {
+  projectId: string;
+  worktreePath?: string | null;
+  currentRelPath: string;
+  currentLine: number;
+  symbolName: string;
+  qualifier?: string | null;
+  limit?: number;
+}): Promise<SymbolMatch[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<SymbolMatch[]>("lookup_symbol_definitions", {
+    projectId: params.projectId,
+    worktreePath: params.worktreePath ?? null,
+    currentRelPath: params.currentRelPath,
+    currentLine: params.currentLine,
+    symbolName: params.symbolName,
+    qualifier: params.qualifier ?? null,
+    limit: params.limit ?? 25,
+  });
+}
+
+export async function getFileSymbolOutline(
+  absPath: string,
+  relPath: string
+): Promise<OutlineSymbol[]> {
+  if (!isTauriRuntime()) return [];
+  return invoke<OutlineSymbol[]>("get_file_symbol_outline", {
+    absPath,
+    relPath,
+  });
+}
+
+export async function resolveIncludePath(
+  rootPath: string,
+  currentRelPath: string,
+  includeTarget: string
+): Promise<IncludeResolveResult | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<IncludeResolveResult | null>("resolve_include_path", {
+    rootPath,
+    currentRelPath,
+    includeTarget,
+  });
+}
+
+export async function clearSymbolIndexCache(
+  clearDisk = false
+): Promise<SymbolCacheStats | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<SymbolCacheStats>("clear_symbol_index_cache", { clearDisk });
+}
+
+export async function listenSymbolIndexProgress(
+  cb: (payload: SymbolIndexStatus) => void
+): Promise<UnlistenFn> {
+  return listen<SymbolIndexStatus>("jjdr:symbol-index-progress", (e) =>
+    cb(e.payload)
+  );
 }
 
 export interface UpsertProjectPayload {

@@ -6,6 +6,7 @@ function emptyState(): BlockingModalState {
     settingsOpen: false,
     commandPaletteOpen: false,
     quickFileOpen: false,
+    workspaceSearchOpen: false,
     projectModalProject: null,
     createWorktreeProjectId: null,
     editWorktreeTarget: null,
@@ -39,6 +40,7 @@ describe("hasBlockingModalOpen", () => {
       { settingsOpen: true },
       { commandPaletteOpen: true },
       { quickFileOpen: true },
+      { workspaceSearchOpen: true },
       { projectModalProject: "new" },
       { createWorktreeProjectId: "p1" },
       {

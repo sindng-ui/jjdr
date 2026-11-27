@@ -153,20 +153,29 @@ pub fn open_with_default_app(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn open_in_vscode(path: String) -> Result<(), String> {
+pub fn open_in_vscode(path: String, line: Option<u32>) -> Result<(), String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("File path cannot be empty".into());
     }
+    let line_target = line.filter(|&l| l > 0);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         let win_path = trimmed.replace('/', "\\");
+        let goto_arg = line_target.map(|l| format!("{}:{}", win_path, l));
 
-        let direct = std::process::Command::new("cmd")
-            .args(["/C", "code", &win_path])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn();
+        let direct = if let Some(ref goto) = goto_arg {
+            std::process::Command::new("cmd")
+                .args(["/C", "code", "-g", goto])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+        } else {
+            std::process::Command::new("cmd")
+                .args(["/C", "code", &win_path])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+        };
         if direct.is_ok() {
             return Ok(());
         }
@@ -191,9 +200,13 @@ pub fn open_in_vscode(path: String) -> Result<(), String> {
         }
         for bin in candidates {
             if bin.is_file() {
-                std::process::Command::new(&bin)
-                    .arg(&win_path)
-                    .creation_flags(CREATE_NO_WINDOW)
+                let mut cmd = std::process::Command::new(&bin);
+                if let Some(ref goto) = goto_arg {
+                    cmd.args(["-g", goto]);
+                } else {
+                    cmd.arg(&win_path);
+                }
+                cmd.creation_flags(CREATE_NO_WINDOW)
                     .spawn()
                     .map_err(|e| format!("Failed to launch VS Code: {}", e))?;
                 return Ok(());
@@ -203,10 +216,321 @@ pub fn open_in_vscode(path: String) -> Result<(), String> {
     }
     #[cfg(not(windows))]
     {
-        std::process::Command::new("code")
-            .arg(trimmed)
-            .spawn()
+        let mut cmd = std::process::Command::new("code");
+        if let Some(l) = line_target {
+            cmd.args(["-g", &format!("{}:{}", trimmed, l)]);
+        } else {
+            cmd.arg(trimmed);
+        }
+        cmd.spawn()
             .map_err(|e| format!("Failed to launch VS Code: {}", e))?;
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceTextMatch {
+    pub relative_path: String,
+    pub line: u32,
+    pub col: u16,
+    pub line_text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceTextSearchResult {
+    pub root_path: String,
+    pub matches: Vec<WorkspaceTextMatch>,
+    pub truncated: bool,
+    pub elapsed_ms: u64,
+    pub regex_error: Option<String>,
+}
+
+const MAX_WORKSPACE_SEARCH_MATCHES: usize = 400;
+const MAX_MATCHES_PER_FILE: usize = 40;
+const MAX_LINE_PREVIEW_CHARS: usize = 220;
+
+fn truncate_preview_line(raw: &str) -> String {
+    let trimmed = raw.trim_end_matches(['\r', '\n']);
+    if trimmed.chars().count() <= MAX_LINE_PREVIEW_CHARS {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(MAX_LINE_PREVIEW_CHARS).collect();
+    out.push('…');
+    out
+}
+
+fn find_match_col(line: &str, re: &regex::Regex) -> u16 {
+    re.find(line)
+        .map(|m| line[..m.start()].chars().count().min(u16::MAX as usize) as u16)
+        .unwrap_or(0)
+}
+
+fn run_git_grep_search(
+    root: &str,
+    query: &str,
+    use_regex: bool,
+    case_sensitive: bool,
+    whole_word: bool,
+    max_matches: usize,
+    re: &regex::Regex,
+) -> Option<(Vec<WorkspaceTextMatch>, bool)> {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let mut cmd = std::process::Command::new("git");
+    cmd.args([
+        "-C",
+        root,
+        "grep",
+        "-n",
+        "-I",
+        "--no-color",
+        "--untracked",
+        "--max-count",
+        &MAX_MATCHES_PER_FILE.to_string(),
+    ]);
+    if use_regex {
+        cmd.arg("-E");
+    } else {
+        cmd.arg("-F");
+    }
+    if !case_sensitive {
+        cmd.arg("-i");
+    }
+    if whole_word {
+        cmd.arg("-w");
+    }
+    cmd.arg("-e").arg(query);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = cmd.spawn().ok()?;
+    let stdout = child.stdout.take()?;
+    let mut reader = BufReader::new(stdout);
+    let mut matches = Vec::with_capacity(max_matches.min(128));
+    let mut truncated = false;
+    let started = Instant::now();
+    let timeout = Duration::from_secs(6);
+    let mut buf = Vec::with_capacity(512);
+
+    loop {
+        if started.elapsed() > timeout {
+            truncated = true;
+            let _ = child.kill();
+            break;
+        }
+        buf.clear();
+        match reader.read_until(b'\n', &mut buf) {
+            Ok(0) => break,
+            Ok(_) => {
+                let line_str = String::from_utf8_lossy(&buf);
+                // Format: relative/path:line_no:line_content
+                let Some(first_colon) = line_str.find(':') else {
+                    continue;
+                };
+                let rest = &line_str[first_colon + 1..];
+                let Some(second_colon) = rest.find(':') else {
+                    continue;
+                };
+                let Ok(line_no) = rest[..second_colon].parse::<u32>() else {
+                    continue;
+                };
+                let content = &rest[second_colon + 1..];
+                let rel_path = line_str[..first_colon].replace('\\', "/");
+                let col = find_match_col(content, re);
+                matches.push(WorkspaceTextMatch {
+                    relative_path: rel_path,
+                    line: line_no,
+                    col,
+                    line_text: truncate_preview_line(content),
+                });
+                if matches.len() >= max_matches {
+                    truncated = true;
+                    let _ = child.kill();
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    let status = child.wait().ok();
+    // git grep exits 0 (matches), 1 (no matches), >1 (not a git repo or error)
+    if let Some(st) = status {
+        if !truncated && !matches!(st.code(), Some(0) | Some(1)) {
+            return None;
+        }
+    }
+    Some((matches, truncated))
+}
+
+fn run_fallback_text_search(
+    root: &str,
+    files: Vec<String>,
+    re: &regex::Regex,
+    max_matches: usize,
+) -> (Vec<WorkspaceTextMatch>, bool) {
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    let root_path = Path::new(root);
+    let mut matches = Vec::with_capacity(max_matches.min(128));
+    let mut truncated = false;
+    let started = Instant::now();
+    let timeout = Duration::from_secs(6);
+
+    for rel in files {
+        if started.elapsed() > timeout || matches.len() >= max_matches {
+            truncated = true;
+            break;
+        }
+        let full = root_path.join(&rel);
+        let Ok(meta) = std::fs::metadata(&full) else {
+            continue;
+        };
+        if !meta.is_file() || meta.len() > 512 * 1024 {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&full) else {
+            continue;
+        };
+        if looks_binary(&bytes) {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let mut per_file = 0usize;
+        for (idx, line) in text.lines().enumerate() {
+            if let Some(m) = re.find(line) {
+                let col = line[..m.start()].chars().count().min(u16::MAX as usize) as u16;
+                matches.push(WorkspaceTextMatch {
+                    relative_path: rel.clone(),
+                    line: (idx + 1) as u32,
+                    col,
+                    line_text: truncate_preview_line(line),
+                });
+                per_file += 1;
+                if matches.len() >= max_matches {
+                    truncated = true;
+                    break;
+                }
+                if per_file >= MAX_MATCHES_PER_FILE {
+                    break;
+                }
+            }
+        }
+    }
+
+    (matches, truncated)
+}
+
+/// Fast workspace-wide text / regex search (Ctrl+Shift+F inside CodeViewerModal).
+/// Uses native `git grep` (multithreaded, .gitignore-aware) with safe fallback and hard caps
+/// so 20k+ file repos stay responsive without memory spikes.
+#[tauri::command]
+pub async fn search_workspace_text(
+    root_path: String,
+    query: String,
+    use_regex: Option<bool>,
+    case_sensitive: Option<bool>,
+    whole_word: Option<bool>,
+    max_results: Option<usize>,
+) -> Result<WorkspaceTextSearchResult, String> {
+    let trimmed_root = root_path.trim().to_string();
+    if trimmed_root.is_empty() {
+        return Err("Root path cannot be empty".into());
+    }
+    let q = query.trim().to_string();
+    if q.is_empty() {
+        return Ok(WorkspaceTextSearchResult {
+            root_path: trimmed_root,
+            matches: Vec::new(),
+            truncated: false,
+            elapsed_ms: 0,
+            regex_error: None,
+        });
+    }
+
+    let is_regex = use_regex.unwrap_or(false);
+    let is_case = case_sensitive.unwrap_or(false);
+    let is_word = whole_word.unwrap_or(false);
+    let limit = max_results
+        .unwrap_or(MAX_WORKSPACE_SEARCH_MATCHES)
+        .clamp(1, MAX_WORKSPACE_SEARCH_MATCHES);
+
+    let pattern = if is_regex {
+        if is_word {
+            format!(r"\b(?:{})\b", q)
+        } else {
+            q.clone()
+        }
+    } else {
+        let escaped = regex::escape(&q);
+        if is_word {
+            format!(r"\b{}\b", escaped)
+        } else {
+            escaped
+        }
+    };
+
+    let compiled = match regex::RegexBuilder::new(&pattern)
+        .case_insensitive(!is_case)
+        .size_limit(4 * 1024 * 1024)
+        .build()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(WorkspaceTextSearchResult {
+                root_path: trimmed_root,
+                matches: Vec::new(),
+                truncated: false,
+                elapsed_ms: 0,
+                regex_error: Some(e.to_string()),
+            });
+        }
+    };
+
+    let started = std::time::Instant::now();
+    let root_clone = trimmed_root.clone();
+    let compiled_clone = compiled.clone();
+    let git_res = tokio::task::spawn_blocking(move || {
+        run_git_grep_search(
+            &root_clone,
+            &q,
+            is_regex,
+            is_case,
+            is_word,
+            limit,
+            &compiled_clone,
+        )
+    })
+    .await
+    .map_err(|e| format!("Workspace search worker failed: {}", e))?;
+
+    let (matches, truncated) = match git_res {
+        Some(res) => res,
+        None => {
+            let files = crate::store::file_index::scan_directory_files(&trimmed_root)
+                .await
+                .unwrap_or_default();
+            let root_fb = trimmed_root.clone();
+            tokio::task::spawn_blocking(move || {
+                run_fallback_text_search(&root_fb, files, &compiled, limit)
+            })
+            .await
+            .map_err(|e| format!("Workspace fallback search worker failed: {}", e))?
+        }
+    };
+
+    Ok(WorkspaceTextSearchResult {
+        root_path: trimmed_root,
+        matches,
+        truncated,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        regex_error: None,
+    })
 }

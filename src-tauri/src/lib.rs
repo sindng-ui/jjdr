@@ -4,6 +4,7 @@ pub mod gemini;
 pub mod git;
 pub mod herdr;
 pub mod store;
+pub mod symbols;
 pub mod team;
 pub mod update;
 
@@ -34,6 +35,8 @@ use store::overlay::BgOverlayPayload;
 #[cfg(not(test))]
 use store::projects::PersistenceStore;
 #[cfg(not(test))]
+use symbols::SymbolIndexStore;
+#[cfg(not(test))]
 use team::author::PromptedPrStore;
 #[cfg(not(test))]
 use team::client::TeamRelayRuntime;
@@ -51,6 +54,7 @@ pub struct AppState {
     pub store: Arc<PersistenceStore>,
     pub attach: Arc<AttachManager>,
     pub file_index: Arc<FileIndexStore>,
+    pub symbol_index: Arc<SymbolIndexStore>,
     pub bg_overlay_payload: Mutex<Option<BgOverlayPayload>>,
     pub bg_overlay_op_lock: tokio::sync::Mutex<()>,
     pub bg_overlay_gen: Arc<AtomicU64>,
@@ -81,6 +85,7 @@ pub fn run() {
     team_relay.attach_orchestrator_tx(auto_review.event_sender());
     let attach = Arc::new(AttachManager::new());
     let file_index = Arc::new(FileIndexStore::new());
+    let symbol_index = Arc::new(SymbolIndexStore::new(store.local_dir()));
 
     let state = AppState {
         herdr: herdr.clone(),
@@ -92,6 +97,7 @@ pub fn run() {
         store: store.clone(),
         attach: attach.clone(),
         file_index,
+        symbol_index,
         bg_overlay_payload: Mutex::new(None),
         bg_overlay_op_lock: tokio::sync::Mutex::new(()),
         bg_overlay_gen: Arc::new(AtomicU64::new(0)),
@@ -156,6 +162,14 @@ pub fn run() {
             commands::files::read_text_file,
             commands::files::open_with_default_app,
             commands::files::open_in_vscode,
+            commands::files::search_workspace_text,
+            commands::symbols::warm_project_symbol_index,
+            commands::symbols::get_symbol_index_status,
+            commands::symbols::get_symbol_cache_stats,
+            commands::symbols::lookup_symbol_definitions,
+            commands::symbols::get_file_symbol_outline,
+            commands::symbols::resolve_include_path,
+            commands::symbols::clear_symbol_index_cache,
             commands::projects::inspect_git_repo,
             commands::projects::list_projects,
             commands::projects::upsert_project,

@@ -5,6 +5,7 @@ export type BlockingModalState = Pick<
   | "settingsOpen"
   | "commandPaletteOpen"
   | "quickFileOpen"
+  | "workspaceSearchOpen"
   | "projectModalProject"
   | "createWorktreeProjectId"
   | "editWorktreeTarget"
@@ -28,6 +29,7 @@ export function hasBlockingModalOpen(ui: BlockingModalState): boolean {
       ui.settingsOpen ||
       ui.commandPaletteOpen ||
       ui.quickFileOpen ||
+      ui.workspaceSearchOpen ||
       ui.projectModalProject ||
       ui.createWorktreeProjectId ||
       ui.editWorktreeTarget ||

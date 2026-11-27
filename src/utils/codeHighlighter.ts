@@ -2,6 +2,7 @@ import { escapeHtml } from "./markdownRenderer";
 
 export type CodeLanguage =
   | "cpp"
+  | "csharp"
   | "rust"
   | "typescript"
   | "python"
@@ -27,7 +28,7 @@ const EXT_LANG_MAP: Record<string, CodeLanguage> = {
   hh: "cpp",
   hxx: "cpp",
   inl: "cpp",
-  cs: "java",
+  cs: "csharp",
   java: "java",
   kt: "java",
   rs: "rust",
@@ -66,11 +67,12 @@ const EXT_LANG_MAP: Record<string, CodeLanguage> = {
 
 const LANG_LABELS: Record<CodeLanguage, string> = {
   cpp: "C / C++",
+  csharp: "C#",
   rust: "Rust",
   typescript: "TS / JS",
   python: "Python",
   go: "Go",
-  java: "Java / C#",
+  java: "Java / Kotlin",
   json: "JSON",
   toml: "TOML",
   yaml: "YAML",
@@ -109,6 +111,19 @@ const KEYWORDS_BY_LANG: Partial<Record<CodeLanguage, Set<string>>> = {
     "struct", "switch", "template", "this", "throw", "true", "try", "typedef", "typename",
     "union", "unsigned", "using", "virtual", "void", "volatile", "while", "final",
     "size_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int32_t", "int64_t", "std",
+  ]),
+  csharp: new Set([
+    "abstract", "as", "async", "await", "base", "bool", "break", "byte", "case", "catch",
+    "char", "checked", "class", "const", "continue", "decimal", "default", "delegate", "do",
+    "double", "else", "enum", "event", "explicit", "extern", "false", "finally", "fixed",
+    "float", "for", "foreach", "get", "goto", "if", "implicit", "in", "init", "int",
+    "interface", "internal", "is", "lock", "long", "namespace", "new", "nint", "nuint",
+    "null", "object", "operator", "out", "override", "params", "partial", "private",
+    "protected", "public", "readonly", "record", "ref", "required", "return", "sbyte",
+    "scoped", "sealed", "set", "short", "sizeof", "stackalloc", "static", "string",
+    "struct", "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong",
+    "unchecked", "unsafe", "ushort", "using", "var", "virtual", "void", "volatile",
+    "where", "while", "with", "yield", "Task", "List", "Dictionary", "IEnumerable",
   ]),
   rust: new Set([
     "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
@@ -189,7 +204,7 @@ export function highlightCodeLine(line: string, lang: CodeLanguage): string {
     return escapeHtml(line);
   }
 
-  if (lang === "cpp" && /^\s*#\s*\w+/.test(line)) {
+  if ((lang === "cpp" || lang === "csharp") && /^\s*#\s*\w+/.test(line)) {
     return wrapToken("cv-preproc", line);
   }
 
@@ -207,6 +222,7 @@ export function highlightCodeLine(line: string, lang: CodeLanguage): string {
     lang === "python" || lang === "shell" || lang === "toml" || lang === "yaml";
   const slashComment =
     lang === "cpp" ||
+    lang === "csharp" ||
     lang === "rust" ||
     lang === "typescript" ||
     lang === "go" ||
