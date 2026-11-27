@@ -3,8 +3,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::update::github::{
-    build_http_client, check_release_from_url, resolve_current_version, resolve_feed_url,
-    UpdateCheckResult,
+    build_http_client, check_latest_release, resolve_current_version, UpdateCheckResult,
 };
 use crate::update::installer::{
     download_asset_to_dir, is_dry_run_enabled, launch_installer, DownloadOutcome,
@@ -19,9 +18,8 @@ pub fn get_app_version(app: AppHandle) -> String {
 #[tauri::command]
 pub async fn check_for_update(app: AppHandle) -> Result<UpdateCheckResult, String> {
     let current = resolve_current_version(&app.package_info().version.to_string());
-    let feed_url = resolve_feed_url();
-    let client = build_http_client(8)?;
-    check_release_from_url(&client, &feed_url, &current).await
+    let client = build_http_client(10)?;
+    check_latest_release(&client, &current).await
 }
 
 #[tauri::command]

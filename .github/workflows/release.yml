@@ -132,3 +132,16 @@ jobs:
           releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: false
           prerelease: false
+
+      - name: Generate & Upload Rate-Limit-Free latest.json Manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES_BODY: ${{ steps.release_notes.outputs.body }}
+        run: |
+          node scripts/generate-latest-manifest.mjs \
+            --version="${{ needs.check-version.outputs.version }}" \
+            --repo="${{ github.repository }}" \
+            --bundle-dir="src-tauri/target/release/bundle" \
+            --out="latest.json"
+          gh release upload "v${{ needs.check-version.outputs.version }}" latest.json --clobber

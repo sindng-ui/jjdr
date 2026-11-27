@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::update::semver::{is_newer_version, normalize_version};
 use crate::update::win_http::format_reqwest_error;
 
+pub const DEFAULT_RELEASES_MANIFEST_URL: &str =
+    "https://github.com/sindng-ui/jjdr/releases/latest/download/latest.json";
 pub const DEFAULT_RELEASES_API_URL: &str =
     "https://api.github.com/repos/sindng-ui/jjdr/releases/latest";
 pub const DEFAULT_RELEASES_PAGE_URL: &str =
@@ -61,12 +63,15 @@ pub fn build_http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
         .map_err(|e| format!("Failed to initialize HTTP client: {}", e))
 }
 
-pub fn resolve_feed_url() -> String {
+pub fn resolve_custom_feed_url() -> Option<String> {
     std::env::var(ENV_UPDATE_FEED_URL)
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_RELEASES_API_URL.to_string())
+}
+
+pub fn resolve_feed_url() -> String {
+    resolve_custom_feed_url().unwrap_or_else(|| DEFAULT_RELEASES_MANIFEST_URL.to_string())
 }
 
 pub fn resolve_current_version(app_version: &str) -> String {
@@ -151,7 +156,13 @@ fn parse_release_response(
         return Err("No published GitHub release found yet (404).".into());
     }
     if status == 403 {
-        return Err("GitHub API rate limit exceeded. Please try again shortly.".into());
+        let lower = body.to_ascii_lowercase();
+        if lower.contains("rate limit") {
+            return Err("GitHub API rate limit exceeded. Please try again shortly.".into());
+        }
+        return Err(
+            "Access denied by server or corporate proxy (HTTP 403).".into(),
+        );
     }
     if !(200..300).contains(&status) {
         return Err(format!("Release server returned HTTP {}", status));
@@ -161,6 +172,38 @@ fn parse_release_response(
         .map_err(|e| format!("Invalid release JSON payload: {}", e))?;
 
     Ok(build_check_result(current_version, payload))
+}
+
+/// Check latest release using a rate-limit-free cascade:
+/// 1) Custom `JJDR_UPDATE_FEED_URL` if configured (local mock / enterprise mirror)
+/// 2) GitHub Release Assets CDN `latest.json` (zero API rate limit, full What's New + exact asset sizes)
+/// 3) `github.com/.../releases/latest` web redirect + `expanded_assets` HTML (zero API rate limit, works for older releases without `latest.json`)
+/// 4) `api.github.com` as last-resort fallback
+pub async fn check_latest_release(
+    client: &reqwest::Client,
+    current_version: &str,
+) -> Result<UpdateCheckResult, String> {
+    if let Some(custom_url) = resolve_custom_feed_url() {
+        return check_release_from_url(client, &custom_url, current_version).await;
+    }
+
+    if let Ok(res) =
+        check_release_from_url(client, DEFAULT_RELEASES_MANIFEST_URL, current_version).await
+    {
+        return Ok(res);
+    }
+
+    if let Ok(res) = crate::update::web_fallback::check_release_via_web_redirect(
+        client,
+        crate::update::web_fallback::DEFAULT_RELEASES_BASE_URL,
+        current_version,
+    )
+    .await
+    {
+        return Ok(res);
+    }
+
+    check_release_from_url(client, DEFAULT_RELEASES_API_URL, current_version).await
 }
 
 pub async fn check_release_from_url(

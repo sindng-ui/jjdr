@@ -8,6 +8,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[derive(Debug, Clone)]
 pub struct WinHttpTextResponse {
     pub status: u16,
+    pub final_url: Option<String>,
     pub body: String,
 }
 
@@ -71,8 +72,11 @@ if ($env:JJDR_WINHTTP_ACCEPT) {
 try {
   $resp = $client.SendAsync($req).GetAwaiter().GetResult()
   $status = [int]$resp.StatusCode
+  $finalUrl = ''
+  try { $finalUrl = $resp.RequestMessage.RequestUri.AbsoluteUri } catch {}
   $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
   Write-Output ("STATUS:" + $status)
+  Write-Output ("URL:" + $finalUrl)
   Write-Output $body
 } finally {
   $client.Dispose()
@@ -106,16 +110,22 @@ try {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut lines = stdout.splitn(2, '\n');
+    let mut lines = stdout.splitn(3, '\n');
     let first = lines.next().unwrap_or("").trim();
+    let second = lines.next().unwrap_or("").trim();
     let rest = lines.next().unwrap_or("");
     let status = first
         .strip_prefix("STATUS:")
         .and_then(|s| s.trim().parse::<u16>().ok())
         .ok_or_else(|| "Unexpected response format from Windows proxy fallback.".to_string())?;
+    let final_url = second
+        .strip_prefix("URL:")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     Ok(WinHttpTextResponse {
         status,
+        final_url,
         body: rest.to_string(),
     })
 }
