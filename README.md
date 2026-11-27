@@ -11,6 +11,7 @@
 - **빠른 파일 검색 & 내장 뷰어 (`Ctrl+P`)**: 프로젝트별 백그라운드 인덱스 기반 Fuzzy · Glob(`*.cpp`) · Regex 초고속 검색과 내장 코드(구문 강조)/Markdown(GFM) 뷰어 제공
 - **초경량 하이브리드 터미널 & 무손실 복원**: 평소 관제는 `xterm.js` 0개 + Zero-Blur UI로 가볍게 유지하고, 앱을 닫아도 `herdr-core` 위 AI 세션은 그대로 살아 있으며 재실행 시 자동 복원
 - **커스텀 테마 & 레이아웃**: 4종 내장 테마(`Aurora Dusk` 기본 / `Warm Lounge` / `Nordic Mist` / `Botanical Slate`), 한 줄 카드 밀도(`3/2` · `4/2` · `5/3`), 카드 별칭/메모 및 1:1 자리 교환 지원
+- **팀 자동 PR 리뷰 (`Team Orchestration`)**: `gh pr create` 자동 감지 → 리뷰어 2명 지정 → 사내 공용 PC 경량 Relay(`jjdr-relay`)로 임시 리뷰 Worktree 자동 실행 & 실시간 상태바·Zen MD 열람 ([사용 가이드](docs/team_auto_review_guide_2026-11-27.md) · [Relay 서버 가이드](relay/README.md))
 
 ## Zen 모드 (`Ctrl + 3`)
 

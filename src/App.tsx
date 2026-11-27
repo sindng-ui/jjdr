@@ -3,6 +3,7 @@ import { useHerdrSync } from "./hooks/useHerdrSync";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useFileIndexWarmup } from "./hooks/useFileIndexWarmup";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
+import { useTrackBPrDetector } from "./hooks/useTrackBPrDetector";
 import { useUiStore } from "./store/useUiStore";
 import { TopStatusBar } from "./components/layout/TopStatusBar";
 import { SidebarProjects } from "./components/layout/SidebarProjects";
@@ -21,6 +22,8 @@ import { LaunchSessionModal } from "./components/modals/LaunchSessionModal";
 import { TeardownModal } from "./components/modals/TeardownModal";
 import { DiffPreviewModal } from "./components/modals/DiffPreviewModal";
 import { SettingsModal } from "./components/modals/SettingsModal";
+import { PrReviewPromptBar } from "./components/team/PrReviewPromptBar";
+import { ReviewerPickerModal } from "./components/team/ReviewerPickerModal";
 
 const AttachedTerminalDrawer = lazy(() =>
   import("./components/terminal/AttachedTerminalDrawer").then((m) => ({
@@ -51,6 +54,7 @@ export function App() {
   useGlobalShortcuts();
   useFileIndexWarmup();
   useUpdateChecker();
+  useTrackBPrDetector();
 
   const startupReady = useUiStore((s) => s.startupReady);
   const viewMode = useUiStore((s) => s.viewMode);
@@ -144,6 +148,8 @@ export function App() {
       <TeardownModal />
       <DiffPreviewModal />
       <SettingsModal />
+      <PrReviewPromptBar />
+      <ReviewerPickerModal />
       {updateModalOpen && (
         <Suspense fallback={null}>
           <UpdateModal />

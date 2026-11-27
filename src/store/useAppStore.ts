@@ -7,14 +7,17 @@ import type {
   DashboardWorkerResult,
   HerdrHealth,
   ProjectConfig,
+  ReviewRequestWithAssignments,
   StateBatchPayload,
   TeamConnectionSnapshot,
+  TeamStatusChangedEvent,
   TemplateInfo,
   TerminalInfo,
   TerminalPreview,
   WorktreeCardMeta,
   WorktreeInfo,
 } from "../types/domain";
+import { applyStatusEventToAuthoredReviews } from "../utils/teamReviews";
 import {
   createDefaultTeamSettings,
   normalizeTeamSettings,
@@ -89,6 +92,7 @@ interface AppStoreState {
   teamSnapshot: TeamConnectionSnapshot | null;
   autoReviewJobs: AutoReviewJob[];
   autoReviewJobsByWorktree: Record<string, AutoReviewJob>;
+  authoredReviews: ReviewRequestWithAssignments[];
   hydrated: boolean;
   seq: number;
 
@@ -96,6 +100,9 @@ interface AppStoreState {
   setHealth: (health: HerdrHealth) => void;
   setTeamSnapshot: (snapshot: TeamConnectionSnapshot | null) => void;
   setAutoReviewJobs: (jobs: AutoReviewJob[]) => void;
+  setAuthoredReviews: (list: ReviewRequestWithAssignments[]) => void;
+  upsertAuthoredReview: (item: ReviewRequestWithAssignments) => void;
+  applyTeamStatusEvent: (event: TeamStatusChangedEvent) => void;
   setProjects: (projects: ProjectConfig[]) => void;
   setWorktreesByProject: (map: Record<string, WorktreeInfo[]>) => void;
   setProjectWorktrees: (projectId: string, list: WorktreeInfo[]) => void;
@@ -157,6 +164,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   teamSnapshot: null,
   autoReviewJobs: [],
   autoReviewJobsByWorktree: {},
+  authoredReviews: [],
   hydrated: false,
   seq: 0,
 
@@ -301,6 +309,24 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }
     set({ autoReviewJobs: jobs, autoReviewJobsByWorktree: byWt });
   },
+  setAuthoredReviews: (authoredReviews) => set({ authoredReviews }),
+  upsertAuthoredReview: (item) =>
+    set((state) => {
+      const idx = state.authoredReviews.findIndex(
+        (r) => r.request.request_id === item.request.request_id
+      );
+      if (idx >= 0) {
+        const next = state.authoredReviews.slice();
+        next[idx] = item;
+        return { authoredReviews: next };
+      }
+      return { authoredReviews: [item, ...state.authoredReviews] };
+    }),
+  applyTeamStatusEvent: (event) =>
+    set((state) => {
+      const next = applyStatusEventToAuthoredReviews(state.authoredReviews, event);
+      return next === state.authoredReviews ? state : { authoredReviews: next };
+    }),
   setSettings: (settings) => {
     const normalized: AppSettings = {
       ...settings,

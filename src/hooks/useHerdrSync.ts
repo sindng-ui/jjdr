@@ -11,6 +11,7 @@ import {
   isMainVisibleOnScreen,
   isTauriRuntime,
   listAllWorktrees,
+  listAuthoredTeamReviews,
   listAutoReviewJobs,
   listTemplates,
   listenAutoReviewJobsChanged,
@@ -19,6 +20,7 @@ import {
   listenOverlayOpenCard,
   listenStateBatch,
   listenTeamStateChanged,
+  listenTeamStatusChanged,
   listenTeamWorktreesDirty,
   listenWorktreeTeardownResult,
   loadPersistedBundle,
@@ -263,11 +265,12 @@ export function useHerdrSync() {
           }, 800);
         }
 
-        const [wts, templates, teamSnap, reviewJobs] = await Promise.all([
+        const [wts, templates, teamSnap, reviewJobs, authoredList] = await Promise.all([
           listAllWorktrees().catch(() => ({})),
           listTemplates().catch(() => []),
           getTeamStatus().catch(() => null),
           listAutoReviewJobs().catch(() => []),
+          listAuthoredTeamReviews().catch(() => []),
         ]);
         if (!active) return;
         worktreesLoadedRef.current = true;
@@ -277,6 +280,7 @@ export function useHerdrSync() {
           useAppStore.getState().setTeamSnapshot(teamSnap);
         }
         useAppStore.getState().setAutoReviewJobs(reviewJobs);
+        useAppStore.getState().setAuthoredReviews(authoredList);
       } catch (err) {
         console.error("Failed to bootstrap jjdr state:", err);
       }
@@ -312,14 +316,31 @@ export function useHerdrSync() {
     if (!isTauriRuntime()) return;
     let active = true;
     let unlistenTeam: (() => void) | null = null;
+    let unlistenStatus: (() => void) | null = null;
     let unlistenJobs: (() => void) | null = null;
     let unlistenDirty: (() => void) | null = null;
 
     void listenTeamStateChanged((snapshot) => {
       if (!active) return;
+      const prevConnected = useAppStore.getState().teamSnapshot?.connected ?? false;
       useAppStore.getState().setTeamSnapshot(snapshot);
+      if (snapshot.connected && !prevConnected) {
+        void listAuthoredTeamReviews()
+          .then((list) => {
+            if (active) useAppStore.getState().setAuthoredReviews(list);
+          })
+          .catch(() => {});
+      }
     }).then((fn) => {
       if (active) unlistenTeam = fn;
+      else fn();
+    });
+
+    void listenTeamStatusChanged((evt) => {
+      if (!active) return;
+      useAppStore.getState().applyTeamStatusEvent(evt);
+    }).then((fn) => {
+      if (active) unlistenStatus = fn;
       else fn();
     });
 
@@ -354,6 +375,7 @@ export function useHerdrSync() {
     return () => {
       active = false;
       if (unlistenTeam) unlistenTeam();
+      if (unlistenStatus) unlistenStatus();
       if (unlistenJobs) unlistenJobs();
       if (unlistenDirty) unlistenDirty();
     };

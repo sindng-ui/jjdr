@@ -6,6 +6,7 @@ import type {
   AutoReviewJob,
   BgOverlayPayload,
   BootstrapConfig,
+  CancelReviewRequestResponse,
   DiffDetail,
   DownloadOutcome,
   GeminiBridgeStatus,
@@ -13,12 +14,17 @@ import type {
   OverlayOpenCardEvent,
   PersistedBundle,
   PersistedUiState,
+  PrReviewCandidate,
   ProjectConfig,
   RelayTestResult,
   RepoInspectInfo,
+  ReviewRequestWithAssignments,
   StateBatchPayload,
+  SubmitTeamReviewInput,
+  SubmitTeamReviewResult,
   TeamConnectionSnapshot,
   TeamPeerInfo,
+  TeamStatusChangedEvent,
   TemplateInfo,
   TermClosedEvent,
   TermDataEvent,
@@ -582,4 +588,66 @@ export async function listenTeamWorktreesDirty(
   cb: () => void
 ): Promise<UnlistenFn> {
   return listen<boolean>("jjdr:team-worktrees-dirty", () => cb());
+}
+
+export async function inspectPrForReviewRequest(params: {
+  projectId: string;
+  worktreePath: string;
+  prNumber: number;
+  prUrlHint?: string | null;
+  manual?: boolean;
+}): Promise<PrReviewCandidate> {
+  return invoke<PrReviewCandidate>("inspect_pr_for_review_request", {
+    projectId: params.projectId,
+    worktreePath: params.worktreePath,
+    prNumber: params.prNumber,
+    prUrlHint: params.prUrlHint ?? null,
+    manual: Boolean(params.manual),
+  });
+}
+
+export async function submitTeamReviewRequest(
+  input: SubmitTeamReviewInput
+): Promise<SubmitTeamReviewResult> {
+  return invoke<SubmitTeamReviewResult>("submit_team_review_request", {
+    input,
+  });
+}
+
+export async function dismissPrReviewPrompt(
+  repoUrl: string,
+  prNumber: number,
+  headSha: string
+): Promise<void> {
+  return invoke<void>("dismiss_pr_review_prompt", {
+    repoUrl,
+    prNumber,
+    headSha,
+  });
+}
+
+export async function listAuthoredTeamReviews(): Promise<
+  ReviewRequestWithAssignments[]
+> {
+  return invoke<ReviewRequestWithAssignments[]>("list_authored_team_reviews");
+}
+
+export async function cancelAuthoredTeamReview(
+  requestId: string,
+  reviewerId?: string | null,
+  reason?: string | null
+): Promise<CancelReviewRequestResponse> {
+  return invoke<CancelReviewRequestResponse>("cancel_authored_team_review", {
+    requestId,
+    reviewerId: reviewerId ?? null,
+    reason: reason ?? null,
+  });
+}
+
+export async function listenTeamStatusChanged(
+  cb: (payload: TeamStatusChangedEvent) => void
+): Promise<UnlistenFn> {
+  return listen<TeamStatusChangedEvent>("jjdr:team-status-changed", (e) =>
+    cb(e.payload)
+  );
 }

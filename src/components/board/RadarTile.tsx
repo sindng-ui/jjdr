@@ -8,6 +8,7 @@ import {
   Plus,
   Terminal,
   Trash2,
+  Users,
 } from "lucide-react";
 import type {
   EnrichedSession,
@@ -24,10 +25,13 @@ import {
 } from "../../workers/dashboardLogic";
 import { pickPreferredWorktreeSession } from "../../utils/worktreeSessions";
 import {
+  inspectPrForReviewRequest,
   killTerminal,
   launchSession,
   sendTerminalKeys,
 } from "../../services/tauriBridge";
+import { findAuthoredReviewForCard } from "../../utils/teamReviews";
+import { AuthorReviewStatusBar } from "../team/AuthorReviewStatusBar";
 
 interface RadarTileProps {
   project: ProjectConfig;
@@ -75,7 +79,26 @@ export const RadarTile = React.memo(function RadarTile({
   const isLive = session?.terminal.state === "live";
 
   const showOverlap = useAppStore((s) => s.settings.show_merge_overlap);
+  const teamEnabled = useAppStore((s) => s.settings.team?.enabled ?? false);
   const cardMeta = useAppStore((s) => s.worktreeMeta[normWtPath]);
+  const autoMission = useAppStore((s) => s.autoMissionByWorktree[normWtPath]);
+  const isAutoReviewWt = useAppStore((s) =>
+    Boolean(s.autoReviewJobsByWorktree[normWtPath])
+  );
+  const authoredReviews = useAppStore((s) => s.authoredReviews);
+
+  const prNumber = cardMeta?.pr_number ?? autoMission?.prNumber ?? null;
+  const prUrl = cardMeta?.pr_url ?? autoMission?.prUrl ?? null;
+  const authoredReview =
+    teamEnabled && !isAutoReviewWt && authoredReviews.length > 0
+      ? findAuthoredReviewForCard(authoredReviews, {
+          prNumber,
+          prUrl,
+          branch: worktree.branch,
+        })
+      : null;
+
+  const setReviewPickerTarget = useUiStore((s) => s.setReviewPickerTarget);
 
   const setSelectedCardKey = useUiStore((s) => s.setSelectedCardKey);
   const setSelectedAddress = useUiStore((s) => s.setSelectedAddress);
@@ -344,6 +367,41 @@ export const RadarTile = React.memo(function RadarTile({
 
           {/* Hover Quick Action Pills */}
           <div className="hidden group-hover:inline-flex items-center gap-0.5">
+            {teamEnabled && !isAutoReviewWt && prNumber !== null && (
+              <button
+                type="button"
+                onClick={() => {
+                  void inspectPrForReviewRequest({
+                    projectId: project.id,
+                    worktreePath: worktree.path,
+                    prNumber,
+                    prUrlHint: prUrl,
+                    manual: true,
+                  })
+                    .then((candidate) => {
+                      if (!candidate.eligible_for_auto_prompt) {
+                        showToast(
+                          `PR #${prNumber} cannot be reviewed (${candidate.skip_reason ?? "not open"}).`,
+                          "info"
+                        );
+                        return;
+                      }
+                      setReviewPickerTarget({ candidate, maxReviewers: 2 });
+                    })
+                    .catch((err) => {
+                      showToast(
+                        `Failed to inspect PR #${prNumber}: ${String(err)}`,
+                        "error"
+                      );
+                    });
+                }}
+                title={`Request Team Auto-Review for PR #${prNumber}`}
+                className="p-1 rounded-full hover:bg-black/15 cursor-pointer"
+                style={{ color: "var(--accent)" }}
+              >
+                <Users className="w-3.5 h-3.5" />
+              </button>
+            )}
             {(worktree.added_lines > 0 ||
               worktree.deleted_lines > 0 ||
               worktree.dirty_count > 0) && (
@@ -481,6 +539,16 @@ export const RadarTile = React.memo(function RadarTile({
           </button>
         )}
       </div>
+
+      {authoredReview && (
+        <AuthorReviewStatusBar
+          review={authoredReview}
+          projectId={project.id}
+          projectName={project.name}
+          worktreePath={worktree.path}
+          compact
+        />
+      )}
     </div>
   );
 });

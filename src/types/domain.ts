@@ -418,3 +418,108 @@ export interface DashboardWorkerResult {
   globalCounts: DashboardCounts;
   groups: string[];
 }
+
+export type ReviewAssignmentStatus =
+  | "pending_offline"
+  | "dispatched"
+  | "delivered"
+  | "queued"
+  | "reviewing"
+  | "completed"
+  | "rejected"
+  | "failed"
+  | "cancelled"
+  | "expired";
+
+export interface ReviewRequestPayload {
+  request_id: string;
+  repo_url: string;
+  pr_number: number;
+  pr_url: string;
+  pr_title: string;
+  base_branch: string;
+  head_branch: string;
+  head_sha: string;
+  author_id: string;
+  created_ms: number;
+}
+
+export interface ReviewAssignmentView {
+  request_id: string;
+  reviewer_id: string;
+  status: ReviewAssignmentStatus;
+  reject_reason?: string | null;
+  detail?: string | null;
+  worker_agent?: string | null;
+  claimed_by_device_id?: string | null;
+  known_peer: boolean;
+  created_ms: number;
+  updated_ms: number;
+  expires_ms: number;
+}
+
+export interface ReviewRequestWithAssignments {
+  request: ReviewRequestPayload;
+  assignments: ReviewAssignmentView[];
+}
+
+export interface TeamStatusChangedEvent {
+  request_id: string;
+  repo_url: string;
+  pr_number: number;
+  head_sha: string;
+  reviewer_id: string;
+  status: ReviewAssignmentStatus;
+  reject_reason?: string | null;
+  detail?: string | null;
+  worker_agent?: string | null;
+  updated_ms: number;
+}
+
+export interface PrReviewCandidate {
+  repo_url: string;
+  project_id: string;
+  project_name: string;
+  worktree_path: string;
+  pr_number: number;
+  pr_url: string;
+  pr_title: string;
+  base_branch: string;
+  head_branch: string;
+  head_sha: string;
+  author_id: string;
+  is_draft: boolean;
+  created_at_ms?: number | null;
+  already_requested_reviewers: string[];
+  eligible_for_auto_prompt: boolean;
+  skip_reason?: string | null;
+}
+
+export interface SubmitTeamReviewInput {
+  project_id: string;
+  worktree_path: string;
+  repo_url: string;
+  pr_number: number;
+  pr_url: string;
+  pr_title: string;
+  base_branch: string;
+  head_branch: string;
+  head_sha: string;
+  reviewer_ids: string[];
+  assign_on_github?: boolean;
+}
+
+export interface SubmitTeamReviewResult {
+  request?: ReviewRequestWithAssignments | null;
+  reviewers_sent: string[];
+  gh_assigned: boolean;
+  gh_error?: string | null;
+  queued_offline: boolean;
+  relay_error?: string | null;
+}
+
+export interface CancelReviewRequestResponse {
+  request_id: string;
+  cancelled_reviewers: string[];
+  skipped_terminal_reviewers: string[];
+}

@@ -34,6 +34,8 @@ use store::overlay::BgOverlayPayload;
 #[cfg(not(test))]
 use store::projects::PersistenceStore;
 #[cfg(not(test))]
+use team::author::PromptedPrStore;
+#[cfg(not(test))]
 use team::client::TeamRelayRuntime;
 #[cfg(not(test))]
 use team::orchestrator::AutoReviewOrchestrator;
@@ -45,6 +47,7 @@ pub struct AppState {
     pub gemini_bridge: Arc<GeminiBridgeRuntime>,
     pub team_relay: Arc<TeamRelayRuntime>,
     pub auto_review: Arc<AutoReviewOrchestrator>,
+    pub prompted_prs: Mutex<PromptedPrStore>,
     pub store: Arc<PersistenceStore>,
     pub attach: Arc<AttachManager>,
     pub file_index: Arc<FileIndexStore>,
@@ -67,6 +70,7 @@ pub fn run() {
     let gemini_bridge = GeminiBridgeRuntime::new();
     let store = Arc::new(PersistenceStore::new());
     let team_relay = TeamRelayRuntime::new(store.local_dir());
+    let prompted_prs = PromptedPrStore::load(store.local_dir());
     let auto_review = AutoReviewOrchestrator::new(
         store.local_dir(),
         store.clone(),
@@ -84,6 +88,7 @@ pub fn run() {
         gemini_bridge: gemini_bridge.clone(),
         team_relay: team_relay.clone(),
         auto_review: auto_review.clone(),
+        prompted_prs: Mutex::new(prompted_prs),
         store: store.clone(),
         attach: attach.clone(),
         file_index,
@@ -196,6 +201,11 @@ pub fn run() {
             commands::team::list_auto_review_jobs,
             commands::team::ack_auto_review_job,
             commands::team::cancel_auto_review_job,
+            commands::team::inspect_pr_for_review_request,
+            commands::team::submit_team_review_request,
+            commands::team::dismiss_pr_review_prompt,
+            commands::team::list_authored_team_reviews,
+            commands::team::cancel_authored_team_review,
         ])
         .build(tauri::generate_context!())
         .expect("error while building jjdr tauri application");

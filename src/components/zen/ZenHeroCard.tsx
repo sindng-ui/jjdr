@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Check, FileDiff, FileText, GitMerge, Home, Trash2 } from "lucide-react";
+import { Check, FileDiff, FileText, GitMerge, Home, Trash2, Users } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
 import type { ZenCardStyle } from "../../utils/zenQueue";
 import { getWorkerPersona } from "../../utils/workerPersona";
@@ -12,9 +12,11 @@ import {
 } from "../../workers/dashboardLogic";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
-import { readTextFile } from "../../services/tauriBridge";
+import { inspectPrForReviewRequest, readTextFile } from "../../services/tauriBridge";
 import { resolveEffectiveMission } from "../../utils/missionDetector";
+import { findAuthoredReviewForCard } from "../../utils/teamReviews";
 import { MissionBadges } from "../shared/MissionBadges";
+import { AuthorReviewStatusBar } from "../team/AuthorReviewStatusBar";
 
 interface ZenHeroCardProps {
   session: EnrichedSession;
@@ -47,6 +49,8 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
   const cardMeta = useAppStore((s) => s.worktreeMeta[normWtPath]);
   const autoMission = useAppStore((s) => s.autoMissionByWorktree[normWtPath]);
   const autoReviewJob = useAppStore((s) => s.autoReviewJobsByWorktree[normWtPath]);
+  const teamEnabled = useAppStore((s) => s.settings.team?.enabled ?? false);
+  const authoredReviews = useAppStore((s) => s.authoredReviews);
 
   const handleOpenReviewMarkdown = useCallback(async () => {
     if (!autoReviewJob?.report_path) return;
@@ -83,6 +87,47 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
       session.previewLines,
     ]
   );
+
+  const authoredReview = useMemo(
+    () =>
+      teamEnabled && !autoReviewJob && authoredReviews.length > 0
+        ? findAuthoredReviewForCard(authoredReviews, {
+            prNumber: mission.prNumber,
+            prUrl: mission.prUrl,
+            branch: session.branch,
+          })
+        : null,
+    [teamEnabled, autoReviewJob, authoredReviews, mission.prNumber, mission.prUrl, session.branch]
+  );
+
+  const handleRequestTeamReview = useCallback(async () => {
+    if (!session.projectId || mission.prNumber === null) return;
+    try {
+      const candidate = await inspectPrForReviewRequest({
+        projectId: session.projectId,
+        worktreePath: session.worktreePath,
+        prNumber: mission.prNumber,
+        prUrlHint: mission.prUrl,
+        manual: true,
+      });
+      if (!candidate.eligible_for_auto_prompt) {
+        useUiStore
+          .getState()
+          .showToast(
+            `PR #${mission.prNumber} cannot be reviewed (${candidate.skip_reason ?? "not open"}).`,
+            "info"
+          );
+        return;
+      }
+      useUiStore
+        .getState()
+        .setReviewPickerTarget({ candidate, maxReviewers: 2 });
+    } catch (err) {
+      useUiStore
+        .getState()
+        .showToast(`Failed to inspect PR #${mission.prNumber}: ${String(err)}`, "error");
+    }
+  }, [session.projectId, session.worktreePath, mission.prNumber, mission.prUrl]);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const sheenRef = useRef<HTMLDivElement>(null);
@@ -373,6 +418,25 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
                   </button>
                 )}
 
+                {teamEnabled &&
+                  !autoReviewJob &&
+                  session.projectId &&
+                  mission.prNumber !== null && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRequestTeamReview()}
+                      className="jjdr-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold cursor-pointer shrink-0"
+                      style={{
+                        color: "var(--accent)",
+                        borderColor: "var(--accent-border)",
+                      }}
+                      title={`Select 2 teammates to auto-review PR #${mission.prNumber}`}
+                    >
+                      <Users className="w-3 h-3" />
+                      <span>Request Review</span>
+                    </button>
+                  )}
+
                 {hasDiff && worktree && onOpenDiff && (
                   <button
                     type="button"
@@ -406,6 +470,17 @@ export const ZenHeroCard = React.memo(function ZenHeroCard({
         >
           {previewText}
         </div>
+
+        {authoredReview && session.projectId && (
+          <div className="relative z-10">
+            <AuthorReviewStatusBar
+              review={authoredReview}
+              projectId={session.projectId}
+              projectName={session.projectName}
+              worktreePath={session.worktreePath}
+            />
+          </div>
+        )}
 
         {/* Row 4: Primary Boss Stamp CTA (+ optional one-click Dismiss ONLY when MERGED) */}
         <div className="relative z-10 pt-1 flex items-center gap-2">

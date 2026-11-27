@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   EnrichedSession,
+  PrReviewCandidate,
   ProjectConfig,
   UpdateCheckResult,
   WorktreeInfo,
@@ -94,6 +95,13 @@ export interface CardGrabState {
   targetNormPath: string;
 }
 
+export interface ReviewPickerTarget {
+  candidate: PrReviewCandidate;
+  replaceRequestId?: string;
+  replaceReviewerId?: string;
+  maxReviewers?: number;
+}
+
 interface UiStoreState {
   startupReady: boolean;
   viewMode: ViewMode;
@@ -138,6 +146,8 @@ interface UiStoreState {
   teardownTarget: TeardownModalTarget | null;
   launchTarget: LaunchModalTarget | null;
   settingsOpen: boolean;
+  pendingPrReviewPrompt: PrReviewCandidate | null;
+  reviewPickerTarget: ReviewPickerTarget | null;
   updateInfo: UpdateCheckResult | null;
   updateModalOpen: boolean;
   toast: { message: string; kind: "info" | "error" | "success" } | null;
@@ -194,6 +204,8 @@ interface UiStoreState {
   setTeardownTarget: (t: TeardownModalTarget | null) => void;
   setLaunchTarget: (t: LaunchModalTarget | null) => void;
   setSettingsOpen: (open: boolean) => void;
+  setPendingPrReviewPrompt: (candidate: PrReviewCandidate | null) => void;
+  setReviewPickerTarget: (target: ReviewPickerTarget | null) => void;
   setUpdateInfo: (info: UpdateCheckResult | null) => void;
   setUpdateModalOpen: (open: boolean) => void;
   openUpdateModal: (info: UpdateCheckResult) => void;
@@ -247,6 +259,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
   teardownTarget: null,
   launchTarget: null,
   settingsOpen: false,
+  pendingPrReviewPrompt: null,
+  reviewPickerTarget: null,
   updateInfo: null,
   updateModalOpen: false,
   toast: null,
@@ -449,6 +463,9 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setTeardownTarget: (teardownTarget) => set({ teardownTarget }),
   setLaunchTarget: (launchTarget) => set({ launchTarget }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setPendingPrReviewPrompt: (pendingPrReviewPrompt) =>
+    set({ pendingPrReviewPrompt }),
+  setReviewPickerTarget: (reviewPickerTarget) => set({ reviewPickerTarget }),
   setUpdateInfo: (updateInfo) => set({ updateInfo }),
   setUpdateModalOpen: (updateModalOpen) => set({ updateModalOpen }),
   openUpdateModal: (updateInfo) => set({ updateInfo, updateModalOpen: true }),

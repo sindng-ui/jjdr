@@ -1,0 +1,60 @@
+========================================================================
+jjdr Team PR Auto-Review — Phase 4 검증 결과 리포트
+작성일: 2026-11-27
+대상: Track B PR 생성 감지 + 2명 리뷰어 선택 UI + 작성자 미니 상태바
+========================================================================
+
+1. 단위 테스트 (Frontend Vitest)
+------------------------------------------------------------------------
+명령: npm run test
+결과: PASS — 26개 테스트 파일 / 112개 테스트 전원 통과 (기존 108개 + Phase 4 신규 4개)
+Phase 4 신규 테스트 (src/utils/teamReviews.test.ts):
+- detectPrCreatedSignal: 사내 GHE `gh pr create` 및 단독 PR URL 감지 / `gh pr view` 오탐 차단
+- sortPeersForReviewPicker: 레포 보유+Online 우선 정렬, 본인 제외, 이미 할당된 리뷰어 표기
+- findAuthoredReviewForCard & applyStatusEventToAuthoredReviews: 최신 PR 매칭, 브랜치 폴백, WS 실시간 불변 패치
+- formatAssignmentChip: 상태별 칩 라벨/톤 및 `[Replace]`/`[Cancel]` 허용 조건 검증
+
+2. 단위 테스트 (Backend Rust src-tauri --lib)
+------------------------------------------------------------------------
+명령: cargo test --offline --lib --manifest-path src-tauri/Cargo.toml
+결과: PASS — 94개 테스트 전원 통과 (기존 91개 + Phase 4 신규 3개)
+Phase 4 신규 테스트 (src-tauri/src/team/author.rs):
+- track_b_gate_accepts_recent_open_non_draft_own_pr_and_blocks_false_positives
+  (본인 OPEN Non-Draft 3분 전 PASS / 타인 PR 차단 / 16분 경과 스크롤백 차단 /
+   2분 미래 시계 오차 허용 · 10분 미래 차단 / Draft 자동 스킵 & 수동 허용 /
+   Merged 자동·수동 차단 / already_prompted 중복 차단)
+- normalize_reviewers_dedupes_excludes_self_and_caps_at_two
+  (작성자 본인 제거, 대소문자/공백/@ 정규화, 중복 제거, 최대 2명 상한)
+- prompted_pr_store_persists_and_enforces_bounded_fifo_cap
+  (`prompted_pr_keys.json` 영속화/재로딩 + 500건 FIFO 상한 유지)
+
+3. TypeScript · Vite · Rust Release Check · Tauri Build & 실기동 생존 검증
+------------------------------------------------------------------------
+- `cargo check --release --offline`: PASS (0 errors, 0 warnings)
+- `tsc && vite build`: PASS (0 errors, 4.12s)
+- `npx tauri build --debug --no-bundle -- --offline`: PASS (실행 중인 release jjdr.exe 보존)
+- 실기동 생존 체크: PASS: tauri-built jjdr.exe stayed alive for 3s (PID=31748)
+  (참고: release `jjdr.exe`를 재빌드할 때는 실행 중인 `jjdr.exe`를 종료한 뒤 `npm run tauri:build` 실행)
+
+4. 파일 라인 수 점검 (900줄 상한 규칙 준수)
+------------------------------------------------------------------------
+- src-tauri/src/team/author.rs                   : 595 lines (OK)
+- src-tauri/src/commands/team.rs                 : 306 lines (OK)
+- src-tauri/src/lib.rs                           : 276 lines (OK)
+- src/utils/teamReviews.ts                       : 386 lines (OK)
+- src/hooks/useTrackBPrDetector.ts               :  91 lines (OK)
+- src/components/team/PrReviewPromptBar.tsx      : 106 lines (OK)
+- src/components/team/ReviewerPickerModal.tsx    : 558 lines (OK)
+- src/components/team/AuthorReviewStatusBar.tsx  : 197 lines (OK)
+- src/components/board/RadarTile.tsx             : 554 lines (OK)
+- src/components/zen/ZenHeroCard.tsx             : 543 lines (OK)
+- src/hooks/useHerdrSync.ts                      : 754 lines (OK)
+=> 전 파일 900줄 미만 유지 확인.
+
+5. 성능 & Zero-Blur & 리그레션 체크리스트
+------------------------------------------------------------------------
+- [PASS] Team Orchestration OFF(기본값) 시 `useTrackBPrDetector`, `AuthorReviewStatusBar`, `list_authored_team_reviews` 모두 즉시 early-return (추가 CPU / `gh` 호출 / 렌더링 0%).
+- [PASS] `jjdr:team-status-changed` WebSocket 이벤트는 `applyStatusEventToAuthoredReviews`로 메모리 내 O(1) 불변 패치하여 불필요한 REST 폴링 0건.
+- [PASS] `prompted_pr_keys.json` 500건 FIFO 상한 + 세션 내 `inspectedRef` Set으로 `gh pr view` 단발 1회 호출 보장.
+- [PASS] 신규 컴포넌트 3종(`PrReviewPromptBar`, `ReviewerPickerModal`, `AuthorReviewStatusBar`) 모두 `React.memo` 적용 + CSS `blur`/`backdrop-blur` 0건.
+========================================================================
