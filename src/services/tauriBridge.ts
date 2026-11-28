@@ -12,6 +12,7 @@ import type {
   GeminiBridgeStatus,
   HerdrHealth,
   IncludeResolveResult,
+  MyOpenPrItem,
   OutlineSymbol,
   OverlayOpenCardEvent,
   PersistedBundle,
@@ -730,6 +731,16 @@ export async function dismissPrReviewPrompt(
     repoUrl,
     prNumber,
     headSha,
+  });
+}
+
+export async function listMyOpenPrs(
+  projectId: string,
+  forceRefresh = false
+): Promise<MyOpenPrItem[]> {
+  return invoke<MyOpenPrItem[]>("list_my_open_prs", {
+    projectId,
+    forceRefresh,
   });
 }
 

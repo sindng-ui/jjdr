@@ -17,6 +17,7 @@ import { useUiStore } from "../../../store/useUiStore";
 import {
   detectTeamGithubId,
   flushTeamOutbox,
+  reconnectTeamRelay,
   testTeamRelayConnection,
 } from "../../../services/tauriBridge";
 import { AGENT_OPTIONS } from "../../../utils/agents";
@@ -44,6 +45,7 @@ export const TeamOrchestrationSettingsTab = React.memo(
     onChangeDraft,
   }: TeamOrchestrationSettingsTabProps) {
     const team = normalizeTeamSettings(draft.team);
+    const savedTeamEnabled = Boolean(useAppStore((s) => s.settings.team?.enabled));
     const snapshot = useAppStore((s) => s.teamSnapshot);
     const projects = useAppStore((s) => s.projects);
     const showToast = useUiStore((s) => s.showToast);
@@ -53,6 +55,7 @@ export const TeamOrchestrationSettingsTab = React.memo(
     const [testResult, setTestResult] = useState<RelayTestResult | null>(null);
     const [detectingId, setDetectingId] = useState(false);
     const [flushing, setFlushing] = useState(false);
+    const [reconnecting, setReconnecting] = useState(false);
 
     // Local text mirrors for CSV fields so users can type trailing commas smoothly
     const [labelsText, setLabelsText] = useState(() =>
@@ -223,6 +226,28 @@ export const TeamOrchestrationSettingsTab = React.memo(
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {savedTeamEnabled && !snapshot?.connected && (
+              <button
+                type="button"
+                disabled={reconnecting}
+                onClick={async () => {
+                  setReconnecting(true);
+                  try {
+                    await reconnectTeamRelay();
+                    showToast("Relay 재연결을 시도했습니다", "info", 1800);
+                  } catch (err) {
+                    showToast(String(err), "error");
+                  } finally {
+                    setReconnecting(false);
+                  }
+                }}
+                className="jjdr-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
+                style={{ color: "var(--accent)" }}
+              >
+                <RefreshCw className={`w-3 h-3 ${reconnecting ? "animate-spin" : ""}`} />
+                Reconnect
+              </button>
+            )}
             {(snapshot?.outbox_pending ?? 0) > 0 && (
               <button
                 type="button"
@@ -436,7 +461,11 @@ export const TeamOrchestrationSettingsTab = React.memo(
               }}
             >
               {testResult.ok
-                ? `OK · v${testResult.server_version} (proto v${testResult.protocol_version}) · ${testResult.latency_ms}ms · peers ${testResult.online_peers}/${testResult.total_peers}`
+                ? `OK · v${testResult.server_version} (proto v${testResult.protocol_version}) · ${testResult.latency_ms}ms · peers ${testResult.online_peers}/${testResult.total_peers}${
+                    !snapshot?.connected
+                      ? " · 아직 미연결(하단 Save Settings를 눌러 적용하세요)"
+                      : ""
+                  }`
                 : `FAIL · ${testResult.error}`}
             </div>
           )}

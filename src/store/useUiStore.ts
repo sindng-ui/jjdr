@@ -15,7 +15,7 @@ import {
 } from "../utils/radarLayout";
 
 export type ViewMode = "radar" | "queue" | "zen";
-export type ZenModeTab = "inbox" | "dispatch";
+export type ZenModeTab = "inbox" | "dispatch" | "reviews";
 export type ZenDispatchStep = "pick_project" | "pick_action" | "browse_worker";
 
 export interface ZenHiredSoloState {
@@ -153,6 +153,7 @@ export interface UiStoreState {
   settingsOpen: boolean;
   pendingPrReviewPrompt: PrReviewCandidate | null;
   reviewPickerTarget: ReviewPickerTarget | null;
+  manualReviewModalOpen: boolean;
   updateInfo: UpdateCheckResult | null;
   updateModalOpen: boolean;
   updateModalBusy: boolean;
@@ -184,6 +185,7 @@ export interface UiStoreState {
   requestZenApprove: () => void;
   setZenModeTab: (tab: ZenModeTab) => void;
   openZenDispatch: (projectId?: string | null) => void;
+  openZenReviews: () => void;
   setZenDispatchStep: (step: ZenDispatchStep) => void;
   setZenDispatchProjectId: (projectId: string | null) => void;
   returnToZenInbox: () => void;
@@ -213,6 +215,7 @@ export interface UiStoreState {
   setSettingsOpen: (open: boolean) => void;
   setPendingPrReviewPrompt: (candidate: PrReviewCandidate | null) => void;
   setReviewPickerTarget: (target: ReviewPickerTarget | null) => void;
+  setManualReviewModalOpen: (open: boolean) => void;
   setUpdateInfo: (info: UpdateCheckResult | null) => void;
   setUpdateModalOpen: (open: boolean) => void;
   setUpdateModalBusy: (busy: boolean) => void;
@@ -270,6 +273,7 @@ export const useUiStore = create<UiStoreState>((set) => ({
   settingsOpen: false,
   pendingPrReviewPrompt: null,
   reviewPickerTarget: null,
+  manualReviewModalOpen: false,
   updateInfo: null,
   updateModalOpen: false,
   updateModalBusy: false,
@@ -403,6 +407,13 @@ export const useUiStore = create<UiStoreState>((set) => ({
       attachedAddress: null,
       terminalDrawerOpen: false,
     }),
+  openZenReviews: () =>
+    set({
+      viewMode: "zen",
+      zenModeTab: "reviews",
+      zenHiredSolo: null,
+      zenHiringState: null,
+    }),
   setZenDispatchStep: (zenDispatchStep) =>
     set((s) => ({
       zenDispatchStep,
@@ -485,6 +496,8 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setPendingPrReviewPrompt: (pendingPrReviewPrompt) =>
     set({ pendingPrReviewPrompt }),
   setReviewPickerTarget: (reviewPickerTarget) => set({ reviewPickerTarget }),
+  setManualReviewModalOpen: (manualReviewModalOpen) =>
+    set({ manualReviewModalOpen }),
   setUpdateInfo: (updateInfo) => set({ updateInfo }),
   setUpdateModalOpen: (updateModalOpen) =>
     set((s) => {

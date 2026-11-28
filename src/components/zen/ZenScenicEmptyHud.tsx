@@ -1,7 +1,8 @@
 import React from "react";
-import { Radar, Send, Sparkles } from "lucide-react";
+import { GitPullRequest, Radar, Send, Sparkles } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
 import type { ZenDispatchProjectSummary } from "../../utils/zenDispatch";
+import type { TeamReviewsSummary } from "../../utils/zenReviews";
 import { useAppStore } from "../../store/useAppStore";
 import { normalizePath } from "../../workers/dashboardLogic";
 import { ZenRunningMissionCard } from "./ZenRunningMissionCard";
@@ -14,9 +15,12 @@ interface ZenScenicEmptyHudProps {
   peekingAddress?: string | null;
   projectSummaries: ZenDispatchProjectSummary[];
   peekSceneryOnly: boolean;
+  teamEnabled?: boolean;
+  reviewSummary?: TeamReviewsSummary | null;
   onPeekSession: (session: EnrichedSession) => void;
   onEditSession?: (session: EnrichedSession) => void;
   onStartDispatch: (projectId?: string | null) => void;
+  onOpenReviews?: () => void;
   onOpenRecap: () => void;
   onOpenRadar: () => void;
 }
@@ -34,9 +38,12 @@ export const ZenScenicEmptyHud = React.memo(function ZenScenicEmptyHud({
   peekingAddress = null,
   projectSummaries,
   peekSceneryOnly,
+  teamEnabled = false,
+  reviewSummary = null,
   onPeekSession,
   onEditSession,
   onStartDispatch,
+  onOpenReviews,
   onOpenRecap,
   onOpenRadar,
 }: ZenScenicEmptyHudProps) {
@@ -230,6 +237,36 @@ export const ZenScenicEmptyHud = React.memo(function ZenScenicEmptyHud({
               <Sparkles className="w-3 h-3" />
               <span>{clearedToday}</span>
             </button>
+
+            {teamEnabled && onOpenReviews && (
+              <button
+                type="button"
+                onClick={onOpenReviews}
+                title="Team PR Reviews Dashboard (Ctrl+Shift+R)"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-opacity hover:opacity-90"
+                style={{
+                  background: reviewSummary?.hasAttention
+                    ? "rgba(120, 53, 15, 0.88)"
+                    : "rgba(30, 41, 70, 0.9)",
+                  border: `1px solid ${
+                    reviewSummary?.hasAttention
+                      ? "rgba(251, 191, 36, 0.55)"
+                      : "rgba(56, 189, 248, 0.4)"
+                  }`,
+                  color: reviewSummary?.hasAttention ? "#fde68a" : "#bae6fd",
+                }}
+              >
+                <GitPullRequest className="w-3 h-3" />
+                <span>
+                  Reviews
+                  {reviewSummary && reviewSummary.totalBadgeCount > 0
+                    ? ` ${reviewSummary.outgoingActive}/${
+                        reviewSummary.incomingReady + reviewSummary.incomingActive
+                      }`
+                    : ""}
+                </span>
+              </button>
+            )}
 
             <button
               type="button"

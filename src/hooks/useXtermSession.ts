@@ -126,7 +126,16 @@ function isReservedGlobalShortcut(ev: KeyboardEvent): boolean {
 
   return (
     (isCtrlShift &&
-      (k === "t" || ev.code === "KeyT" || k === "a" || ev.code === "KeyA")) ||
+      (k === "t" ||
+        ev.code === "KeyT" ||
+        k === "a" ||
+        ev.code === "KeyA" ||
+        k === "r" ||
+        ev.code === "KeyR" ||
+        k === "f" ||
+        ev.code === "KeyF" ||
+        k === "d" ||
+        ev.code === "KeyD")) ||
     (isPlainCtrl &&
       (ev.code === "Backquote" ||
         ev.key === "`" ||
@@ -193,6 +202,7 @@ export function useXtermSession(
   const attachGenRef = useRef(0);
   const hasEverAttachedRef = useRef(false);
   const needsAtomicResetRef = useRef(false);
+  const justAttachedUntilRef = useRef(0);
   const writeQueueRef = useRef<Uint8Array[]>([]);
   const rafIdRef = useRef<number | null>(null);
 
@@ -204,12 +214,20 @@ export function useXtermSession(
     if (!term || writeQueueRef.current.length === 0) return;
     const batch = writeQueueRef.current.splice(0);
     const merged = concatBytes(batch);
+    const forceBottom =
+      needsAtomicResetRef.current || Date.now() < justAttachedUntilRef.current;
 
     if (needsAtomicResetRef.current) {
       needsAtomicResetRef.current = false;
       // Atomic screen swap: reset + initial paint inside a single DEC 2026 sync frame (zero flash!)
       term.reset();
-      term.write(concatBytes([SYNC_START, merged, SYNC_END]));
+      term.write(concatBytes([SYNC_START, merged, SYNC_END]), () => {
+        term.scrollToBottom();
+      });
+    } else if (forceBottom) {
+      term.write(merged, () => {
+        term.scrollToBottom();
+      });
     } else {
       term.write(merged);
     }
@@ -232,7 +250,13 @@ export function useXtermSession(
     if (!term || !fitAddon || !hostEl) return;
     if (hostEl.clientWidth < 40 || hostEl.clientHeight < 40) return;
     try {
+      const buf = term.buffer.active;
+      const wasAtBottom = buf.viewportY >= buf.baseY - 1;
+      const withinAttachWindow = Date.now() < justAttachedUntilRef.current;
       fitAddon.fit();
+      if (wasAtBottom || withinAttachWindow) {
+        term.scrollToBottom();
+      }
       if (activeChannelRef.current !== null && term.cols > 0 && term.rows > 0) {
         void resizeTerminal(activeChannelRef.current, term.cols, term.rows);
       }
@@ -617,6 +641,7 @@ export function useXtermSession(
 
     // Defer reset until the first frame of the new terminal arrives (eliminates blank-screen flash!)
     needsAtomicResetRef.current = true;
+    justAttachedUntilRef.current = Date.now() + 700;
 
     let cancelled = false;
     let unlistenData: (() => void) | null = null;
@@ -692,20 +717,28 @@ export function useXtermSession(
           }
 
           activeChannelRef.current = res.channel;
+          justAttachedUntilRef.current = Date.now() + 700;
           setStatusText(`ch ${res.channel}`);
 
           // Re-sync PTY size after headers/tabs settle and immediately hand keyboard focus to the prompt
           requestAnimationFrame(() => {
             if (cancelled || gen !== attachGenRef.current) return;
             fitNow();
+            termRef.current?.scrollToBottom();
             focusNow();
           });
           setTimeout(() => {
             if (!cancelled && gen === attachGenRef.current) {
               fitNow();
+              termRef.current?.scrollToBottom();
               focusNow();
             }
           }, 140);
+          setTimeout(() => {
+            if (!cancelled && gen === attachGenRef.current) {
+              termRef.current?.scrollToBottom();
+            }
+          }, 320);
 
           if (earlyChunks.length > 0) {
             enqueueBytes(concatBytes(earlyChunks.splice(0)));

@@ -154,6 +154,7 @@ export function useGlobalShortcuts() {
         !ui.commandPaletteOpen &&
         !ui.quickFileOpen &&
         !ui.workspaceSearchOpen &&
+        !ui.manualReviewModalOpen &&
         !ui.markdownViewerTarget &&
         !ui.codeViewerTarget &&
         !ui.projectModalProject &&
@@ -216,6 +217,19 @@ export function useGlobalShortcuts() {
           e.stopPropagation();
           ui.setWorkspaceSearchOpen(!ui.workspaceSearchOpen);
           return;
+        }
+        if (k === "r" || e.code === "KeyR") {
+          const teamEnabled = useAppStore.getState().settings.team?.enabled ?? false;
+          if (teamEnabled) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (ui.viewMode === "zen" && ui.zenModeTab === "reviews") {
+              ui.returnToZenInbox();
+            } else {
+              ui.openZenReviews();
+            }
+            return;
+          }
         }
         if (k === "d" || e.code === "KeyD") {
           e.preventDefault();
@@ -329,6 +343,10 @@ export function useGlobalShortcuts() {
           ui.setContextMenu(null);
           return;
         }
+        if (ui.manualReviewModalOpen) {
+          ui.setManualReviewModalOpen(false);
+          return;
+        }
         if (ui.workspaceSearchOpen) {
           ui.setWorkspaceSearchOpen(false);
           return;
@@ -424,6 +442,11 @@ export function useGlobalShortcuts() {
             return;
           }
           target.blur();
+          return;
+        }
+        if (!inXterm && ui.viewMode === "zen" && ui.zenModeTab === "reviews") {
+          e.preventDefault();
+          ui.returnToZenInbox();
           return;
         }
         if (!inXterm && ui.viewMode === "zen" && ui.zenModeTab === "dispatch") {

@@ -81,6 +81,18 @@ describe("teamReviews utilities (Phase 4)", () => {
     ]);
     expect(bare?.prNumber).toBe(519);
 
+    // Happy: Korean markdown AI summary (>12 lines after gh pr create)
+    const krSummary = detectPrCreatedSignal([
+      "3. Pull Request 생성 내역",
+      "• 작업 브랜치: feat/dongtan-weather",
+      "• 대상 브랜치 (Base): main",
+      "• PR 링크: https://github.com/sindng-ui/jjdr/pull/3",
+    ]);
+    expect(krSummary).toEqual({
+      prNumber: 3,
+      prUrl: "https://github.com/sindng-ui/jjdr/pull/3",
+    });
+
     // Despair: read-only gh pr view / diff must NOT trigger Track B prompt
     const viewed = detectPrCreatedSignal([
       "$ gh pr view 412",

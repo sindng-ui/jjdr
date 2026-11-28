@@ -55,6 +55,7 @@ pub async fn fetch_pr_live_meta(
     pr_number: u64,
 ) -> Result<PrLiveMeta, String> {
     let mut cmd = Command::new("gh");
+    cmd.kill_on_drop(true);
     cmd.current_dir(Path::new(repo_path));
     cmd.args([
         "pr",

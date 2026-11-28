@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Radar, Send } from "lucide-react";
+import { GitPullRequest, Radar, Send } from "lucide-react";
 import type { EnrichedSession } from "../../types/domain";
 import type { ZenDispatchProjectSummary } from "../../utils/zenDispatch";
+import type { TeamReviewsSummary } from "../../utils/zenReviews";
 import { useAppStore } from "../../store/useAppStore";
 import { normalizePath } from "../../workers/dashboardLogic";
 import { ZenRunningMissionCard } from "./ZenRunningMissionCard";
@@ -32,9 +33,12 @@ interface ZenEmptyBriefingProps {
   projectSummaries: ZenDispatchProjectSummary[];
   scenicMode?: boolean;
   peekSceneryOnly?: boolean;
+  teamEnabled?: boolean;
+  reviewSummary?: TeamReviewsSummary | null;
   onPeekSession: (session: EnrichedSession) => void;
   onEditSession?: (session: EnrichedSession) => void;
   onStartDispatch: (projectId?: string | null) => void;
+  onOpenReviews?: () => void;
   onOpenRecap: () => void;
   onOpenRadar: () => void;
 }
@@ -52,9 +56,12 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
   projectSummaries,
   scenicMode = false,
   peekSceneryOnly = false,
+  teamEnabled = false,
+  reviewSummary = null,
   onPeekSession,
   onEditSession,
   onStartDispatch,
+  onOpenReviews,
   onOpenRecap,
   onOpenRadar,
 }: ZenEmptyBriefingProps) {
@@ -90,9 +97,12 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
         peekingAddress={peekingAddress}
         projectSummaries={projectSummaries}
         peekSceneryOnly={peekSceneryOnly}
+        teamEnabled={teamEnabled}
+        reviewSummary={reviewSummary}
         onPeekSession={onPeekSession}
         onEditSession={onEditSession}
         onStartDispatch={onStartDispatch}
+        onOpenReviews={onOpenReviews}
         onOpenRecap={onOpenRecap}
         onOpenRadar={onOpenRadar}
       />
@@ -400,6 +410,35 @@ export const ZenEmptyBriefing = React.memo(function ZenEmptyBriefing({
               Ctrl+Shift+D
             </kbd>
           </button>
+          {teamEnabled && onOpenReviews && (
+            <button
+              type="button"
+              onClick={onOpenReviews}
+              className="jjdr-pill inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold cursor-pointer"
+              style={{
+                color: reviewSummary?.hasAttention
+                  ? "var(--warn-fg)"
+                  : "var(--accent)",
+                borderColor: reviewSummary?.hasAttention
+                  ? "var(--warn-border)"
+                  : undefined,
+              }}
+              title="Team PR Reviews Dashboard (Ctrl+Shift+R)"
+            >
+              <GitPullRequest className="w-3.5 h-3.5" />
+              <span>
+                Reviews
+                {reviewSummary && reviewSummary.totalBadgeCount > 0
+                  ? ` · 보낸 ${reviewSummary.outgoingActive} · 받은 ${
+                      reviewSummary.incomingReady + reviewSummary.incomingActive
+                    }`
+                  : ""}
+              </span>
+              <kbd className="text-[10px] font-mono-code opacity-70">
+                Ctrl+Shift+R
+              </kbd>
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenRadar}

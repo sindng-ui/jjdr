@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -14,15 +15,28 @@ use crate::team::outbox::{classify_http_status, DeliveryAttemptResult, OutboxPay
 use crate::team::RelayTestResult;
 
 pub fn build_http_client(bypass_proxy: bool) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(4))
-        .timeout(Duration::from_secs(10));
-    if bypass_proxy {
-        builder = builder.no_proxy();
-    }
-    builder
-        .build()
-        .map_err(|e| format!("failed to build http client: {}", e))
+    static NO_PROXY_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    static DEFAULT_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+
+    let cell = if bypass_proxy {
+        &NO_PROXY_CLIENT
+    } else {
+        &DEFAULT_CLIENT
+    };
+
+    cell.get_or_init(|| {
+        let mut builder = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(10))
+            .pool_max_idle_per_host(4);
+        if bypass_proxy {
+            builder = builder.no_proxy();
+        }
+        builder
+            .build()
+            .map_err(|e| format!("failed to build http client: {}", e))
+    })
+    .clone()
 }
 
 pub fn build_ws_url(base_http_url: &str, team_key: &str) -> Option<String> {

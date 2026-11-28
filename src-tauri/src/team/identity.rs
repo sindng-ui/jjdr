@@ -72,6 +72,7 @@ pub async fn detect_github_id_via_gh(normalized_repos: &[String]) -> Result<Stri
 
 async fn run_gh_whoami(gh_host: Option<&str>) -> Result<String, String> {
     let mut cmd = Command::new("gh");
+    cmd.kill_on_drop(true);
     cmd.args(["api", "user", "--jq", ".login"]);
     if let Some(host) = gh_host {
         cmd.env("GH_HOST", host);

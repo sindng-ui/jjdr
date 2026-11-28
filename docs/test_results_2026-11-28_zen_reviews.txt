@@ -1,0 +1,72 @@
+# Test Results - Zen Team Reviews Dashboard (2026-11-28)
+
+## Scope
+- Rust Backend: `src-tauri/src/team/author.rs`, `src-tauri/src/commands/team.rs`, `src-tauri/src/lib.rs`
+  - `list_my_open_prs` IPC command (`gh pr list --author @me --state open --limit 20`, GHE `GH_HOST` aware, `CREATE_NO_WINDOW`, 10s timeout, **20-second per-project in-memory cache**).
+- Frontend Store & Logic: `src/types/domain.ts`, `src/services/tauriBridge.ts`, `src/store/useUiStore.ts`, `src/utils/modalGuard.ts`, `src/utils/zenReviews.ts`, `src/hooks/useGlobalShortcuts.ts`, `src/hooks/useXtermSession.ts`
+  - Zen 3rd tab (`reviews`), Edge-Triggered Auto-Return to `inbox` on new actionable task (`Needs You` / `Ready`), `Ctrl+Shift+R` global toggle, `Esc` quick return / modal close.
+- Frontend UI Components:
+  - `src/components/zen/ZenModeTopBar.tsx`
+  - `src/components/zen/ZenReviewsView.tsx`
+  - `src/components/zen/ZenOutgoingReviewsColumn.tsx`
+  - `src/components/zen/ZenIncomingReviewsColumn.tsx`
+  - `src/components/team/ManualPrReviewModal.tsx`
+  - `src/components/zen/ZenModeView.tsx`
+  - `src/components/zen/ZenEmptyBriefing.tsx`
+  - `src/components/zen/ZenScenicEmptyHud.tsx`
+- Documentation: `APP_MAP.md`, `docs/zen_reviews_dashboard_plan_2026-11-28.md`
+
+## Automated Verification Results
+
+### 1. Rust Unit Tests (`cargo test --offline --manifest-path src-tauri/Cargo.toml --lib team::`)
+- Status: PASS
+- Summary: 18 passed; 0 failed; 0 ignored
+
+### 2. Rust Compilation Check (`cargo check --offline --manifest-path src-tauri/Cargo.toml`)
+- Status: PASS
+- Errors: 0 (0 warnings in `jjdr`)
+
+### 3. Frontend Unit Tests (`npm run test` / Vitest)
+- Status: PASS
+- Summary: 32 test files passed, 137 tests passed (0 failed)
+- Includes new unit tests in `src/utils/zenReviews.test.ts` (Edge-Triggered auto-return, PR# / URL parsing, outgoing/incoming sorting, summary metrics) and updated `src/utils/modalGuard.test.ts` (`manualReviewModalOpen`).
+
+### 4. TypeScript & Production Bundle (`npm run build` -> `tsc && vite build`)
+- Status: PASS
+- Errors: 0
+- Build duration: 4.55s
+
+## Quality & Performance Audit
+- **900-Line File Limit**: PASS (All new and modified files are under 900 lines; largest touched file is `ZenModeView.tsx` at 823 lines after extracting `ZenModeTopBar.tsx` at 223 lines; `author.rs` 761 lines, `ZenEmptyBriefing.tsx` 456 lines, `commands/team.rs` 355 lines, `ZenOutgoingReviewsColumn.tsx` 330 lines, `ManualPrReviewModal.tsx` 326 lines, `ZenIncomingReviewsColumn.tsx` 314 lines, `ZenScenicEmptyHud.tsx` 297 lines, `ZenReviewsView.tsx` 250 lines, `zenReviews.ts` 222 lines).
+- **Zero-Blur Policy**: PASS (0 `backdrop-blur` or CSS `blur(` occurrences across all new/modified files).
+- **Performance & Team-Scale Safety**:
+  - `Reviews` tab UI, state subscriptions, and `list_my_open_prs` are completely skipped when `teamEnabled` is OFF (zero overhead for solo users).
+  - `list_my_open_prs` caches per project for **20 seconds** on Rust side and only fetches on-demand inside `ManualPrReviewModal` (no background `gh` polling).
+  - `ZenReviewsView` relies on existing Relay WebSocket push + 1-shot refresh on tab mount, with `useMemo` sorting/summarizing.
+  - `ManualPrReviewModal` is mounted at `ZenModeView` root so an edge-triggered auto-return to `Inbox` never wipes an in-progress PR selection modal.
+
+
+## Pre-Release Resource / CPU / Traffic Audit (v0.5.4)
+1. **React Render Isolation (`ZenReviewsView`, `ZenIncomingReviewsColumn`, `ZenOutgoingReviewsColumn`, `ZenModeView`)**:
+   - Removed `allSessions` subscription from `ZenReviewsView`; `ZenIncomingReviewsColumn` now subscribes only to a primitive key of live matching review terminal addresses -> **0 re-renders** during normal terminal streaming.
+   - Memoized `peerStatusByHandle` (`Map`) in `ZenOutgoingReviewsColumn`, memoized callbacks in `ZenModeView` / `ZenReviewsView`, and short-circuited Reviews auto-return with primitive `actionableKeysSig`.
+2. **Relay & GitHub Traffic Protection (`ZenReviewsView`, `commands/team.rs`)**:
+   - Added 5-second auto-refresh cooldown on `ZenReviewsView` mount (manual `Refresh` button remains immediate).
+   - Added per-project async lock (`open_pr_project_lock`) in `list_my_open_prs` to coalesce concurrent requests onto the 20s cache, plus 60s stale entry pruning.
+3. **Track B CPU Optimization (`useTrackBPrDetector.ts`)**:
+   - Added per-session cheap signature cache (`lastCheckedSigRef`) so regex scanning only runs when a session's turn/status/tail line actually changes; prunes closed sessions.
+4. **Connection Pooling (`src-tauri/src/team/http.rs`)**:
+   - Cached static `OnceLock<reqwest::Client>` pools (`no_proxy` and default) instead of rebuilding HTTP clients per REST call.
+5. **Windows Child Process Leak Prevention (`author.rs`, `identity.rs`, `reject.rs`)**:
+   - Added `cmd.kill_on_drop(true)` to all 5 `tokio::process::Command::new("gh")` invocations so timed-out `gh` processes terminate immediately.
+6. **Relay Startup Wakeup Fix (`commands/system.rs`, `SettingsModal.tsx`, `TeamOrchestrationSettingsTab.tsx`)**:
+   - `load_persisted_bundle` now calls `state.team_relay.notify_config_changed()` so Relay wakes automatically when settings hydrate from `herdr`.
+   - `SettingsModal` surfaces real `saveSettings` errors instead of swallowing them; added `Reconnect` button & unsaved-draft notice in `TeamOrchestrationSettingsTab`.
+
+### Final v0.5.4 Verification
+- `cargo test --offline --manifest-path src-tauri/Cargo.toml --lib team::`: **18 passed, 0 failed**
+- `cargo test --offline --manifest-path relay/Cargo.toml`: **ALL PASS**
+- `cargo check --offline --manifest-path src-tauri/Cargo.toml`: **0 errors**
+- `npm run test` (Vitest): **32 files / 137 tests passed**
+- `npm run build` (`tsc && vite build`): **0 errors (3.82s)**
+- 900-Line Limit & Zero-Blur Audit: **ALL PASS** (max file: `TeamOrchestrationSettingsTab.tsx` 878 lines, `ZenModeView.tsx` 843 lines; 0 CSS blur / `backdrop-blur`).

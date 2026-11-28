@@ -53,12 +53,19 @@ impl RelayConfig {
         let candidate_path = explicit_path
             .map(PathBuf::from)
             .or_else(|| {
-                let p = PathBuf::from("jjdr-relay.toml");
-                if p.exists() {
-                    Some(p)
-                } else {
-                    None
+                let cwd_cfg = PathBuf::from("jjdr-relay.toml");
+                if cwd_cfg.exists() {
+                    return Some(cwd_cfg);
                 }
+                if let Ok(exe_path) = std::env::current_exe() {
+                    if let Some(exe_dir) = exe_path.parent() {
+                        let exe_cfg = exe_dir.join("jjdr-relay.toml");
+                        if exe_cfg.exists() {
+                            return Some(exe_cfg);
+                        }
+                    }
+                }
+                None
             });
 
         if let Some(path) = candidate_path {

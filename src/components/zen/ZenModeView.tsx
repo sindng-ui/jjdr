@@ -1,5 +1,4 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Inbox, Send, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useUiStore } from "../../store/useUiStore";
 import {
@@ -31,12 +30,18 @@ import {
 } from "../../utils/zenSound";
 import { buildDispatchProjectSummaries } from "../../utils/zenDispatch";
 import { recordZenRecapEvent } from "../../utils/zenRecap";
+import {
+  shouldAutoReturnFromReviews,
+  summarizeTeamReviews,
+} from "../../utils/zenReviews";
 import { ZenHeroCard } from "./ZenHeroCard";
 import { ZenTactileControl } from "./ZenTactileControl";
 import { ZenEmptyBriefing } from "./ZenEmptyBriefing";
 import { ZenDispatchView } from "./ZenDispatchView";
+import { ZenReviewsView } from "./ZenReviewsView";
+import { ZenModeTopBar } from "./ZenModeTopBar";
 import { ZenRecapModal } from "./ZenRecapModal";
-import { ZenChillBackdropPicker } from "./ZenChillBackdropPicker";
+import { ManualPrReviewModal } from "../team/ManualPrReviewModal";
 import { useZenChillBackdrop } from "../../hooks/useZenChillBackdrop";
 import type { EnrichedSession } from "../../types/domain";
 import "../../styles/zenMode.css";
@@ -58,10 +63,17 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const worktreeMeta = useAppStore((s) => s.worktreeMeta);
   const removingWorktreePaths = useAppStore((s) => s.removingWorktreePaths);
   const rootCardMode = useAppStore((s) => s.settings.root_card_mode);
+  const teamEnabled = useAppStore((s) => s.settings.team?.enabled ?? false);
+  const authoredReviews = useAppStore((s) => s.authoredReviews);
+  const autoReviewJobs = useAppStore((s) => s.autoReviewJobs);
+  const teamPeers = useAppStore((s) => s.teamSnapshot?.peers);
 
   const zenModeTab = useUiStore((s) => s.zenModeTab);
   const openZenDispatch = useUiStore((s) => s.openZenDispatch);
+  const openZenReviews = useUiStore((s) => s.openZenReviews);
   const returnToZenInbox = useUiStore((s) => s.returnToZenInbox);
+  const manualReviewModalOpen = useUiStore((s) => s.manualReviewModalOpen);
+  const setManualReviewModalOpen = useUiStore((s) => s.setManualReviewModalOpen);
   const recordZenAcked = useUiStore((s) => s.recordZenAcked);
   const zenSkipNonce = useUiStore((s) => s.zenSkipNonce);
   const zenPrevNonce = useUiStore((s) => s.zenPrevNonce);
@@ -243,10 +255,71 @@ export const ZenModeView = React.memo(function ZenModeView() {
   );
 
   const isDispatchTab = zenModeTab === "dispatch";
+  const isReviewsTab = zenModeTab === "reviews" && teamEnabled;
+  const isNonInboxTab = isDispatchTab || isReviewsTab;
+
+  const reviewSummary = useMemo(
+    () =>
+      teamEnabled
+        ? summarizeTeamReviews(authoredReviews, autoReviewJobs, teamPeers ?? [])
+        : null,
+    [teamEnabled, authoredReviews, autoReviewJobs, teamPeers]
+  );
+
+  // Edge-triggered auto-return to Zen Inbox whenever a NEW approval or completed task arrives while viewing Reviews
+  const reviewsBaselineKeysRef = useRef<Set<string> | null>(null);
+  const lastActionableSigRef = useRef<string | null>(null);
+  const actionableKeysSig = useMemo(
+    () => actionablePool.map((s) => cardKeyForSession(s)).join("\0"),
+    [actionablePool]
+  );
+
+  useEffect(() => {
+    if (!isReviewsTab) {
+      reviewsBaselineKeysRef.current = null;
+      lastActionableSigRef.current = null;
+      return;
+    }
+    if (
+      reviewsBaselineKeysRef.current !== null &&
+      lastActionableSigRef.current === actionableKeysSig
+    ) {
+      return;
+    }
+    lastActionableSigRef.current = actionableKeysSig;
+    const keys = actionableKeysSig ? actionableKeysSig.split("\0") : [];
+    if (reviewsBaselineKeysRef.current === null) {
+      reviewsBaselineKeysRef.current = new Set(keys);
+      return;
+    }
+    const decision = shouldAutoReturnFromReviews(
+      reviewsBaselineKeysRef.current,
+      keys
+    );
+    reviewsBaselineKeysRef.current = decision.nextBaselineKeys;
+    if (decision.shouldReturn) {
+      returnToZenInbox();
+      showToast(
+        "새 승인/완료 태스크가 도착해 Inbox로 자동 전환했습니다",
+        "info",
+        2200
+      );
+    }
+  }, [isReviewsTab, actionableKeysSig, returnToZenInbox, showToast]);
+
+  const handleSelectDispatchTab = useCallback(() => {
+    openZenDispatch(null);
+  }, [openZenDispatch]);
+  const handleOpenRecapModal = useCallback(() => setRecapOpen(true), []);
+  const handleCloseRecapModal = useCallback(() => setRecapOpen(false), []);
+  const handleCloseManualModal = useCallback(
+    () => setManualReviewModalOpen(false),
+    [setManualReviewModalOpen]
+  );
 
   // Maintain Sticky Lock & handle automatic advance when the locked card resolves via right terminal
   useEffect(() => {
-    if (isDispatchTab || animatingRef.current) return;
+    if (isNonInboxTab || animatingRef.current) return;
 
     if (selection.lockedCardResolved) {
       if (lockedCardKey) {
@@ -283,7 +356,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
       setEnterNonce((n) => n + 1);
     }
   }, [
-    isDispatchTab,
+    isNonInboxTab,
     selection.lockedCardResolved,
     lockedCardKey,
     activeCard,
@@ -299,7 +372,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
   // Auto-attach right terminal pane to the active Zen Hero Card;
   // automatically close right pane whenever All Clear briefing is shown (unless user explicitly clicked to peek a running card).
   useEffect(() => {
-    if (isDispatchTab) {
+    if (isNonInboxTab) {
       lastAttachedKeyRef.current = null;
       return;
     }
@@ -322,7 +395,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
       }
     }
   }, [
-    isDispatchTab,
+    isNonInboxTab,
     activeCard,
     activeKey,
     exitingCard,
@@ -343,7 +416,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
   const isActiveLive = activeCard?.terminal.state === "live";
 
   useEffect(() => {
-    if (isDispatchTab || hasExitingCard || !activeKey || !activeAddr || !isActiveLive) {
+    if (isNonInboxTab || hasExitingCard || !activeKey || !activeAddr || !isActiveLive) {
       return;
     }
     const token = `${enterNonce}::${activeKey}::${activeAddr}`;
@@ -351,7 +424,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
     lastFocusedCardEnterRef.current = token;
     requestTerminalFocus();
   }, [
-    isDispatchTab,
+    isNonInboxTab,
     enterNonce,
     hasExitingCard,
     activeKey,
@@ -575,7 +648,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
   useEffect(() => {
     if (zenSkipNonce !== prevSkipNonceRef.current) {
       prevSkipNonceRef.current = zenSkipNonce;
-      if (!isDispatchTab) {
+      if (!isNonInboxTab) {
         if (!activeCard && !exitingCard && byBucket.running.length > 0) {
           handleCycleRunningPeek(1);
         } else {
@@ -585,7 +658,7 @@ export const ZenModeView = React.memo(function ZenModeView() {
     }
   }, [
     zenSkipNonce,
-    isDispatchTab,
+    isNonInboxTab,
     activeCard,
     exitingCard,
     byBucket.running.length,
@@ -596,13 +669,13 @@ export const ZenModeView = React.memo(function ZenModeView() {
   useEffect(() => {
     if (zenPrevNonce !== prevPrevNonceRef.current) {
       prevPrevNonceRef.current = zenPrevNonce;
-      if (!isDispatchTab && !activeCard && !exitingCard && byBucket.running.length > 0) {
+      if (!isNonInboxTab && !activeCard && !exitingCard && byBucket.running.length > 0) {
         handleCycleRunningPeek(-1);
       }
     }
   }, [
     zenPrevNonce,
-    isDispatchTab,
+    isNonInboxTab,
     activeCard,
     exitingCard,
     byBucket.running.length,
@@ -612,15 +685,15 @@ export const ZenModeView = React.memo(function ZenModeView() {
   useEffect(() => {
     if (zenApproveNonce !== prevApproveNonceRef.current) {
       prevApproveNonceRef.current = zenApproveNonce;
-      if (!isDispatchTab) {
+      if (!isNonInboxTab) {
         handlePrimaryAction();
       }
     }
-  }, [zenApproveNonce, isDispatchTab, handlePrimaryAction]);
+  }, [zenApproveNonce, isNonInboxTab, handlePrimaryAction]);
 
   const displayCard = exitingCard ?? activeCard;
   const displayKey = displayCard ? cardKeyForSession(displayCard) : null;
-  const isAllClearStage = !isDispatchTab && !displayCard;
+  const isAllClearStage = !isNonInboxTab && !displayCard;
   const showChillBackdrop = isAllClearStage && chillConfig.scene !== "none";
 
   const enterAnimClass = exitingCard
@@ -641,139 +714,36 @@ export const ZenModeView = React.memo(function ZenModeView() {
         </Suspense>
       )}
 
-      {/* Calm Minimal Top Bar: Inbox <-> Dispatch Switcher + Style Switcher + Backdrop + Today Cleared */}
-      <div className="relative z-20 flex items-center justify-between gap-2 flex-wrap shrink-0 select-none">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="jjdr-pill inline-flex items-center rounded-full p-0.5 text-xs">
-            <button
-              type="button"
-              onClick={returnToZenInbox}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full cursor-pointer transition-colors ${
-                !isDispatchTab ? "jjdr-pill-active font-bold" : ""
-              }`}
-              style={
-                !isDispatchTab ? undefined : { color: "var(--text-muted)" }
-              }
-              title="Focus on actionable review cards"
-            >
-              <Inbox className="w-3.5 h-3.5" />
-              <span>Inbox</span>
-              {actionablePool.length > 0 && (
-                <span
-                  className="text-[10px] font-mono-code px-1.5 py-0.2 rounded-full"
-                  style={{
-                    background: "var(--action-soft)",
-                    color: "var(--action-fg)",
-                  }}
-                >
-                  {actionablePool.length}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => openZenDispatch(null)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full cursor-pointer transition-colors ${
-                isDispatchTab ? "jjdr-pill-active font-bold" : ""
-              }`}
-              style={isDispatchTab ? undefined : { color: "var(--text-muted)" }}
-              title="Hire or assign a standby worker (Ctrl+Shift+D)"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>Dispatch</span>
-              {totalDispatchAvailable > 0 && (
-                <span
-                  className="text-[10px] font-mono-code px-1.5 py-0.2 rounded-full"
-                  style={{
-                    background: "var(--ready-soft)",
-                    color: "var(--ready-fg)",
-                  }}
-                >
-                  {totalDispatchAvailable}
-                </span>
-              )}
-            </button>
-          </div>
+      {/* Calm Minimal Top Bar: Inbox <-> Dispatch <-> Reviews + Style Switcher + Backdrop + Today Cleared */}
+      <ZenModeTopBar
+        zenModeTab={isReviewsTab ? "reviews" : isDispatchTab ? "dispatch" : "inbox"}
+        teamEnabled={teamEnabled}
+        actionableCount={actionablePool.length}
+        totalDispatchAvailable={totalDispatchAvailable}
+        reviewBadgeCount={reviewSummary?.totalBadgeCount ?? 0}
+        reviewHasAttention={reviewSummary?.hasAttention ?? false}
+        styleMode={styleMode}
+        isAllClearStage={isAllClearStage}
+        chillConfig={chillConfig}
+        peekSceneryOnly={peekSceneryOnly}
+        photoVersion={photoVersion}
+        sfxEnabled={sfxEnabled}
+        clearedToday={clearedToday}
+        onSelectInbox={returnToZenInbox}
+        onSelectDispatch={handleSelectDispatchTab}
+        onSelectReviews={openZenReviews}
+        onChangeStyle={handleChangeStyle}
+        onChangeChillConfig={handleChangeChillConfig}
+        onTogglePeekScenery={handleTogglePeekScenery}
+        onPhotoChanged={handlePhotoChanged}
+        onToggleSfx={handleToggleSfx}
+        onOpenRecap={handleOpenRecapModal}
+      />
 
-          <div className="jjdr-pill inline-flex items-center rounded-full p-0.5 text-[11px]">
-            <button
-              type="button"
-              onClick={() => handleChangeStyle("holo_stamp")}
-              className={`px-2.5 py-0.5 rounded-full cursor-pointer transition-colors ${
-                styleMode === "holo_stamp" ? "jjdr-pill-active font-semibold" : ""
-              }`}
-              style={
-                styleMode === "holo_stamp"
-                  ? undefined
-                  : { color: "var(--text-muted)" }
-              }
-            >
-              Holo + Lever
-            </button>
-            <button
-              type="button"
-              onClick={() => handleChangeStyle("gacha_dial")}
-              className={`px-2.5 py-0.5 rounded-full cursor-pointer transition-colors ${
-                styleMode === "gacha_dial" ? "jjdr-pill-active font-semibold" : ""
-              }`}
-              style={
-                styleMode === "gacha_dial"
-                  ? undefined
-                  : { color: "var(--text-muted)" }
-              }
-            >
-              Gacha Dial
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {isAllClearStage && (
-            <ZenChillBackdropPicker
-              config={chillConfig}
-              peekSceneryOnly={peekSceneryOnly}
-              photoVersion={photoVersion}
-              onChange={handleChangeChillConfig}
-              onTogglePeekScenery={handleTogglePeekScenery}
-              onPhotoChanged={handlePhotoChanged}
-            />
-          )}
-
-          <button
-            type="button"
-            onClick={handleToggleSfx}
-            title={
-              sfxEnabled
-                ? "Zen tactile SFX ON (click to mute)"
-                : "Zen tactile SFX muted (click to enable)"
-            }
-            className="jjdr-pill h-7 w-7 rounded-full inline-flex items-center justify-center cursor-pointer transition-colors"
-            style={{
-              color: sfxEnabled ? "var(--text-primary)" : "var(--text-faint)",
-            }}
-          >
-            {sfxEnabled ? (
-              <Volume2 className="w-3.5 h-3.5" />
-            ) : (
-              <VolumeX className="w-3.5 h-3.5" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRecapOpen(true)}
-            title="View Daily Work Recap & copy Standup Markdown"
-            className="jjdr-pill inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono-code font-semibold tabular-nums cursor-pointer transition-transform active:scale-[0.98]"
-            style={{ color: "var(--warn-fg)" }}
-          >
-            <Sparkles className="w-3 h-3" />
-            {clearedToday} Cleared Today
-          </button>
-        </div>
-      </div>
-
-      {/* Main Zen Stage: Dispatch View OR Inbox Hero Card OR All Clear Briefing */}
-      {isDispatchTab ? (
+      {/* Main Zen Stage: Reviews Dashboard OR Dispatch View OR Inbox Hero Card OR All Clear Briefing */}
+      {isReviewsTab ? (
+        <ZenReviewsView />
+      ) : isDispatchTab ? (
         <ZenDispatchView styleMode={styleMode} sfxEnabled={sfxEnabled} />
       ) : !displayCard ? (
         <ZenEmptyBriefing
@@ -785,9 +755,12 @@ export const ZenModeView = React.memo(function ZenModeView() {
           projectSummaries={projectSummaries}
           scenicMode={chillConfig.scene !== "none"}
           peekSceneryOnly={peekSceneryOnly}
+          teamEnabled={teamEnabled}
+          reviewSummary={reviewSummary}
           onPeekSession={handlePeekRunning}
           onEditSession={handleEditRunning}
           onStartDispatch={(pid) => openZenDispatch(pid ?? null)}
+          onOpenReviews={openZenReviews}
           onOpenRecap={() => setRecapOpen(true)}
           onOpenRadar={() => setViewMode("radar")}
         />
@@ -860,7 +833,10 @@ export const ZenModeView = React.memo(function ZenModeView() {
       )}
 
       {recapOpen && (
-        <ZenRecapModal open={recapOpen} onClose={() => setRecapOpen(false)} />
+        <ZenRecapModal open={recapOpen} onClose={handleCloseRecapModal} />
+      )}
+      {manualReviewModalOpen && (
+        <ManualPrReviewModal onClose={handleCloseManualModal} />
       )}
     </div>
   );

@@ -165,10 +165,15 @@ export const SettingsModal = React.memo(function SettingsModal() {
       team: normalizedTeam,
       skipped_update_version: latestSkipped,
     };
-    useAppStore.getState().setSettings(toSave);
-    await saveSettings(toSave).catch(() => {});
-    showToast("설정이 저장되었습니다", "success");
-    setOpen(false);
+    try {
+      await saveSettings(toSave);
+      useAppStore.getState().setSettings(toSave);
+      showToast("설정이 저장되었습니다", "success");
+      setOpen(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`설정 저장 실패: ${msg}`, "error");
+    }
   };
 
   const teamDotColor =

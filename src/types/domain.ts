@@ -525,6 +525,18 @@ export interface CancelReviewRequestResponse {
   skipped_terminal_reviewers: string[];
 }
 
+export interface MyOpenPrItem {
+  pr_number: number;
+  pr_url: string;
+  pr_title: string;
+  base_branch: string;
+  head_branch: string;
+  head_sha: string;
+  is_draft: boolean;
+  updated_at: string;
+  already_requested_reviewers: string[];
+}
+
 export type SymbolKind =
   | "namespace"
   | "class"

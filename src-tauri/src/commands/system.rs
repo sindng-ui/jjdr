@@ -39,7 +39,9 @@ pub async fn list_templates(state: State<'_, AppState>) -> Result<Vec<TemplateIn
 
 #[tauri::command]
 pub async fn load_persisted_bundle(state: State<'_, AppState>) -> Result<PersistedBundle, String> {
-    Ok(state.store.load_bundle(&state.herdr).await)
+    let bundle = state.store.load_bundle(&state.herdr).await;
+    state.team_relay.notify_config_changed();
+    Ok(bundle)
 }
 
 #[tauri::command]

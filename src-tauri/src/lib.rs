@@ -218,6 +218,7 @@ pub fn run() {
             commands::team::inspect_pr_for_review_request,
             commands::team::submit_team_review_request,
             commands::team::dismiss_pr_review_prompt,
+            commands::team::list_my_open_prs,
             commands::team::list_authored_team_reviews,
             commands::team::cancel_authored_team_review,
         ])

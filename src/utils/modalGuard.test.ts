@@ -16,6 +16,7 @@ function emptyState(): BlockingModalState {
     markdownViewerTarget: null,
     codeViewerTarget: null,
     reviewPickerTarget: null,
+    manualReviewModalOpen: false,
     updateModalOpen: false,
     contextMenu: null,
   };
@@ -41,6 +42,7 @@ describe("hasBlockingModalOpen", () => {
       { commandPaletteOpen: true },
       { quickFileOpen: true },
       { workspaceSearchOpen: true },
+      { manualReviewModalOpen: true },
       { projectModalProject: "new" },
       { createWorktreeProjectId: "p1" },
       {

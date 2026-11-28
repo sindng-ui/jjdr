@@ -37,7 +37,7 @@ const PR_URL_RE =
   /https?:\/\/[^\s<>"'`)\]]+\/(?:pull|pulls)\/(\d{1,7})(?:[/#?][^\s<>"'`)\]]*)?/i;
 
 const PR_CREATE_CONTEXT_RE =
-  /\bgh\s+pr\s+create\b|creating\s+pull\s+request|opened\s+(?:a\s+)?(?:new\s+)?pull\s+request|pull\s+request\s+(?:#\d+\s+)?created|created\s+pr\s+#?\d+|pr을\s*생성|pr\s*생성\s*완료/i;
+  /\bgh\s+pr\s+create\b|creating\s+pull\s+request|opened\s+(?:a\s+)?(?:new\s+)?pull\s+request|pull\s+request\s+(?:#\d+\s+)?created|created\s+pr\s+#?\d+|pull\s+request\s*생성|pr을\s*생성|pr\s*생성\s*(?:완료|내역)|pr\s*링크/i;
 
 const PR_READONLY_CMD_RE =
   /\bgh\s+pr\s+(?:view|diff|checkout|review|comment|checks|list)\b/i;
@@ -66,7 +66,7 @@ export function detectPrCreatedSignal(
   lines: string[],
   statusMsg?: string | null
 ): PrCreateSignal | null {
-  const recent = lines.slice(-12);
+  const recent = lines.slice(-24);
   const combined = [statusMsg ?? "", ...recent].filter(Boolean).join("\n");
   if (!combined.trim()) return null;
 

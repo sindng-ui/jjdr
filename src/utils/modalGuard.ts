@@ -15,6 +15,7 @@ export type BlockingModalState = Pick<
   | "markdownViewerTarget"
   | "codeViewerTarget"
   | "reviewPickerTarget"
+  | "manualReviewModalOpen"
   | "updateModalOpen"
   | "contextMenu"
 >;
@@ -39,6 +40,7 @@ export function hasBlockingModalOpen(ui: BlockingModalState): boolean {
       ui.markdownViewerTarget ||
       ui.codeViewerTarget ||
       ui.reviewPickerTarget ||
+      ui.manualReviewModalOpen ||
       ui.contextMenu
   );
 }

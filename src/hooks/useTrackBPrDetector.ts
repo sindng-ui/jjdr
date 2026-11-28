@@ -27,16 +27,30 @@ export function useTrackBPrDetector() {
   // Deduplicate inspections within the current app session per (projectId, prNumber)
   const inspectedRef = useRef<Set<string>>(new Set());
   const inFlightRef = useRef<Set<string>>(new Set());
+  // Skip redundant regex scans when a session's preview/status hasn't changed
+  const lastCheckedSigRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (!isTauriRuntime() || !hydrated || !teamEnabled || !relayConnected) return;
-    if (allSessions.length === 0) return;
+    if (allSessions.length === 0) {
+      lastCheckedSigRef.current.clear();
+      return;
+    }
 
     let cancelled = false;
+    const activeAddrs = new Set<string>();
 
     for (const session of allSessions) {
       if (!session.projectId || !session.worktreePath) continue;
       if (session.terminal.state !== "live") continue;
+      activeAddrs.add(session.address);
+
+      const tail = session.previewLines[session.previewLines.length - 1] ?? "";
+      const sig = `${session.terminal.turn}|${session.terminal.status?.msg ?? ""}|${session.previewLines.length}|${tail}`;
+      if (lastCheckedSigRef.current.get(session.address) === sig) {
+        continue;
+      }
+      lastCheckedSigRef.current.set(session.address, sig);
 
       const normWt = normalizePath(session.worktreePath);
       // Never treat ephemeral reviewer worktrees as authored PR creation
@@ -83,6 +97,14 @@ export function useTrackBPrDetector() {
           // Mark inspected to avoid hammering `gh` on non-repo or transient invalid PR numbers
           inspectedRef.current.add(dedupKey);
         });
+    }
+
+    if (lastCheckedSigRef.current.size > activeAddrs.size) {
+      for (const addr of lastCheckedSigRef.current.keys()) {
+        if (!activeAddrs.has(addr)) {
+          lastCheckedSigRef.current.delete(addr);
+        }
+      }
     }
 
     return () => {

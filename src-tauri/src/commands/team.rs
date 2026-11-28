@@ -1,20 +1,47 @@
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
+
 use chrono::Utc;
 use relay_protocol::{
     normalize_github_id, normalize_repo_url, CancelReviewRequestBody, CancelReviewRequestResponse,
     CreateReviewRequestBody, PeerInfo, ReviewRequestWithAssignments,
 };
 use tauri::{AppHandle, State};
+use tokio::sync::Mutex;
 
 use crate::team::author::{
     assign_pr_reviewers_via_gh, evaluate_track_b_candidate, fetch_pr_for_author_review,
-    find_unavailable_reviewers, make_prompted_pr_key, normalize_selected_reviewers,
-    resolve_project_repo_url, PrReviewCandidate, SubmitTeamReviewInput, SubmitTeamReviewResult,
-    MAX_REVIEWERS_PER_REQUEST,
+    find_unavailable_reviewers, list_my_open_prs_via_gh, make_prompted_pr_key,
+    normalize_selected_reviewers, resolve_project_repo_url, MyOpenPrItem, PrReviewCandidate,
+    SubmitTeamReviewInput, SubmitTeamReviewResult, MAX_REVIEWERS_PER_REQUEST,
 };
 use crate::team::http::test_relay_connection;
 use crate::team::jobs::AutoReviewJob;
 use crate::team::{RelayTestResult, TeamConnectionSnapshot};
 use crate::AppState;
+
+const OPEN_PR_CACHE_TTL: Duration = Duration::from_secs(20);
+const OPEN_PR_CACHE_PRUNE_TTL: Duration = Duration::from_secs(60);
+
+fn open_pr_cache() -> &'static Mutex<HashMap<String, (Instant, Vec<MyOpenPrItem>)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<MyOpenPrItem>)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+async fn open_pr_project_lock(project_id: &str) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    let map = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = map.lock().await;
+    if guard.len() > 64 {
+        guard.retain(|_, v| Arc::strong_count(v) > 1);
+    }
+    Arc::clone(
+        guard
+            .entry(project_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(()))),
+    )
+}
 
 #[tauri::command]
 pub async fn get_team_status(state: State<'_, AppState>) -> Result<TeamConnectionSnapshot, String> {
@@ -264,6 +291,44 @@ pub async fn dismiss_pr_review_prompt(
         guard.mark(key);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_my_open_prs(
+    state: State<'_, AppState>,
+    project_id: String,
+    force_refresh: Option<bool>,
+) -> Result<Vec<MyOpenPrItem>, String> {
+    let projects = state.store.list_projects().await;
+    let project = projects
+        .into_iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| format!("Project not found: {}", project_id))?;
+
+    let force = force_refresh.unwrap_or(false);
+    // Serialize per-project lookups so rapid clicks / modal flips coalesce and hit the 20s cache
+    let proj_lock = open_pr_project_lock(&project_id).await;
+    let _in_flight = proj_lock.lock().await;
+
+    if !force {
+        let guard = open_pr_cache().lock().await;
+        if let Some((cached_at, items)) = guard.get(&project_id) {
+            if cached_at.elapsed() < OPEN_PR_CACHE_TTL {
+                return Ok(items.clone());
+            }
+        }
+    }
+
+    let repo_url = resolve_project_repo_url(&project.repo_path).await?;
+    let items = list_my_open_prs_via_gh(&project.repo_path, &repo_url).await?;
+
+    {
+        let mut guard = open_pr_cache().lock().await;
+        guard.retain(|_, (ts, _)| ts.elapsed() < OPEN_PR_CACHE_PRUNE_TTL);
+        guard.insert(project_id, (Instant::now(), items.clone()));
+    }
+
+    Ok(items)
 }
 
 #[tauri::command]

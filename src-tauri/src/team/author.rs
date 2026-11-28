@@ -348,6 +348,7 @@ pub async fn fetch_pr_for_author_review(
     pr_number: u64,
 ) -> Result<AuthorPrDetails, String> {
     let mut cmd = Command::new("gh");
+    cmd.kill_on_drop(true);
     cmd.current_dir(Path::new(repo_path));
     cmd.args([
         "pr",
@@ -412,6 +413,111 @@ pub async fn fetch_pr_for_author_review(
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MyOpenPrItem {
+    pub pr_number: u64,
+    pub pr_url: String,
+    pub pr_title: String,
+    pub base_branch: String,
+    pub head_branch: String,
+    pub head_sha: String,
+    pub is_draft: bool,
+    pub updated_at: String,
+    pub already_requested_reviewers: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GhOpenPrListRaw {
+    #[serde(default)]
+    number: u64,
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default, rename = "isDraft")]
+    is_draft: bool,
+    #[serde(default, rename = "baseRefName")]
+    base_ref_name: String,
+    #[serde(default, rename = "headRefName")]
+    head_ref_name: String,
+    #[serde(default, rename = "headRefOid")]
+    head_ref_oid: String,
+    #[serde(default, rename = "updatedAt")]
+    updated_at: String,
+    #[serde(default, rename = "reviewRequests")]
+    review_requests: Vec<GhReviewRequestObj>,
+}
+
+/// One-shot `gh pr list --author @me --state open --limit 20` (called only on explicit user click,
+/// protected by a 20s per-project cache + 10s timeout + GHE `GH_HOST` support).
+pub async fn list_my_open_prs_via_gh(
+    repo_path: &str,
+    normalized_repo_url: &str,
+) -> Result<Vec<MyOpenPrItem>, String> {
+    let mut cmd = Command::new("gh");
+    cmd.kill_on_drop(true);
+    cmd.current_dir(Path::new(repo_path));
+    cmd.args([
+        "pr",
+        "list",
+        "--author",
+        "@me",
+        "--state",
+        "open",
+        "--limit",
+        "20",
+        "--json",
+        "number,url,title,isDraft,baseRefName,headRefName,headRefOid,updatedAt,reviewRequests",
+    ]);
+    if let Some(host) = extract_host_from_normalized_repo(normalized_repo_url) {
+        if !host.eq_ignore_ascii_case("github.com") {
+            cmd.env("GH_HOST", host);
+        }
+    }
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), cmd.output())
+        .await
+        .map_err(|_| "gh pr list timed out (10s)".to_string())?
+        .map_err(|e| format!("failed to run gh CLI: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "gh pr list failed".to_string()
+        } else {
+            stderr
+        });
+    }
+
+    let rows: Vec<GhOpenPrListRaw> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("invalid gh pr list JSON: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|r| r.number > 0)
+        .map(|r| MyOpenPrItem {
+            pr_number: r.number,
+            pr_url: r.url,
+            pr_title: r.title,
+            base_branch: r.base_ref_name,
+            head_branch: r.head_ref_name,
+            head_sha: r.head_ref_oid,
+            is_draft: r.is_draft,
+            updated_at: r.updated_at,
+            already_requested_reviewers: r
+                .review_requests
+                .into_iter()
+                .filter_map(|req| req.login)
+                .filter_map(|l| normalize_github_id(&l))
+                .collect(),
+        })
+        .collect())
+}
+
 /// One-shot `gh pr edit <N> --add-reviewer <r1,r2>` against corporate GHE or GitHub.
 pub async fn assign_pr_reviewers_via_gh(
     repo_path: &str,
@@ -423,6 +529,7 @@ pub async fn assign_pr_reviewers_via_gh(
         return Ok(());
     }
     let mut cmd = Command::new("gh");
+    cmd.kill_on_drop(true);
     cmd.current_dir(Path::new(repo_path));
     cmd.args([
         "pr",
