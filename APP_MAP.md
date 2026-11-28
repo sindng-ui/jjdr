@@ -196,6 +196,7 @@
 | `scripts/mock-update-server.mjs` | 로컬 E2E 업데이트 테스트용 Mock GitHub Releases API + 청크 스트리밍 인스톨러 서버 (`npm run test:update-mock`) | CLI (`--port`, `--version`, `--size-mb`, `--fail-download`, `--status`) |
 | `scripts/generate-release-notes.mjs` | 직전 `v*` 태그~`HEAD` 커밋 자동 분류(`feat`/`fix`/`perf`/일반) + 커밋 본문 불릿 + `CHANGELOG.md` 우선 반영 + `GITHUB_OUTPUT` 멀티라인 안전 기록 릴리즈 노트 생성기 (`npm run release:notes`) | `extractChangelogSection`, `parseGitLogOutput`, `classifyCommit`, `buildReleaseNotesMarkdown`, `findPreviousReleaseTag`, `collectCommitsSinceTag` |
 | `scripts/generate-latest-manifest.mjs` | CI 릴리즈 빌드 산출물(`.exe`/`.msi`)과 What's New로 Rate-Limit-Free CDN 피드(`latest.json`)를 생성해 GitHub Release Asset으로 첨부하는 스크립트 | `collectInstallerAssets`, `buildLatestManifest` |
+| `docs/dongtan_weather.md` | 2026년 11월 28일 동탄 날씨 요약 3줄 문서 | - |
 
 ---
 
