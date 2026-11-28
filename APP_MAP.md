@@ -221,3 +221,11 @@
 | `relay/tests/despair_and_security_tests.rs` | 인증 실패(401), Layer-1 Reject 4종, 20x 동시성 레이스, 악성 입력, 403 하이잭/터미널 불변성, 429 Rate Limit, SQLi/유니코드 안전성 절망 테스트 (10 TC) | integration test suite |
 | `relay/tests/chaos_hardening_tests.rs` | Half-Open 미ACK 재전달, 30s/60s WS Heartbeat 좀비 소켓 Reaper, 2대 PC 단일 Primary 배정 & 타 기기 409 선점 충돌, 오프라인 취소 `sync-active` 탐지, 미ACK `Dispatched` TTL 만료 카오스 테스트 (5 TC) | integration test suite |
 | `relay/scripts/smoke_test_relay.mjs` | 사내 공용 PC 실전 연결 검증용 Zero-dependency Node 22+ 라이브 스모크/절망 테스터 (`AckDelivery`, 409 기기 충돌, `sync-active` 포함 7단계) | CLI (`--url`, `--key`) |
+
+---
+
+## 5. 기타 문서 (`docs/`)
+
+| 파일 | 역할 | 주요 내용 |
+| :--- | :--- | :--- |
+| `docs/dongtan_weekly_weather_2026-11-28.md` | 경기도 화성시 동탄 1주일(2026-11-28 ~ 2026-12-04) 날씨 요약 리포트 | 7일 일자별 기온/하늘 상태 표, 주간 포인트, 옷차림 팁 |
